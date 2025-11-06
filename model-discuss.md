@@ -34,9 +34,11 @@
 
 #### 2.1 全局配置 (GlobalConfig)
 - **属性**：
-  - 介质源路径 (media_source)
+  - K8s 安装根目录 (k8s_install_dir) - 默认: /data
+  - 介质源路径 (media_source) - 默认: /data/k8s_install
   - NAS挂载路径 (nas_mount)
   - 时区 (timezone)
+  - 系统架构 (architecture) - 默认: x86_64，可选: x86_64, arm64
   - SSH配置 (ssh_port, ssh_user, ssh_key_path)
   - 日志级别 (log_level)
 
@@ -80,6 +82,13 @@
   - kube-scheduler启动参数 (scheduler_args)
   - kube-apiserver启动参数 (apiserver_args)
   - 配置文件路径 (config_file_path)
+
+- **固定参数配置**：
+  - kube-controller-manager 必须添加固定参数：
+    ```yaml
+    - --cluster-signing-duration=867240h0m0s
+    ```
+  - 该参数将在 `spec.containers[0].command` 最后一行添加
 
 #### 2.8 备份配置 (BackupConfig)
 - **属性**：
@@ -136,7 +145,10 @@
 - **行为**：
   - 备份原有 kube-controller-manager Pod 配置
   - 修改 /etc/kubernetes/manifests/kube-controller-manager.yaml
-  - 添加自定义启动参数（如：--horizontal-pod-autoscaler-use-rest-clients=false）
+  - 在 `spec.containers[0].command` 最后一行添加固定参数：
+    ```yaml
+    - --cluster-signing-duration=867240h0m0s
+    ```
   - 重启 kube-controller-manager Pod
   - 验证配置生效和 Pod 状态
 
@@ -303,13 +315,18 @@
 
 ## 五、更新后的配置示例
 
-### 5.1 包含控制器配置的 deploy-config.yaml 示例
+### 5.1 deploy-config.yaml 配置示例
 
 ```yaml
 global:
-  media_source: /opt/offline_media
+  # K8s 安装根目录，默认为 /data
+  k8s_install_dir: /data
+  # 离线安装介质存放目录，默认为 /data/k8s_install
+  media_source: /data/k8s_install
   nas_mount: /mnt/nas/k8s
   timezone: Asia/Shanghai
+  # 系统架构，默认为 x86_64，可选值：x86_64, arm64
+  architecture: x86_64
 
 hosts:
   control_plane:
@@ -322,8 +339,14 @@ hosts:
       hostname: node1
 
 packages:
-  container_runtime: containerd
+  # 容器运行时将根据 K8s 版本自动选择
+  container_runtime: auto  # auto/docker/containerd
   kube_version: 1.30.14
+
+  # 版本映射关系（系统内置，无需手动配置）
+  runtime_version_mapping:
+    "1.23": "docker"
+    "1.30": "containerd"
 
 registry:
   enabled: true
@@ -334,26 +357,12 @@ nfs:
   server: 10.0.0.5
   path: /export/k8s
 
-# 🆕 新增：控制器配置
-controller:
-  kube_controller_manager:
-    extra_args:
-      - "--horizontal-pod-autoscaler-use-rest-clients=false"
-      - "--feature-gates=CSIMigration=true"
-      - "--bind-address=0.0.0.0"
-    restart_policy: "Always"
-  kube_scheduler:
-    extra_args:
-      - "--bind-address=0.0.0.0"
-  kube_apiserver:
-    extra_args:
-      - "--feature-gates=CSIMigration=true"
-
 addons: [traefik, prometheus, redis]
 
 etcd_backup:
   schedule: "0 2 * * *"
-  backup_path: /mnt/nas/etcd-backup
+  # etcd 备份路径，默认为 /data/nfs_root/etcdbackup
+  backup_path: /data/nfs_root/etcdbackup
 ```
 
 ### 5.2 新增步骤的流程依赖关系

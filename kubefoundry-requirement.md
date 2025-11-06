@@ -62,7 +62,10 @@
    - 加载必要内核模块（`br_netfilter`, `overlay` 等）；
    - 验证系统参数正确。
 6. **安装容器运行时（Docker / containerd）**
-   - 离线安装 rpm；
+   - 根据 Kubernetes 版本自动判断容器运行时类型：
+     - K8s 1.23 版本：安装 Docker CE
+     - K8s 1.30 版本：安装 containerd
+   - 离线安装对应 rpm 包；
    - 分发配置文件（镜像加速、私服、cgroup）；
    - 启动并验证运行状态。
 7. **安装镜像仓库（Registry / Harbor）**
@@ -73,24 +76,33 @@
    - 使用配置文件初始化；
    - 保存 join token；
    - 验证控制平面 Pod 状态。
-9. **添加控制平面节点**
-   - 分发 join 命令；
-   - 验证 etcd 成员与节点状态。
-10. **添加工作节点**
+9. **配置 kube-controller-manager 参数**
+   - 备份原始 `/etc/kubernetes/manifests/kube-controller-manager.yaml` 配置文件；
+   - 修改 Pod 清单，在 `spec.containers[0].command` 最后一行添加固定参数：
+     ```yaml
+     - --cluster-signing-duration=867240h0m0s
+     ```
+   - kubelet 自动重启 Pod 以应用新配置；
+   - 验证 Pod 状态和参数加载情况。
+10. **添加控制平面节点**
+    - 分发 join 命令；
+    - 验证 etcd 成员与节点状态。
+11. **添加工作节点**
     - 执行 join；
     - 验证节点 `Ready` 状态。
-11. **安装 CNI 插件（Flannel）**
+12. **安装 CNI 插件（Flannel）**
     - 使用用户提供的 YAML；
     - 替换变量；
     - 验证网络连通性与 Pod 状态。
-12. **安装 NFS Client Provisioner**
+13. **安装 NFS Client Provisioner**
     - 替换 NFS 配置；
+    - 使用helm安装
     - 部署并验证 PVC 自动创建。
-13. **安装定制化组件**
+14. **安装定制化组件**
     - Traefik、Prometheus、Redis 等；
     - 脚本仅负责替换配置并 apply；
     - 验证关键 Pod 状态与健康。
-14. **配置 etcd 定时备份任务**
+15. **配置 etcd 定时备份任务**
     - 部署备份脚本；
     - 写入 crontab；
     - 测试一次快照保存；
@@ -133,9 +145,14 @@
 
 ```
 global:
-  media_source: /opt/offline_media
+  # K8s 安装根目录，默认为 /data
+  k8s_install_dir: /data
+  # 离线安装介质存放目录，默认为 /data/k8s_install
+  media_source: /data/k8s_install
   nas_mount: /mnt/nas/k8s
   timezone: Asia/Shanghai
+  # 系统架构，默认为 x86_64，可选值：x86_64, arm64
+  architecture: x86_64
 
 hosts:
   control_plane:
@@ -148,8 +165,16 @@ hosts:
       hostname: node1
 
 packages:
-  container_runtime: containerd
+  # 容器运行时将根据 K8s 版本自动选择：
+  # - kube_version 1.23.x -> container_runtime: docker
+  # - kube_version 1.30.x -> container_runtime: containerd
+  container_runtime: auto  # 可选值：auto, docker, containerd
   kube_version: 1.30.14
+
+  # 版本映射关系（系统自动判断，无需手动配置）
+  runtime_version_mapping:
+    "1.23": "docker"
+    "1.30": "containerd"
 
 registry:
   enabled: true
@@ -164,7 +189,8 @@ addons: [traefik, prometheus, redis]
 
 etcd_backup:
   schedule: "0 2 * * *"
-  backup_path: /mnt/nas/etcd-backup
+  # etcd 备份路径，默认为 /data/nfs_root/etcdbackup
+  backup_path: /data/nfs_root/etcdbackup
 ```
 
 ------
@@ -286,6 +312,7 @@ etcd_backup:
 | --------------- | ------------------------------------------ |
 | 操作系统兼容性  | 支持 RHEL/CentOS/AlmaLinux/Oracle Linux 8+ |
 | Kubernetes 版本 | 支持 1.23 和 1.30                          |
+| 系统架构        | 支持 x86_64 和 arm64                       |
 | 安全性          | 所有 SSH、Token 不明文存储                 |
 | 并发性能        | 50+ 节点可在30分钟内部署完成               |
 | 可维护性        | 结构模块化、脚本可单独重用                 |
