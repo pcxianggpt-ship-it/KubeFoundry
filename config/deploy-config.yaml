@@ -1,0 +1,450 @@
+# KubeFoundry Kubernetes 离线部署配置文件
+# 支持 AMD64/ARM64 多架构，统一配置管理
+
+# ============================================================================
+# 全局配置
+# ============================================================================
+global:
+  # 基础路径配置
+  base_path: "/opt/kubefoundry"
+  repository_path: "repository"  # 介质包仓库根目录
+  log_path: "/var/log/kubefoundry"
+  temp_path: "/tmp/kubefoundry"
+
+  # 时间和区域配置
+  timezone: "Asia/Shanghai"
+  ntp_servers:
+    - "ntp1.aliyun.com"
+    - "ntp2.aliyun.com"
+
+  # SSH 配置 (固定 root 用户)
+  ssh:
+    port: 22
+    key_file: "/root/.ssh/kubefoundry_rsa"
+
+  # 部署配置
+  deployment:
+    parallel_nodes: 5  # 并行部署节点数
+    retry_count: 3     # 失败重试次数
+    retry_interval: 30 # 重试间隔(秒)
+    rollback_on_failure: true
+
+# ============================================================================
+# 架构配置
+# ============================================================================
+architecture:
+  # 目标架构 (二选一)
+  target: "amd64"  # amd64 或 arm64
+
+  # 架构映射
+  mapping:
+    amd64:
+      repository_dir: "01.AMD"
+      kernel_arch: "x86_64"
+      rpm_arch: "x86_64"
+      platform: "linux/amd64"
+    arm64:
+      repository_dir: "02.ARM"
+      kernel_arch: "aarch64"
+      rpm_arch: "aarch64"
+      platform: "linux/arm64"
+
+# ============================================================================
+# 集群节点配置
+# ============================================================================
+hosts:
+  # 控制平面节点
+  control_plane:
+    - name: "k8s-master-01"
+      ip: "192.168.1.10"
+      labels:
+        - "node-role.kubernetes.io/control-plane"
+        - "node-role.kubernetes.io/master"
+      taints:
+        - "node-role.kubernetes.io/control-plane:NoSchedule"
+
+    - name: "k8s-master-02"
+      ip: "192.168.1.11"
+      labels:
+        - "node-role.kubernetes.io/control-plane"
+        - "node-role.kubernetes.io/master"
+      taints:
+        - "node-role.kubernetes.io/control-plane:NoSchedule"
+
+    - name: "k8s-master-03"
+      ip: "192.168.1.12"
+      labels:
+        - "node-role.kubernetes.io/control-plane"
+        - "node-role.kubernetes.io/master"
+      taints:
+        - "node-role.kubernetes.io/control-plane:NoSchedule"
+
+  # 工作节点
+  workers:
+    - name: "k8s-worker-01"
+      ip: "192.168.1.20"
+      labels:
+        - "node-role.kubernetes.io/worker"
+
+    - name: "k8s-worker-02"
+      ip: "192.168.1.21"
+      labels:
+        - "node-role.kubernetes.io/worker"
+
+    - name: "k8s-worker-03"
+      ip: "192.168.1.22"
+      labels:
+        - "node-role.kubernetes.io/worker"
+
+# ============================================================================
+# Kubernetes 配置
+# ============================================================================
+kubernetes:
+  version: "1.30.0"  # Kubernetes 版本
+
+# ============================================================================
+# 容器运行时配置 (二进制安装)
+# ============================================================================
+container_runtime:
+  # 运行时选择: docker, containerd
+  type: "docker"
+
+  # Docker 二进制安装配置
+  docker:
+    version: "24.0.7"
+    binary_package: "docker-24.0.7.tgz"
+    plugins:
+      compose: "docker-compose-plugin-2.21.0.tgz"
+      buildx: "docker-buildx-plugin-0.11.2.tgz"
+    install_dir: "/usr/bin"
+    data_dir: "/var/lib/docker"
+    service_config:
+      exec_start: "/usr/bin/dockerd"
+      exec_reload: "/bin/kill -s HUP $MAINPID"
+      exec_start_post: "/usr/sbin/iptables -P FORWARD ACCEPT"
+    daemon_config:
+      storage-driver: "overlay2"
+      log-driver: "json-file"
+      log-opts:
+        max-size: "100m"
+        max-file: "5"
+      registry-mirrors:
+        - "http://registry:5000"
+      insecure-registries:
+        - "127.0.0.1:5000"
+
+  # containerd 二进制安装配置
+  containerd:
+    version: "1.7.18"
+    binary_package: "containerd-1.7.18-linux-{arch}.tar.gz"
+    runc_binary: "runc.{arch}"
+    crictl_package: "crictl-v1.29.0-linux-{arch}.tar.gz"
+    install_dir: "/usr/local"
+    data_dir: "/var/lib/containerd"
+    config_file: "/etc/containerd/config.toml"
+    service_config:
+      exec_start: "/usr/local/bin/containerd"
+      exec_start_pre: "/sbin/modprobe overlay"
+    config_template:
+      version: 2
+      plugins:
+        "io.containerd.grpc.v1.cri":
+          sandbox_image: "registry.k8s.io/pause:3.9"
+          systemd_cgroup: true
+          registry:
+            mirrors:
+              docker.io:
+                endpoint:
+                  - "http://127.0.0.1:5000"
+
+# ============================================================================
+# 镜像仓库配置
+# ============================================================================
+registry:
+  # 仓库类型选择: registry, harbor
+  type: "registry"  # registry 或 harbor
+
+  # 通用配置
+  common:
+    namespace: "kubefoundry"
+    storage_class: "nfs-client"
+    service_type: "NodePort"
+    node_port: 31500
+
+  # Docker Registry 配置
+  registry_config:
+    image: "registry:2.8.3"
+    replicas: 1
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+      limits:
+        cpu: "500m"
+        memory: "1Gi"
+    storage:
+      size: "100Gi"
+      path: "/var/lib/registry"
+    auth:
+      enabled: false
+      htpasswd_file: ""
+    ui:
+      enabled: true
+      image: "joxit/docker-registry-ui:2.5.0"
+
+  # Harbor 配置
+  harbor_config:
+    version: "v2.9.0"
+    replicas: 1
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2000m"
+        memory: "4Gi"
+    storage:
+      size: "500Gi"
+      path: "/data/harbor"
+    database:
+      type: "postgresql"
+      version: "13"
+      storage_size: "10Gi"
+    redis:
+      version: "7.0"
+      storage_size: "5Gi"
+    auth:
+      admin_password: "Harbor12345"
+      mode: "db_auth"  # db_auth, ldap_auth, oidc_auth
+    ui:
+      enabled: true
+
+# ============================================================================
+# 存储配置
+# ============================================================================
+storage:
+  # NFS 存储配置
+  nfs:
+    server: "192.168.1.100"  # NFS 服务器地址
+    path: "/data/nfs"         # NFS 导出路径
+    read_only: false
+    storage_class:
+      name: "nfs-client"
+      provisioner: "nfs.csi.k8s.io"
+      parameters:
+        server: "192.168.1.100"
+        share: "/data/nfs"
+        readOnly: "false"
+    reclaim_policy: "Delete"
+    volume_binding_mode: "Immediate"
+
+  # 本地存储配置
+  local:
+    base_path: "/mnt/local-storage"
+    storage_class:
+      name: "local-storage"
+      provisioner: "kubernetes.io/no-provisioner"
+    reclaim_policy: "Delete"
+    volume_binding_mode: "WaitForFirstConsumer"
+
+# ============================================================================
+# 网络组件配置
+# ============================================================================
+networking:
+  # CNI 插件选择: flannel, calico, weave
+  cni: "flannel"
+
+  # Flannel 配置
+  flannel:
+    version: "v0.22.0"
+    backend: "vxlan"  # vxlan, host-gw, udp
+    port: 8472
+    vni: 1
+    direct_routing: false
+
+  # Calico 配置 (可选)
+  calico:
+    version: "v3.26.0"
+    network: "192.168.0.0/16"
+    mode: "IP-in-IP"  # IP-in-IP, VXLAN, BGP
+    mtu: 1440
+
+  # 负载均衡器配置
+  ingress:
+    type: "traefik"  # traefik, nginx
+    class: "traefik"
+
+# ============================================================================
+# 扩展组件配置
+# ============================================================================
+addons:
+  # Traefik Ingress Controller
+  traefik:
+    enabled: true
+    version: "v2.10.4"
+    replicas: 2
+    service_type: "NodePort"
+    node_port_http: 30080
+    node_port_https: 30443
+    dashboard:
+      enabled: true
+      port: 9000
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+
+  # Prometheus 监控
+  prometheus:
+    enabled: true
+    version: "v2.47.0"
+    storage_size: "20Gi"
+    retention: "30d"
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2000m"
+        memory: "4Gi"
+    alerting:
+      enabled: true
+      alertmanager_version: "v0.26.0"
+    grafana:
+      enabled: true
+      version: "10.1.0"
+      admin_password: "admin123"
+      storage_size: "5Gi"
+
+  # Redis 缓存
+  redis:
+    enabled: true
+    version: "7.2.3-alpine"
+    replicas: 1
+    password: "Redis123"
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+      limits:
+        cpu: "500m"
+        memory: "1Gi"
+    storage:
+      size: "8Gi"
+      class: "nfs-client"
+
+# ============================================================================
+# 安全配置
+# ============================================================================
+security:
+  # RBAC 配置
+  rbac:
+    enabled: true
+    default_policy: "privileged"  # privileged, restricted
+
+  # Pod 安全策略
+  pod_security:
+    enabled: true
+    standards:
+      - "baseline"
+      - "restricted"
+
+  # 网络策略
+  network_policy:
+    enabled: true
+    default_deny: false  # true, false
+
+  # 证书配置
+  certificates:
+    ca_duration: "87600h"  # 10年
+    cert_duration: "8760h" # 1年
+    renew_before: "720h"   # 30天
+
+# ============================================================================
+# 备份配置
+# ============================================================================
+backup:
+  # etcd 备份配置
+  etcd:
+    enabled: true
+    schedule: "0 2 * * *"  # 每天凌晨2点
+    retention: "30d"        # 保留30天
+    storage_path: "/backup/etcd"
+    storage_size: "10Gi"
+    compression: true
+    encryption: false
+    encryption_key: ""
+
+  # 应用备份配置
+  applications:
+    enabled: false
+    schedule: "0 3 * * 0"  # 每周日凌晨3点
+    retention: "90d"
+    storage_path: "/backup/applications"
+    included_namespaces:
+      - "kubefoundry"
+      - "monitoring"
+
+# ============================================================================
+# 日志配置
+# ============================================================================
+logging:
+  # 日志级别
+  level: "INFO"  # DEBUG, INFO, WARN, ERROR
+
+  # 日志轮转
+  rotation:
+    enabled: true
+    max_size: "100M"
+    max_files: 10
+    max_age: "30d"
+
+  # 日志收集
+  collection:
+    enabled: false
+    fluentd_version: "v1.16.2"
+    elasticsearch_enabled: false
+    elasticsearch_version: "8.9.0"
+
+# ============================================================================
+# 验证和测试配置
+# ============================================================================
+validation:
+  # 部署前验证
+  pre_deployment:
+    check_connectivity: true
+    check_system_requirements: true
+    check_disk_space: true
+    check_dependencies: true
+    check_network: true
+
+  # 部署后验证
+  post_deployment:
+    check_cluster_health: true
+    check_pod_status: true
+    check_services: true
+    check_storage: true
+    check_networking: true
+    run_smoke_tests: true
+
+# ============================================================================
+# 开发和调试配置
+# ============================================================================
+development:
+  # 调试模式
+  debug: false
+  verbose: false
+
+  # 测试配置
+  testing:
+    enabled: false
+    dry_run: false
+    skip_steps: []
+
+  # 性能监控
+  performance:
+    monitoring_enabled: false
+    metrics_collection: false

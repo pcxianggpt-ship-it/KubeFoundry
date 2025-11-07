@@ -1,0 +1,185 @@
+# KubeFoundry 多架构配置文件
+# 支持 AMD64 和 ARM64 架构的离线部署
+
+# 架构定义
+architectures:
+  amd64:
+    name: "AMD64"
+    repository_path: "01.AMD"
+    platform: "linux/amd64"
+    kernel_arch: "x86_64"
+    rpm_arch: "x86_64"
+    goarch: "amd64"
+
+  arm64:
+    name: "ARM64"
+    repository_path: "02.ARM"
+    platform: "linux/arm64"
+    kernel_arch: "aarch64"
+    rpm_arch: "aarch64"
+    goarch: "arm64"
+
+# 架构检测规则
+detection:
+  methods:
+    - command: "uname -m"
+      mappings:
+        "x86_64": "amd64"
+        "aarch64": "arm64"
+    - command: "arch"
+      mappings:
+        "x86_64": "amd64"
+        "aarch64": "arm64"
+    - file: "/proc/cpuinfo"
+      patterns:
+        "x86_64": "amd64"
+        "aarch64": "arm64"
+
+# 架构特定的包映射
+package_mappings:
+  # Docker 包映射
+  docker:
+    amd64:
+      packages:
+        - "docker-ce-24.0.7-1.el8.x86_64.rpm"
+        - "docker-ce-cli-24.0.7-1.el8.x86_64.rpm"
+        - "docker-ce-rootless-extras-24.0.7-1.el8.x86_64.rpm"
+        - "containerd.io-1.6.24-3.1.el8.x86_64.rpm"
+        - "docker-buildx-plugin-0.11.2-1.el8.x86_64.rpm"
+        - "docker-compose-plugin-2.21.0-1.el8.x86_64.rpm"
+    arm64:
+      packages:
+        - "docker-ce-24.0.7-1.el8.aarch64.rpm"
+        - "docker-ce-cli-24.0.7-1.el8.aarch64.rpm"
+        - "docker-ce-rootless-extras-24.0.7-1.el8.aarch64.rpm"
+        - "containerd.io-1.6.24-3.1.el8.aarch64.rpm"
+        - "docker-buildx-plugin-0.11.2-1.el8.aarch64.rpm"
+        - "docker-compose-plugin-2.21.0-1.el8.aarch64.rpm"
+
+  # Kubernetes 包映射
+  kubernetes:
+    amd64:
+      packages:
+        - "kubelet-1.30.0-0.x86_64.rpm"
+        - "kubeadm-1.30.0-0.x86_64.rpm"
+        - "kubectl-1.30.0-0.x86_64.rpm"
+        - "kubernetes-cni-1.2.0-0.x86_64.rpm"
+    arm64:
+      packages:
+        - "kubelet-1.30.0-0.aarch64.rpm"
+        - "kubeadm-1.30.0-0.aarch64.rpm"
+        - "kubectl-1.30.0-0.aarch64.rpm"
+        - "kubernetes-cni-1.2.0-0.aarch64.rpm"
+
+  # 系统依赖包映射
+  dependencies:
+    amd64:
+      packages:
+        - "conntrack-tools-1.4.4-10.el8.x86_64.rpm"
+        - "socat-1.7.4.1-1.el8.x86_64.rpm"
+        - "ebtables-2.0.10-24.el8.x86_64.rpm"
+        - "ipset-7.1-1.el8.x86_64.rpm"
+        - "nfs-utils-2.3.3-46.el8.x86_64.rpm"
+    arm64:
+      packages:
+        - "conntrack-tools-1.4.4-10.el8.aarch64.rpm"
+        - "socat-1.7.4.1-1.el8.aarch64.rpm"
+        - "ebtables-2.0.10-24.el8.aarch64.rpm"
+        - "ipset-7.1-1.el8.aarch64.rpm"
+        - "nfs-utils-2.3.3-46.el8.aarch64.rpm"
+
+# 镜像架构映射
+image_mappings:
+  # Kubernetes 核心镜像
+  kubernetes:
+    pause:
+      amd64: "registry.k8s.io/pause:3.9"
+      arm64: "registry.k8s.io/pause:3.9"
+    etcd:
+      amd64: "registry.k8s.io/etcd:3.5.9-0"
+      arm64: "registry.k8s.io/etcd:3.5.9-0"
+    coredns:
+      amd64: "registry.k8s.io/coredns/coredns:v1.11.1"
+      arm64: "registry.k8s.io/coredns/coredns:v1.11.1"
+    kube_proxy:
+      amd64: "registry.k8s.io/kube-proxy:v1.30.0"
+      arm64: "registry.k8s.io/kube-proxy:v1.30.0"
+
+  # 网络组件镜像
+  networking:
+    flannel:
+      amd64: "docker.io/flannel/flannel:v0.22.0"
+      arm64: "docker.io/flannel/flannel:v0.22.0"
+
+  # 存储组件镜像
+  storage:
+    nfs_client_provisioner:
+      amd64: "k8s.gcr.io/sig-storage/nfs-subdir-external-provisioner:v4.0.2"
+      arm64: "k8s.gcr.io/sig-storage/nfs-subdir-external-provisioner:v4.0.2"
+
+  # 扩展组件镜像
+  addons:
+    traefik:
+      amd64: "docker.io/traefik/traefik:v2.10.4"
+      arm64: "docker.io/traefik/traefik:v2.10.4"
+    prometheus:
+      amd64: "docker.io/prom/prometheus:v2.47.0"
+      arm64: "docker.io/prom/prometheus:v2.47.0"
+    redis:
+      amd64: "docker.io/redis:7.2.3-alpine"
+      arm64: "docker.io/redis:7.2.3-alpine"
+
+# 架构特定的配置
+architecture_configs:
+  # 性能调优参数
+  performance:
+    amd64:
+      kubelet_max_pods: 110
+      kube_proxy_cpu_request: "100m"
+      kube_proxy_memory_request: "100Mi"
+    arm64:
+      kubelet_max_pods: 110
+      kube_proxy_cpu_request: "100m"
+      kube_proxy_memory_request: "100Mi"
+
+  # 内核参数
+  kernel_params:
+    common:
+      - "net.bridge.bridge-nf-call-iptables=1"
+      - "net.bridge.bridge-nf-call-ip6tables=1"
+      - "net.ipv4.ip_forward=1"
+    amd64:
+      - "vm.max_map_count=262144"
+    arm64:
+      - "vm.max_map_count=262144"
+
+# 混合架构集群配置
+mixed_cluster:
+  enabled: true
+  default_arch: "amd64"
+  # 控制平面架构选择策略
+  control_plane_strategy: "majority"  # majority, amd64, arm64
+  # 工作节点架构调度
+  worker_scheduling:
+    - "amd64"
+    - "arm64"
+
+# 验证规则
+validation:
+  # 架构一致性检查
+  architecture_consistency:
+    check_control_plane: true
+    check_worker_nodes: true
+    allow_mixed_architecture: true
+
+  # 包完整性检查
+  package_integrity:
+    check_checksums: true
+    verify_signatures: false
+    check_dependencies: true
+
+  # 镜像验证
+  image_validation:
+    check_manifests: true
+    verify_architectures: true
+    check_layers: false
