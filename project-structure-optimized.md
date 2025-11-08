@@ -266,21 +266,6 @@ kubefoundry/
 │       ├── metrics-collector.sh
 │       ├── health-monitor.sh
 │       └── arch-monitor.sh           # 架构监控脚本
-│
-└── security/                          # 安全配置目录
-    ├── certs/                         # 证书模板
-    │   ├── ca-cert.template
-    │   ├── server-cert.template
-    │   └── client-cert.template
-    ├── policies/                      # 安全策略
-    │   ├── pod-security-policy.yaml
-    │   ├── network-policy.yaml
-    │   └── rbac-policy.yaml
-    └── scripts/                       # 安全工具脚本
-        ├── cert-validator.sh
-        ├── security-audit.sh
-        ├── permission-checker.sh
-        └── arch-security.sh           # 架构安全检查
 ```
 
 ## 核心优化点

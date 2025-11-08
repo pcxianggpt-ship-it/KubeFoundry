@@ -1,5 +1,12 @@
 # KubeFoundry Kubernetes 离线部署配置文件
 # 支持 AMD64/ARM64 多架构，统一配置管理
+#
+# 重要说明：
+# 1. 镜像仓库必须独立部署在专用服务器上，不能部署在K8S集群内
+# 2. 集群初始化前镜像仓库必须就绪，否则无法拉取k8s组件镜像
+# 3. 镜像仓库数据必须使用本地存储，不使用NFS等共享存储，确保性能和数据一致性
+# 4. 部署顺序：镜像仓库 -> K8S集群初始化 -> 添加其他组件
+# 5. 这是典型的"鸡生蛋还是蛋生鸡"问题的解决方案
 
 # ============================================================================
 # 全局配置
@@ -19,8 +26,7 @@ global:
 
   # SSH 配置 (固定 root 用户)
   ssh:
-    port: 22
-    key_file: "/root/.ssh/kubefoundry_rsa"
+    user: "root"
 
   # 部署配置
   deployment:
@@ -129,9 +135,9 @@ container_runtime:
         max-size: "100m"
         max-file: "5"
       registry-mirrors:
-        - "http://registry:5000"
+        - "http://192.168.1.9:5000"
       insecure-registries:
-        - "127.0.0.1:5000"
+        - "192.168.1.9:5000"
 
   # containerd 二进制安装配置
   containerd:
@@ -155,69 +161,193 @@ container_runtime:
             mirrors:
               docker.io:
                 endpoint:
-                  - "http://127.0.0.1:5000"
+                  - "http://192.168.1.9:5000"
 
 # ============================================================================
-# 镜像仓库配置
+# 镜像仓库配置 (独立部署)
 # ============================================================================
 registry:
   # 仓库类型选择: registry, harbor
   type: "registry"  # registry 或 harbor
 
-  # 通用配置
-  common:
-    namespace: "kubefoundry"
-    storage_class: "nfs-client"
-    service_type: "NodePort"
-    node_port: 31500
+  # 镜像仓库部署主机配置 (独立于K8S集群，集群初始化前必须就绪)
+  host:
+    ip: "192.168.1.9"                    # 镜像仓库专用服务器IP
+    hostname: "registry.k8s.local"       # 主机名
 
-  # Docker Registry 配置
+  # 网络配置
+  network:
+    port: 5000                          # Registry 服务端口
+    ui_port: 5080                       # Registry UI 端口 (与实际脚本一致)
+    expose_external: true               # 是否对外暴露服务
+    external_ip: "192.168.1.9"          # 外部访问IP
+
+  # 数据存储配置
+  storage:
+    type: "local"                       # 存储类型: local (本地存储)
+    path: "/data/registry"              # 本地存储路径
+    size: "500Gi"                       # 存储容量
+
+    # 磁盘配置 (确保使用本地高性能磁盘)
+    disk:
+      device: "/dev/sdb"                # 专用磁盘设备 (可选)
+      mount_point: "/data/registry"     # 挂载点
+      filesystem: "ext4"                # 文件系统类型
+      mount_options: "defaults,noatime" # 挂载选项
+
+    # 数据目录结构
+    directories:
+      - "/data/registry/registry"       # Registry 镜像数据
+      - "/data/registry/auth"           # 认证配置
+      - "/data/registry/certs"          # SSL证书
+      - "/data/registry/config"         # 配置文件
+      - "/data/registry/logs"           # 日志文件
+
+  # Docker Registry 配置 (独立部署)
   registry_config:
-    image: "registry:2.8.3"
-    replicas: 1
-    resources:
-      requests:
-        cpu: "100m"
-        memory: "256Mi"
-      limits:
-        cpu: "500m"
-        memory: "1Gi"
-    storage:
-      size: "100Gi"
-      path: "/var/lib/registry"
-    auth:
-      enabled: false
-      htpasswd_file: ""
-    ui:
-      enabled: true
-      image: "joxit/docker-registry-ui:2.5.0"
+    image: "registry:2.7.1"              # 与实际脚本版本一致
 
-  # Harbor 配置
+    # 服务配置
+    service:
+      name: "docker-registry"
+      container_name: "registry-init"   # 与脚本中的容器名一致
+
+    # 部署配置
+    deployment:
+      restart_policy: "always"          # 重启策略
+      privileged: false                 # 非特权模式
+
+    # 认证配置
+    auth:
+      enabled: false                    # 默认不启用认证
+      htpasswd_file: "/data/registry_data/auth/htpasswd"  # htpasswd文件路径
+      # 脚本参数说明：
+      # - 参数3: 镜像仓库用户名
+      # - 参数4: 镜像仓库密码
+      # - 参数5: 是否加密 (yes/no)
+
+    # 配置文件
+    config:
+      file: "/data/registry_data/config.yml"  # Registry配置文件路径
+
+    # 数据配置 (基于脚本路径)
+    data:
+      base_path: "/data/registry_data"       # 数据基础路径
+      registry_path: "/data/registry_data/registry"  # 镜像数据路径
+      auth_path: "/data/registry_data/auth"   # 认证配置路径
+
+    # 端口映射
+    ports:
+      - "5000:5000"                       # Registry 服务端口
+
+    # 环境变量 (认证模式)
+    auth_environment:
+      REGISTRY_AUTH: "htpasswd"
+      REGISTRY_AUTH_HTPASSWD_REALM: "Registry Realm"
+      REGISTRY_AUTH_HTPASSWD_PATH: "/etc/docker/registry/auth/htpasswd"
+
+    # 镜像加载配置
+    images:
+      source_path: "/data/k8s_install/04.registry/"  # 镜像文件路径
+      packages:
+        - "registry-2.7.1-{arch}.tar"     # Registry镜像包
+        - "registry-ui-{arch}.tar"        # Registry UI镜像包
+      data_archive: "registry-{arch}.tgz" # 镜像数据归档文件
+
+    # 脚本执行配置
+    script:
+      path: "/data/k8s_install/03.registry_install.sh"  # 安装脚本路径
+      parameters:
+        - "$1"                            # 本机IP地址
+        - "$2"                            # 架构型号 (arm/amd)
+        - "$3"                            # 镜像仓库用户名 (可选)
+        - "$4"                            # 镜像仓库密码 (可选)
+        - "$5"                            # 是否加密 (yes/no)
+      # 脚本参数说明：
+      # $1: 本机IP地址 (从配置文件中的 host.ip 获取)
+      # $2: 架构型号 (从配置文件中的 architecture.target 获取)
+      # $3-5: 认证相关参数 (当 auth.enabled=true 时需要)
+
+  # Registry UI 配置 (独立部署)
+  registry_ui:
+    enabled: true
+    image: "joxit/docker-registry-ui:2.2.2"  # 与脚本版本一致
+
+    # 服务配置
+    service:
+      name: "registry-ui"
+      container_name: "registry-ui-init"    # 与脚本中的容器名一致
+
+    # 部署配置
+    deployment:
+      restart_policy: "always"              # 重启策略
+
+    # 端口映射
+    ports:
+      - "5080:80"                           # UI 端口映射 (与脚本一致)
+
+    # 环境变量 (基于脚本配置)
+    environment:
+      REGISTRY_TITLE: "Registry"            # Registry 标题
+      REGISTRY_URL: "http://192.168.1.9:5000"  # Registry URL
+      DELETE_IMAGES: true                   # 允许删除镜像
+
+  # Harbor 配置 (独立部署，可选)
   harbor_config:
+    enabled: false
     version: "v2.9.0"
-    replicas: 1
+
+    # 安装包路径
+    installer: "harbor-offline-installer-v2.9.0.tgz"
+
+    # 配置文件路径
+    config_file: "/opt/harbor/harbor.yml"
+
+    # 网络配置
+    network:
+      http_port: 80
+      https_port: 443
+
+    # 资源配置
     resources:
-      requests:
-        cpu: "500m"
-        memory: "1Gi"
-      limits:
-        cpu: "2000m"
-        memory: "4Gi"
+      cpu_limit: "4"
+      memory_limit: "8Gi"
+      cpu_request: "1"
+      memory_request: "2Gi"
+
+    # 存储配置 (本地存储)
     storage:
-      size: "500Gi"
+      type: "local"                   # 本地存储，不使用共享存储
       path: "/data/harbor"
+      size: "1Ti"
+
+    # 磁盘配置 (建议使用专用高性能磁盘)
+    disk:
+      device: "/dev/sdc"              # 专用磁盘设备 (可选)
+      mount_point: "/data/harbor"
+      filesystem: "ext4"
+      mount_options: "defaults,noatime"
+
+    # 数据库配置
     database:
       type: "postgresql"
-      version: "13"
-      storage_size: "10Gi"
+      password: "Harbor12345"
+      data_dir: "/data/harbor/database"
+
+    # Redis 配置
     redis:
-      version: "7.0"
-      storage_size: "5Gi"
+      data_dir: "/data/harbor/redis"
+
+    # 认证配置
     auth:
       admin_password: "Harbor12345"
-      mode: "db_auth"  # db_auth, ldap_auth, oidc_auth
-    ui:
-      enabled: true
+      mode: "db_auth"
+
+    # SSL/TLS 配置
+    tls:
+      enabled: false
+      cert_file: "/data/harbor/certs/server.crt"
+      key_file: "/data/harbor/certs/server.key"
 
 # ============================================================================
 # 存储配置
@@ -278,90 +408,30 @@ networking:
 # 扩展组件配置
 # ============================================================================
 addons:
-  # Traefik Ingress Controller
-  traefik:
+  # KubeMate Kubernetes 管理工具 (必装)
+  kubemate:
     enabled: true
-    version: "v2.10.4"
-    replicas: 2
-    service_type: "NodePort"
-    node_port_http: 30080
-    node_port_https: 30443
-    dashboard:
-      enabled: true
-      port: 9000
-    resources:
-      requests:
-        cpu: "100m"
-        memory: "256Mi"
-      limits:
-        cpu: "500m"
-        memory: "512Mi"
 
-  # Prometheus 监控
+  # NFS Client 存储提供器 (必装)
+  nfs_client:
+    enabled: true
+
+  # Prometheus 监控系统 (必装)
   prometheus:
     enabled: true
-    version: "v2.47.0"
-    storage_size: "20Gi"
-    retention: "30d"
-    resources:
-      requests:
-        cpu: "500m"
-        memory: "1Gi"
-      limits:
-        cpu: "2000m"
-        memory: "4Gi"
-    alerting:
-      enabled: true
-      alertmanager_version: "v0.26.0"
-    grafana:
-      enabled: true
-      version: "10.1.0"
-      admin_password: "admin123"
-      storage_size: "5Gi"
 
-  # Redis 缓存
+  # Traefik Ingress Controller (必装)
+  traefik:
+    enabled: true
+
+  # Redis 缓存服务 (选装)
   redis:
-    enabled: true
-    version: "7.2.3-alpine"
-    replicas: 1
-    password: "Redis123"
-    resources:
-      requests:
-        cpu: "100m"
-        memory: "256Mi"
-      limits:
-        cpu: "500m"
-        memory: "1Gi"
-    storage:
-      size: "8Gi"
-      class: "nfs-client"
+    enabled: false
 
-# ============================================================================
-# 安全配置
-# ============================================================================
-security:
-  # RBAC 配置
-  rbac:
-    enabled: true
-    default_policy: "privileged"  # privileged, restricted
+  # Loki 日志聚合系统 (选装)
+  loki:
+    enabled: false
 
-  # Pod 安全策略
-  pod_security:
-    enabled: true
-    standards:
-      - "baseline"
-      - "restricted"
-
-  # 网络策略
-  network_policy:
-    enabled: true
-    default_deny: false  # true, false
-
-  # 证书配置
-  certificates:
-    ca_duration: "87600h"  # 10年
-    cert_duration: "8760h" # 1年
-    renew_before: "720h"   # 30天
 
 # ============================================================================
 # 备份配置
@@ -375,8 +445,6 @@ backup:
     storage_path: "/backup/etcd"
     storage_size: "10Gi"
     compression: true
-    encryption: false
-    encryption_key: ""
 
   # 应用备份配置
   applications:

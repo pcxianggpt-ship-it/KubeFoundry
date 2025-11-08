@@ -238,64 +238,202 @@ repository/{architecture.repository_dir}/02.install_package/binaries/
 ## 步骤 7: 安装镜像仓库（Registry / Harbor）
 
 ### 功能描述
-部署私有镜像仓库服务。
+部署独立私有镜像仓库服务。**重要：镜像仓库必须独立部署在专用服务器上，不能部署在K8S集群内，否则无法解决初始化时的镜像拉取循环依赖问题。**
 
 ### 关联配置参数
 
-#### 仓库类型选择
+#### 镜像仓库主机配置
 ```yaml
 registry:
   type: "registry"              # 仓库类型: registry 或 harbor
-  common:
-    namespace: "kubefoundry"    # 命名空间
-    storage_class: "nfs-client" # 存储类
-    service_type: "NodePort"    # 服务类型
-    node_port: 31500           # NodePort 端口
+
+  # 镜像仓库部署主机配置 (独立于K8S集群，集群初始化前必须就绪)
+  host:
+    ip: "192.168.1.9"                    # 镜像仓库专用服务器IP
+    hostname: "registry.k8s.local"       # 主机名
+    ssh_port: 22                         # SSH端口
+    ssh_user: "root"                     # SSH用户
+    ssh_key: "/root/.ssh/kubefoundry_rsa" # SSH密钥
+
+  # 网络配置
+  network:
+    port: 5000                          # Registry 服务端口
+    ui_port: 5080                       # Registry UI 端口
+    expose_external: true               # 是否对外暴露服务
+    external_ip: "192.168.1.9"          # 外部访问IP
+
+  # 数据存储配置 (本地存储，不使用共享存储)
+  storage:
+    type: "local"                       # 本地存储类型
+    path: "/data/registry"              # 本地存储路径
+    size: "500Gi"                       # 存储容量
+    disk:
+      device: "/dev/sdb"                # 专用磁盘设备 (可选)
+      mount_point: "/data/registry"     # 挂载点
+      filesystem: "ext4"                # 文件系统类型
+      mount_options: "defaults,noatime" # 挂载选项
 ```
 
-#### Docker Registry 配置
+#### Docker Registry 配置 (独立部署)
 ```yaml
 registry:
   registry_config:
-    image: "registry:2.8.3"     # 镜像版本
-    replicas: 1
-    resources:
-      requests:
-        cpu: "100m"
-        memory: "256Mi"
-    storage:
-      size: "100Gi"
-      path: "/var/lib/registry"
+    image: "registry:2.7.1"              # Registry 镜像版本
+
+    # 服务配置
+    service:
+      name: "docker-registry"
+      container_name: "registry-init"   # 容器名称
+
+    # 认证配置
     auth:
-      enabled: false            # 是否启用认证
-    ui:
-      enabled: true             # 是否启用 UI
-      image: "joxit/docker-registry-ui:2.5.0"
+      enabled: false                    # 是否启用认证
+      htpasswd_file: "/data/registry_data/auth/htpasswd"
+      # 脚本参数：
+      # - 参数3: 镜像仓库用户名
+      # - 参数4: 镜像仓库密码
+      # - 参数5: 是否加密 (yes/no)
+
+    # 数据配置
+    data:
+      base_path: "/data/registry_data"       # 数据基础路径
+      registry_path: "/data/registry_data/registry"
+      auth_path: "/data/registry_data/auth"
+
+    # 镜像加载配置
+    images:
+      source_path: "/data/k8s_install/04.registry/"
+      packages:
+        - "registry-2.7.1-{arch}.tar"     # Registry镜像包
+        - "registry-ui-{arch}.tar"        # Registry UI镜像包
+      data_archive: "registry-{arch}.tgz" # 镜像数据归档文件
+
+    # 脚本执行配置
+    script:
+      path: "/data/k8s_install/03.registry_install.sh"
+      parameters:
+        - "$1"                            # 本机IP地址
+        - "$2"                            # 架构型号 (arm/amd)
+        - "$3"                            # 镜像仓库用户名 (可选)
+        - "$4"                            # 镜像仓库密码 (可选)
+        - "$5"                            # 是否加密 (yes/no)
 ```
 
-#### Harbor 配置
+#### Registry UI 配置
+```yaml
+registry:
+  registry_ui:
+    enabled: true
+    image: "joxit/docker-registry-ui:2.2.2"  # UI 镜像版本
+
+    service:
+      name: "registry-ui"
+      container_name: "registry-ui-init"    # UI 容器名称
+
+    ports:
+      - "5080:80"                           # UI 端口映射
+
+    environment:
+      REGISTRY_TITLE: "Registry"            # Registry 标题
+      REGISTRY_URL: "http://192.168.1.9:5000"  # Registry URL
+      DELETE_IMAGES: true                   # 允许删除镜像
+```
+
+#### Harbor 配置 (可选)
 ```yaml
 registry:
   harbor_config:
-    version: "v2.9.0"          # Harbor 版本
-    replicas: 1
-    resources:
-      requests:
-        cpu: "500m"
-        memory: "1Gi"
+    enabled: false                    # 是否启用 Harbor
+    version: "v2.9.0"
+
+    # 存储配置 (本地存储)
     storage:
-      size: "500Gi"
+      type: "local"
       path: "/data/harbor"
+      size: "1Ti"
+
     auth:
-      admin_password: "Harbor12345"  # 管理员密码
+      admin_password: "Harbor12345"
       mode: "db_auth"
 ```
 
+### 执行内容
+
+#### 1. 镜像仓库部署流程
+```bash
+# 脚本执行方式
+./03.registry_install.sh <IP> <ARCH> [USERNAME] [PASSWORD] [ENCRYPT]
+
+# 示例：
+./03.registry_install.sh 192.168.1.9 amd64 "" "" no
+```
+
+#### 2. 部署步骤
+1. **加载镜像**：
+   - `docker load -i registry-2.7.1-{arch}.tar`
+   - `docker load -i registry-ui-{arch}.tar`
+
+2. **解压镜像数据**：
+   - `tar -xzf registry-{arch}.tgz -C /data`
+   - `mv registry registry_data`
+
+3. **启动 Registry UI**：
+   ```bash
+   docker run -d --restart=always --name registry-ui-init -p 5080:80 \
+     -e REGISTRY_TITLE=Registry \
+     -e REGISTRY_URL=http://$1:5000 \
+     -e DELETE_IMAGES=true \
+     joxit/docker-registry-ui:2.2.2
+   ```
+
+4. **启动 Registry 服务**：
+   - **非认证模式**：
+     ```bash
+     docker run -d --restart=always --name registry-init -p 5000:5000 \
+       -v /data/registry_data/registry:/var/lib/registry \
+       -v /data/registry_data/config.yml:/etc/docker/registry/config.yml \
+       registry:2.7.1
+     ```
+
+   - **认证模式**：
+     ```bash
+     htpasswd -bBc /data/registry_data/auth/htpasswd $V_USER $V_PASSWORD
+     docker run -d --name registry-init \
+       -p 5000:5000 \
+       -v /data/registry_data/registry:/var/lib/registry \
+       -v /data/registry_data/config.yml:/etc/docker/registry/config.yml \
+       -v /data/registry_data/auth:/etc/docker/registry/auth \
+       -e "REGISTRY_AUTH=htpasswd" \
+       -e "REGISTRY_AUTH_HTPASSWD_REALM=Registry Realm" \
+       -e "REGISTRY_AUTH_HTPASSWD_PATH=/etc/docker/registry/auth/htpasswd" \
+       registry:2.7.1
+     ```
+
 ### 安装来源
 ```
-repository/{architecture.repository_dir}/04.registry/  # Registry 配置
-repository/{architecture.repository_dir}/05.harbor/    # Harbor 安装包
+/data/k8s_install/
+├── 03.registry_install.sh        # 镜像仓库安装脚本
+└── 04.registry/                  # Registry 相关文件
+    ├── registry-2.7.1-{arch}.tar # Registry 镜像包
+    ├── registry-ui-{arch}.tar    # Registry UI 镜像包
+    ├── registry-{arch}.tgz       # 镜像数据归档
+    └── config.yml                # Registry 配置文件
 ```
+
+### 验证方式
+1. **Registry 服务验证**：
+   - 访问：`http://192.168.1.9:5000/v2/_catalog`
+   - 检查镜像列表
+
+2. **Registry UI 验证**：
+   - 访问：`http://192.168.1.9:5080`
+   - 浏览镜像仓库
+
+3. **Docker 推拉测试**：
+   ```bash
+   docker pull 192.168.1.9:5000/test-image
+   docker push 192.168.1.9:5000/test-image
+   ```
 
 ---
 
