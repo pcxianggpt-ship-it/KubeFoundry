@@ -68,12 +68,18 @@
    - 离线安装对应 rpm 包；
    - 分发配置文件（镜像加速、私服、cgroup）；
    - 启动并验证运行状态。
+   - **配置双栈网络支持**：
+     - 启用 IPv6 转发和桥接功能；
+     - 配置容器运行时支持双栈网络；
+     - 验证 IPv4/IPv6 网络连通性。
 7. **安装镜像仓库（Registry / Harbor）**
    - 部署离线私有仓库；
    - 导入基础镜像；
    - 验证可拉取与访问。
 8. **初始化 Kubernetes 集群（kubeadm init）**
-   - 使用配置文件初始化；
+   - 使用配置文件初始化，启用双栈网络支持；
+   - 配置 Pod 网络 CIDR（IPv4/IPv6）；
+   - 配置服务网络 CIDR（IPv4/IPv6）；
    - 保存 join token；
    - 验证控制平面 Pod 状态。
 9. **配置 kube-controller-manager 参数**
@@ -91,9 +97,10 @@
     - 执行 join；
     - 验证节点 `Ready` 状态。
 12. **安装 CNI 插件（Flannel）**
-    - 使用用户提供的 YAML；
-    - 替换变量；
-    - 验证网络连通性与 Pod 状态。
+    - 使用支持双栈的 CNI 插件版本；
+    - 配置 IPv4/IPv6 网络参数；
+    - 替换变量，启用双栈支持；
+    - 验证双栈网络连通性与 Pod 状态。
 13. **安装 NFS Client Provisioner**
     - 替换 NFS 配置；
     - 使用helm安装
@@ -110,9 +117,58 @@
 
 ------
 
-## 四、系统特性与要求
+## 四、双栈网络配置要求
 
-### 4.1 验证机制
+### 4.1 IPv4/IPv6 双栈支持
+
+系统必须支持 Kubernetes 集群的 IPv4/IPv6 双栈网络配置，包括：
+
+- **节点双栈配置**：每个节点都需要配置 IPv4 和 IPv6 地址
+- **Pod 网络**：支持双栈 Pod IP 分配
+- **服务网络**：支持双栈服务 IP 分配
+- **DNS 解析**：支持双栈 DNS 解析
+- **CNI 插件**：使用支持双栈的 CNI 插件
+
+### 4.2 双栈网络参数
+
+- **IPv4 Pod CIDR**: `192.168.0.0/16`
+- **IPv6 Pod CIDR**: `fd00:100:64::/64`
+- **IPv4 Service CIDR**: `192.96.0.0/12`
+- **IPv6 Service CIDR**: `fd00:100:96::/112`
+- **IPv4 Cluster DNS**: `10.96.0.10`
+- **IPv6 Cluster DNS**: `fd00:100:96::10`
+
+### 4.3 节点地址配置
+
+每个节点需要配置：
+
+```yaml
+hosts:
+  control_plane:
+    - name: "k8s-master-01"
+      ip: "192.168.1.10"        # IPv4 地址
+      ipv6: "fd00:100:1::10"    # IPv6 地址
+  workers:
+    - name: "k8s-worker-01"
+      ip: "192.168.1.20"        # IPv4 地址
+      ipv6: "fd00:100:1::20"    # IPv6 地址
+```
+
+### 4.4 双栈网络验证
+
+部署完成后需要验证：
+
+- 节点具有 IPv4 和 IPv6 地址
+- Pod 可以获取双栈 IP 地址
+- 服务可以创建双栈 Endpoints
+- 跨节点的 IPv4/IPv6 网络连通性
+- DNS 解析在双栈环境下正常工作
+
+------
+
+## 五、系统特性与要求
+
+### 5.1 验证机制
 
 - 每一步执行后立即验证结果；
 - 验证失败则：
@@ -120,7 +176,7 @@
   - 记录日志；
   - 输出错误提示。
 
-### 4.2 幂等性要求
+### 5.2 幂等性要求
 
 - 每个步骤仅在必要时执行；
 
@@ -132,14 +188,14 @@
 
 - 重复执行时自动跳过已完成步骤。
 
-### 4.3 离线分发机制
+### 5.3 离线分发机制
 
 - 所有介质上传至控制节点；
 - 使用 rsync/scp 分发；
 - 校验 sha256sum；
 - 校验失败自动重传。
 
-### 4.4 配置参数管理
+### 5.4 配置参数管理
 
 - 使用统一配置文件（YAML 格式），定义所有环境参数：
 
@@ -157,11 +213,14 @@ global:
 hosts:
   control_plane:
     - ip: 192.168.1.11
+      ipv6: fd00:100:1::11
       hostname: master1
     - ip: 192.168.1.12
+      ipv6: fd00:100:1::12
       hostname: master2
   workers:
     - ip: 192.168.1.21
+      ipv6: fd00:100:1::21
       hostname: node1
 
 packages:
@@ -184,6 +243,35 @@ registry:
 nfs:
   server: 10.0.0.5
   path: /export/k8s
+
+# 双栈网络配置
+networking:
+  # 双栈启用状态
+  dual_stack:
+    enabled: true
+    ipv4_primary: true  # IPv4 为主栈模式
+
+    # IPv4 网络配置
+    ipv4:
+      pod_cidr: "192.168.0.0/16"
+      service_cidr: "192.96.0.0/12"
+      cluster_dns: "10.96.0.10"
+
+    # IPv6 网络配置
+    ipv6:
+      pod_cidr: "fd00:100:64::/64"
+      service_cidr: "fd00:100:96::/112"
+      cluster_dns: "fd00:100:96::10"
+
+    # CNI 双栈配置
+    cni_config:
+      enable_ipv4: true
+      enable_ipv6: true
+
+    # 服务双栈配置
+    service_config:
+      ip_families: ["IPv4", "IPv6"]
+      ip_family_policy: "PreferDualStack"
 
 addons: [traefik, prometheus, redis]
 

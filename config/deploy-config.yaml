@@ -63,6 +63,7 @@ hosts:
   control_plane:
     - name: "k8s-master-01"
       ip: "192.168.1.10"
+      ipv6: "fd00:100:1::10"
       labels:
         - "node-role.kubernetes.io/control-plane"
         - "node-role.kubernetes.io/master"
@@ -71,6 +72,7 @@ hosts:
 
     - name: "k8s-master-02"
       ip: "192.168.1.11"
+      ipv6: "fd00:100:1::11"
       labels:
         - "node-role.kubernetes.io/control-plane"
         - "node-role.kubernetes.io/master"
@@ -79,6 +81,7 @@ hosts:
 
     - name: "k8s-master-03"
       ip: "192.168.1.12"
+      ipv6: "fd00:100:1::12"
       labels:
         - "node-role.kubernetes.io/control-plane"
         - "node-role.kubernetes.io/master"
@@ -89,16 +92,19 @@ hosts:
   workers:
     - name: "k8s-worker-01"
       ip: "192.168.1.20"
+      ipv6: "fd00:100:1::20"
       labels:
         - "node-role.kubernetes.io/worker"
 
     - name: "k8s-worker-02"
       ip: "192.168.1.21"
+      ipv6: "fd00:100:1::21"
       labels:
         - "node-role.kubernetes.io/worker"
 
     - name: "k8s-worker-03"
       ip: "192.168.1.22"
+      ipv6: "fd00:100:1::22"
       labels:
         - "node-role.kubernetes.io/worker"
 
@@ -381,28 +387,75 @@ storage:
 # 网络组件配置
 # ============================================================================
 networking:
+  # 双栈网络配置
+  dual_stack:
+    enabled: true
+    ipv4_cidr: "192.168.0.0/16"
+    ipv6_cidr: "fd00:100:64::/64"
+
+    # IPv4 配置
+    ipv4:
+      enabled: true
+      pod_cidr: "192.168.0.0/16"
+      service_cidr: "192.96.0.0/12"
+      cluster_dns: "10.96.0.10"
+
+    # IPv6 配置
+    ipv6:
+      enabled: true
+      pod_cidr: "fd00:100:64::/64"
+      service_cidr: "fd00:100:96::/112"
+      cluster_dns: "fd00:100:96::10"
+
+    # 集群双栈配置
+    cluster:
+      ip_family: "IPv4Primary"  # IPv4Primary, IPv6Primary
+      service_ip_dual_stack: true
+
   # CNI 插件选择: flannel, calico, weave
   cni: "flannel"
 
-  # Flannel 配置
+  # Flannel 配置 (支持双栈)
   flannel:
-    version: "v0.22.0"
-    backend: "vxlan"  # vxlan, host-gw, udp
+    version: "v0.24.2"  # 升级到支持双栈的版本
+    backend: "vxlan"    # vxlan, host-gw, udp
     port: 8472
     vni: 1
     direct_routing: false
 
-  # Calico 配置 (可选)
+    # 双栈网络配置
+    dual_stack:
+      enabled: true
+      ipv4_network: "192.168.0.0/16"
+      ipv6_network: "fd00:100:64::/64"
+      enable_ipv4: true
+      enable_ipv6: true
+
+  # Calico 配置 (可选，支持双栈)
   calico:
     version: "v3.26.0"
-    network: "192.168.0.0/16"
-    mode: "IP-in-IP"  # IP-in-IP, VXLAN, BGP
+    ipv4_network: "192.168.0.0/16"
+    ipv6_network: "fd00:100:64::/64"
+    mode: "VXLAN"  # VXLAN, IPIP, BGP
     mtu: 1440
+
+    # 双栈配置
+    dual_stack:
+      enabled: true
+      cni_network_config:
+        enable_ipv4: true
+        enable_ipv6: true
 
   # 负载均衡器配置
   ingress:
     type: "traefik"  # traefik, nginx
     class: "traefik"
+
+    # 双栈服务配置
+    dual_stack:
+      enabled: true
+      ip_families: ["IPv4", "IPv6"]
+      ip_family_policy: "PreferDualStack"
 
 # ============================================================================
 # 扩展组件配置
