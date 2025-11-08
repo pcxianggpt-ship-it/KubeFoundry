@@ -251,9 +251,6 @@ registry:
   host:
     ip: "192.168.1.9"                    # 镜像仓库专用服务器IP
     hostname: "registry.k8s.local"       # 主机名
-    ssh_port: 22                         # SSH端口
-    ssh_user: "root"                     # SSH用户
-    ssh_key: "/root/.ssh/kubefoundry_rsa" # SSH密钥
 
   # 网络配置
   network:
@@ -623,66 +620,51 @@ repository/{architecture.repository_dir}/03.setup_file/manifests/storage/nfs-cli
 ## 步骤 14: 安装定制化组件
 
 ### 功能描述
-部署扩展组件：Traefik、Prometheus、Redis 等。
+部署扩展组件：KubeMate、NFS Client、Prometheus、Traefik (必装) 和 Redis、Loki (选装)。
 
 ### 关联配置参数
 
-#### Traefik 配置
+#### 扩展组件配置 (简化版)
 ```yaml
 addons:
-  traefik:
-    enabled: true               # 是否启用
-    version: "v2.10.4"         # 版本
-    replicas: 2
-    service_type: "NodePort"
-    node_port_http: 30080      # HTTP 端口
-    node_port_https: 30443     # HTTPS 端口
-    dashboard:
-      enabled: true
-      port: 9000
-    resources:
-      requests:
-        cpu: "100m"
-        memory: "256Mi"
-```
+  # KubeMate Kubernetes 管理工具 (必装)
+  kubemate:
+    enabled: true
 
-#### Prometheus 配置
-```yaml
-addons:
+  # NFS Client 存储提供器 (必装)
+  nfs_client:
+    enabled: true
+
+  # Prometheus 监控系统 (必装)
   prometheus:
     enabled: true
-    version: "v2.47.0"
-    storage_size: "20Gi"
-    retention: "30d"
-    alerting:
-      enabled: true
-      alertmanager_version: "v0.26.0"
-    grafana:
-      enabled: true
-      version: "10.1.0"
-      admin_password: "admin123"
-      storage_size: "5Gi"
+
+  # Traefik Ingress Controller (必装)
+  traefik:
+    enabled: true
+
+  # Redis 缓存服务 (选装)
+  redis:
+    enabled: false
+
+  # Loki 日志聚合系统 (选装)
+  loki:
+    enabled: false
 ```
 
-#### Redis 配置
-```yaml
-addons:
-  redis:
-    enabled: true
-    version: "7.2.3-alpine"
-    replicas: 1
-    password: "Redis123"         # Redis 密码
-    storage:
-      size: "8Gi"
-      class: "nfs-client"
-```
+### 组件分类
+- **必装组件**: KubeMate, NFS Client, Prometheus, Traefik
+- **选装组件**: Redis, Loki
 
 ### 安装来源
 ```
 repository/{architecture.repository_dir}/03.setup_file/manifests/addons/
-├── traefik/
-├── prometheus/
-└── redis/
+├── kubemate/           # KubeMate 管理工具
+├── nfs-client/         # NFS Client 存储提供器
+├── prometheus/         # Prometheus 监控系统
+├── traefik/            # Traefik Ingress Controller
+├── redis/              # Redis 缓存服务
+└── loki/               # Loki 日志聚合系统
 ```
 
 ### 执行内容

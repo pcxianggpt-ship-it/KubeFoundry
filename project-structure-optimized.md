@@ -235,7 +235,6 @@ kubefoundry/
 │   └── design/                        # 设计文档
 │       ├── architecture.md
 │       ├── multi-arch-design.md       # 多架构设计文档
-│       ├── security.md
 │       └── performance.md
 │
 ├── deployment/                        # 部署相关目录
