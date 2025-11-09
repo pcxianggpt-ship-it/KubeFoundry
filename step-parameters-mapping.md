@@ -88,7 +88,7 @@ architecture:
 #### 介质包路径
 ```yaml
 global:
-  base_path: "/opt/kubefoundry"  # 基础路径
+  base_path: "/data/k8s_install"  # 基础路径
   repository_path: "repository"   # 介质包仓库路径
 ```
 
@@ -719,7 +719,7 @@ repository/{architecture.repository_dir}/06.crontab/
 ### 全局基础配置
 ```yaml
 global:
-  base_path: "/opt/kubefoundry"           # 影响所有路径
+  base_path: "/data/k8s_install"           # 影响所有路径
   repository_path: "repository"           # 介质包路径
   log_path: "/var/log/kubefoundry"        # 日志路径
   temp_path: "/tmp/kubefoundry"           # 临时文件路径
