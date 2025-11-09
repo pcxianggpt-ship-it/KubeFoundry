@@ -1,0 +1,398 @@
+# KubeFoundry 部署配置文件示例
+# 此文件包含所有可配置项的详细说明和默认值
+
+# 全局配置
+global:
+  # 系统架构，默认为 x86_64，可选值：x86_64, arm64
+  architecture: x86_64
+
+  # Kubernetes 集群名称
+  cluster_name: "kubefoundry-cluster"
+
+  # 安装目录（默认值：/data）
+  k8s_install_dir: "/data"
+
+  # 介质源目录（默认值：/data/k8s_install）
+  media_source: "/data/k8s_install"
+
+  # 时区设置
+  timezone: "Asia/Shanghai"
+
+  # SSH 配置
+  ssh:
+    # SSH 端口
+    port: 22
+    # SSH 用户
+    user: root
+    # SSH 超时（秒）
+    timeout: 300
+    # 连接重试次数
+    retry_count: 3
+
+# 主机配置
+hosts:
+  # 控制平面节点
+  control_plane:
+    - name: "k8s-master-01"
+      ip: "192.168.1.10"
+      ipv6: "fd00:100:1::10"
+      roles: ["control-plane", "etcd"]
+      # 节点标签
+      labels:
+        node-role.kubernetes.io/control-plane: ""
+        node-role.kubernetes.io/etcd: ""
+      # 节点污点
+      taints:
+        - key: "node-role.kubernetes.io/control-plane"
+          value: ""
+          effect: "NoSchedule"
+    # 多个控制平面节点（高可用）
+    # - name: "k8s-master-02"
+    #   ip: "192.168.1.11"
+    #   ipv6: "fd00:100:1::11"
+    #   roles: ["control-plane", "etcd"]
+    # - name: "k8s-master-03"
+    #   ip: "192.168.1.12"
+    #   ipv6: "fd00:100:1::12"
+    #   roles: ["control-plane", "etcd"]
+
+  # 工作节点
+  workers:
+    - name: "k8s-worker-01"
+      ip: "192.168.1.20"
+      ipv6: "fd00:100:1::20"
+      roles: ["worker"]
+      labels:
+        node-type: "worker"
+    - name: "k8s-worker-02"
+      ip: "192.168.1.21"
+      ipv6: "fd00:100:1::21"
+      roles: ["worker"]
+      labels:
+        node-type: "worker"
+
+# 包版本配置
+packages:
+  # 容器运行时，可选值：auto, docker, containerd
+  # auto: 根据 Kubernetes 版本自动选择 (1.23->docker, 1.30->containerd)
+  container_runtime: "auto"
+
+  # Kubernetes 版本
+  kube_version: "1.30.14"
+
+  # 具体组件版本
+  versions:
+    kubeadm: "1.30.14"
+    kubelet: "1.30.14"
+    kubectl: "1.30.14"
+    cri_tools: "1.29.0"
+
+    # Docker 版本（如果使用 Docker）
+    docker_ce: "24.0.7"
+    docker_ce_cli: "24.0.7"
+    containerd_io: "1.7.18"
+
+    # CNI 版本
+    cni_plugins: "1.4.0"
+
+# 镜像仓库配置
+registry:
+  # 仓库类型：docker-registry, harbor
+  type: "docker-registry"
+
+  # 仓库地址
+  host: "registry.kubefoundry.local"
+  port: 5000
+
+  # 仓库名称（仅用于 Harbor）
+  # name: "kubefoundry-registry"
+
+  # Harbor 配置
+  harbor:
+    # Harbor 版本
+    version: "v2.10.0"
+    # Harbor 数据目录
+    data_dir: "/data/harbor"
+    # Harbor 管理员密码
+    admin_password: "Harbor12345"
+    # 数据库密码
+    db_password: "HarborDB123"
+
+  # 证书配置
+  certificates:
+    # 是否启用 TLS
+    enabled: true
+    # 证书目录
+    cert_dir: "/etc/ssl/certs/registry"
+    # 自签名证书
+    self_signed:
+      enabled: true
+      # 证书有效期（天）
+      validity_days: 3650
+
+# 存储配置
+storage:
+  # NFS 存储配置
+  nfs:
+    # NFS 服务器地址
+    server: "192.168.1.100"
+    # NFS 导出路径
+    export_path: "/data/nfs_root"
+    # 本地挂载路径
+    mount_path: "/data/nfs"
+    # 挂载选项
+    options: "nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2"
+
+# 网络配置
+networking:
+  # 双栈网络配置
+  dual_stack:
+    # 是否启用双栈
+    enabled: true
+    # IPv4 Pod CIDR
+    ipv4_pod_cidr: "192.168.0.0/16"
+    # IPv6 Pod CIDR
+    ipv6_pod_cidr: "fd00:100:64::/64"
+    # IPv4 Service CIDR
+    ipv4_service_cidr: "192.96.0.0/12"
+    # IPv6 Service CIDR
+    ipv6_service_cidr: "fd00:100:96::/112"
+
+  # CNI 配置
+  cni:
+    # CNI 类型：flannel
+    type: "flannel"
+    # Flannel 版本
+    flannel_version: "v0.24.2"
+    # 后端类型：vxlan, host-gw
+    backend: "vxlan"
+    # VNI（用于 VXLAN）
+    vni: 4096
+    # 端口范围
+    port_range_min: 32768
+    port_range_max: 65535
+
+  # 网络策略
+  network_policy:
+    # 是否启用网络策略
+    enabled: false
+    # 默认策略类型：allow, deny
+    default_policy: "allow"
+
+# 控制器配置
+controller:
+  # kube-controller-manager 参数配置
+  kube_controller_manager:
+    # 集群签名证书有效期
+    cluster_signing_duration: "867240h0m0s"
+    # Pod 安全策略
+    enable_pod_security_policy: false
+    # 服务账号密钥签名有效期
+    service_account_key Signing_duration: "8760h0m0s"
+    # Node 租约续期间隔
+    node_lease_renew_interval_seconds: 10
+
+  # kube-scheduler 配置
+  kube_scheduler:
+    # 调度器算法
+    algorithm_provider: "DefaultProvider"
+    # 是否启用调度器性能分析
+    enable_profiling: false
+    # 调度器绑定超时
+    bind_timeout_seconds: 600
+
+# 扩展组件配置
+addons:
+  # Ingress 控制器
+  ingress:
+    # 类型：traefik, nginx
+    type: "traefik"
+    # Traefik 版本
+    traefik_version: "v3.1.0"
+    # 是否启用
+    enabled: true
+    # 配置选项
+    traefik:
+      # 端口配置
+      ports:
+        web: 80
+        websecure: 443
+      # Dashboard 端口
+      dashboard_port: 8443
+
+  # 监控组件
+  monitoring:
+    # 是否启用监控
+    enabled: true
+    # Prometheus 版本
+    prometheus_version: "v2.54.0"
+    # Grafana 版本
+    grafana_version: "v11.0.0"
+    # 监控命名空间
+    namespace: "monitoring"
+    # Prometheus 配置
+    prometheus:
+      # 数据保留时间
+      retention: "30d"
+      # 存储大小
+      storage_size: "20Gi"
+      # 端口
+      port: 9090
+    # Grafana 配置
+    grafana:
+      # 端口
+      port: 3000
+      # 管理员密码
+      admin_password: "admin123"
+
+  # 日志组件
+  logging:
+    # 是否启用日志收集
+    enabled: false
+    # Elasticsearch 版本
+    elasticsearch_version: "8.11.0"
+    # Kibana 版本
+    kibana_version: "8.11.0"
+    # Fluent Bit 版本
+    fluent_bit_version: "3.1.0"
+
+# 备份配置
+backup:
+  # etcd 备份配置
+  etcd:
+    # 是否启用 etcd 备份
+    enabled: true
+    # 备份存储路径（默认值：/data/nfs_root/etcdbackup）
+    backup_path: "/data/nfs_root/etcdbackup"
+    # 备份保留天数
+    retention_days: 30
+    # 备份间隔（小时）
+    interval_hours: 6
+    # 压缩备份
+    compress: true
+    # 验证备份
+    verify: true
+
+# 安全配置
+security:
+  # RBAC
+  rbac:
+    # 是否启用 RBAC
+    enabled: true
+    # 默认角色绑定
+    default_bindings: true
+
+  # Pod 安全策略
+  pod_security_policy:
+    # 是否启用 PSP
+    enabled: false
+    # 默认策略
+    default_policy: "restricted"
+
+  # 加密配置
+  encryption:
+    # 是否启用静态加密
+    enabled: false
+    # 加密密钥
+    key_file: "/etc/kubernetes/pki/encryption-key"
+
+# 性能调优
+performance:
+  # Kubelet 配置
+  kubelet:
+    # 最大 Pod 数量
+    max_pods: 110
+    # Pod CIDR
+    pod_cidr: "192.168.0.0/16"
+    # 镜像 GC 阈值
+    image_gc_high_threshold: 85
+    image_gc_low_threshold: 80
+    # CPU 管理策略
+    cpu_manager_policy: "none"
+    # 内存管理策略
+    memory_manager_policy: "none"
+
+  # 系统参数
+  system:
+    # 文件描述符限制
+    file_descriptor_limit: 1000000
+    # 最大进程数
+    max_processes: 32768
+    # 网络参数
+    network:
+      # TCP 连接跟踪表大小
+      nf_conntrack_max: 1048576
+      # 最大监听队列
+      somaxconn: 65535
+
+# 开发和调试选项
+development:
+  # 是否启用调试模式
+  debug: false
+  # 详细输出
+  verbose: false
+  # 是否跳过某些步骤（仅用于调试）
+  skip_steps: []
+  # 测试模式
+  test_mode: false
+
+# 高级配置
+advanced:
+  # 自定义 DNS 配置
+  dns:
+    nameservers:
+      - "8.8.8.8"
+      - "8.8.4.4"
+    search_domains:
+      - "cluster.local"
+      - "kubefoundry.local"
+
+  # 代理配置
+  proxy:
+    # HTTP 代理
+    http_proxy: ""
+    # HTTPS 代理
+    https_proxy: ""
+    # 不使用代理的地址
+    no_proxy: "127.0.0.1,localhost,10.0.0.0/8,192.168.0.0/16"
+
+  # 自定义标签和注解
+  custom_labels:
+    environment: "production"
+    project: "kubefoundry"
+    version: "1.0.0"
+
+  custom_annotations:
+    description: "KubeFoundry managed cluster"
+    contact: "admin@kubefoundry.local"
+
+# 集群特定配置
+cluster:
+  # 集群域
+  domain: "cluster.local"
+  # API 服务器地址
+  api_server:
+    # 通告地址
+    advertise_address: "192.168.1.10"
+    # 绑定端口
+    bind_port: 6443
+    # 证书 SAN
+    cert_sans:
+      - "192.168.1.10"
+      - "kubernetes.default"
+      - "kubernetes.default.svc.cluster.local"
+
+  # etcd 配置
+  etcd:
+    # 数据目录
+    data_dir: "/var/lib/etcd"
+    # 监听地址
+    listen_peer_urls: "https://0.0.0.0:2380"
+    # 客户端地址
+    listen_client_urls: "https://0.0.0.0:2379"
+    # 初始集群
+    initial_cluster: "k8s-master-01=https://192.168.1.10:2380"
+    # 选举超时
+    election_timeout: 5000
+    # 心跳间隔
+    heartbeat_interval: 250
