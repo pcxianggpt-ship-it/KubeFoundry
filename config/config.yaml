@@ -1,0 +1,350 @@
+# K8S自动部署工具配置文件
+# K8S Auto Deployment Tool Configuration File
+
+# =============================================================================
+# 1. 服务器规划配置 / Server Planning Configuration
+# =============================================================================
+server:
+  # 服务器节点列表 / Server nodes list
+  nodes:
+    # 控制节点 / Control plane nodes
+    control_plane:
+      - hostname: k8sc1
+        ip: 10.3.66.18
+        ipv6: fd00:42::18
+        role: "控制平面（主）、repo源服务"
+      - hostname: k8sc2
+        ip: 10.3.66.19
+        ipv6: fd00:42::19
+        role: "控制平面（从）"
+      - hostname: k8sc3
+        ip: 10.3.66.20
+        ipv6: fd00:42::20
+        role: "控制平面（从）"
+
+    # 工作节点 / Worker nodes
+    workers:
+      - hostname: k8sw1
+        ip: 10.3.66.21
+        ipv6: fd00:42::21
+        role: "工作节点、nfs服务器"
+      - hostname: k8sw2
+        ip: 10.3.66.22
+        ipv6: fd00:42::22
+        role: "工作节点"
+      - hostname: k8sw3
+        ip: 10.3.66.23
+        ipv6: fd00:42::23
+        role: "工作节点"
+      - hostname: k8sw4
+        ip: 10.3.66.24
+        ipv6: fd00:42::24
+        role: "工作节点"
+      - hostname: k8sw5
+        ip: 10.3.66.25
+        ipv6: fd00:42::25
+        role: "工作节点"
+      - hostname: k8sw6
+        ip: 10.3.66.26
+        ipv6: fd00:42::26
+        role: "工作节点"
+
+    # 镜像仓库 / Image registry
+    registry:
+      hostname: registry
+      ip: 10.3.66.20
+      ipv6: fd00:42::20
+      role: "镜像仓库"
+
+  # 网卡配置 / Network interface configuration
+  network_interface: ens192
+
+# =============================================================================
+# 2. K8S版本和架构配置 / K8S Version and Architecture Configuration
+# =============================================================================
+k8s:
+  version: "1.28.0"  # K8S版本号
+  arch_type: "amd64"  # 架构类型: amd64, arm64
+
+# =============================================================================
+# 3. YUM源配置 / YUM Source Configuration
+# =============================================================================
+yum:
+  # YUM源文件名 / YUM source filename
+  repo_source_file: ""
+  # 本地YUM源路径 / Local YUM source path
+  local_repo_path: "/var/www/html/repo"
+  # HTTP YUM源URL / HTTP YUM source URL
+  http_repo_url: "http://k8sc1/repo"
+
+# =============================================================================
+# 4. 网络配置 / Network Configuration
+# =============================================================================
+network:
+  # DNS配置 / DNS configuration
+  dns:
+    gateway_dns: ""  # 网关地址作为DNS / Gateway address as DNS
+    public_dns: "8.8.8.8"  # 公网DNS / Public DNS
+
+  # IPv6配置 / IPv6 configuration
+  ipv6:
+    enabled: true  # 是否启用IPv6 / Enable IPv6 or not
+    gateway: "fd00::1"  # IPv6网关 / IPv6 gateway
+
+  # K8S集群网络配置 / K8S cluster network configuration
+  cluster:
+    pod_subnet: "10.244.0.0/16"  # Pod网络网段 / Pod network subnet
+    service_subnet: "10.96.0.0/12"  # Service网络网段 / Service network subnet
+    control_plane_endpoint: "10.3.66.18:6443"  # 控制平面地址 / Control plane endpoint
+
+# =============================================================================
+# 5. Containerd配置 / Containerd Configuration
+# =============================================================================
+containerd:
+  version: "1.7.18"
+  runc_version: "v1.3.3"
+  cni_plugins_version: "v1.8.0"
+  buildkit_version: "v0.25.2"
+  nerdctl_version: "2.2.0"
+  config_file: "config-1.7.18.toml"
+
+# =============================================================================
+# 6. 镜像仓库配置 / Image Registry Configuration
+# =============================================================================
+registry:
+  # 镜像仓库地址 / Registry address
+  server: "registry:5000"
+  # 镜像仓库IP / Registry IP
+  server_ip: "10.3.66.20:5000"
+  # 是否使用HTTP / Use HTTP or not
+  insecure: true
+  # 镜像仓库认证信息（可选）/ Registry authentication (optional)
+  auth:
+    enabled: false
+    username: ""
+    password: ""
+
+# =============================================================================
+# 7. NFS存储配置 / NFS Storage Configuration
+# =============================================================================
+nfs:
+  # NFS服务器配置 / NFS server configuration
+  server: "10.3.5.221"
+  path: "/kvmdata/nfsdata/xdnfs"
+  # 本地挂载点 / Local mount point
+  mount_point: "/data/nas_root"
+  # 是否开机自动挂载 / Auto mount on boot
+  auto_mount: true
+  # NFS Provisioner配置 / NFS Provisioner configuration
+  provisioner:
+    enabled: true
+    storage_class_name: "managed-nfs-storage"
+
+# =============================================================================
+# 8. 数据路径配置 / Data Path Configuration
+# =============================================================================
+paths:
+  # K8S相关路径 / K8S related paths
+  k8s_install: "/data/k8s_install"
+  kubelet_root: "/data/kubelet_root"
+  tmp_k8s: "/tmp/k8s"
+
+  # 应用数据路径 / Application data paths
+  nas_root: "/data/nas_root"
+  loki_root: "/data/loki_root"
+  redis_root: "/data/redis_root"
+
+  # 备份路径 / Backup paths
+  backup_root: "/data/backup"
+  crontab_root: "/data/crontab_task"
+
+# =============================================================================
+# 9. CNI插件配置 / CNI Plugin Configuration
+# =============================================================================
+cni:
+  # CNI插件类型: flannel, calico, canal等 / CNI plugin type
+  type: "flannel"
+  # Flannel配置文件 / Flannel configuration file
+  flannel_config: "kube-flannel.yml"
+
+# =============================================================================
+# 10. Kubemate配置 / Kubemate Configuration
+# =============================================================================
+kubemate:
+  # 命名空间 / Namespace
+  namespace: "kubemate-system"
+  # Web端口 / Web port
+  web_port: 30088
+  # 默认用户名密码 / Default credentials
+  default_user: "admin"
+  default_password: "000000als"
+  # Kubemate服务IP / Kubemate service IP
+  server_ip: "10.3.66.18"
+
+# =============================================================================
+# 11. 监控和日志组件配置 / Monitoring and Logging Components Configuration
+# =============================================================================
+monitoring:
+  # Elasticsearch配置 / Elasticsearch configuration
+  elasticsearch:
+    enabled: true
+    namespace: "kubemate-system"
+    deployment_name: "es-skywalking"
+
+  # Skywalking配置 / Skywalking configuration
+  skywalking:
+    enabled: true
+    namespace: "kubemate-system"
+    elasticsearch_password: ""  # 从部署中获取 / Retrieved from deployment
+
+  # Loki配置 / Loki configuration
+  loki:
+    enabled: true
+    namespace: "kubemate-system"
+    storage_type: "local"  # local, nfs
+
+  # Prometheus配置 / Prometheus configuration
+  prometheus:
+    enabled: true
+    namespace: "kubemate-monitoring-system"
+
+  # Traefik配置 / Traefik configuration
+  traefik:
+    enabled: true
+    namespace: "kubemate-system"
+    mesh_enabled: true
+
+# =============================================================================
+# 12. Redis配置 / Redis Configuration
+# =============================================================================
+redis:
+  # Redis哨兵模式 / Redis sentinel mode
+  sentinel:
+    enabled: false
+    namespace: "redis-sentinel"
+
+  # Redis集群模式 / Redis cluster mode
+  cluster:
+    enabled: true
+    namespace: "redis-opt"
+    password: "Xxkjb_Fxcps_Redis2024"
+    node_count: 6  # 集群节点数量 / Cluster node count
+    leader_replicas: 3
+    follower_replicas: 3
+
+  # Redis监控 / Redis monitoring
+  monitoring:
+    enabled: true
+    exporter_port: 9121
+
+# =============================================================================
+# 13. 证书配置 / Certificate Configuration
+# =============================================================================
+certificates:
+  # 证书有效期（小时）/ Certificate validity period (hours)
+  # 867240小时 = 100年 / 867240 hours = 100 years
+  cluster_signing_duration: "867240h0m0s"
+
+# =============================================================================
+# 14. 系统配置 / System Configuration
+# =============================================================================
+system:
+  # 最大打开文件数 / Maximum open files
+  max_open_files: 65535
+
+  # Swap配置 / Swap configuration
+  swap_enabled: false
+
+  # 防火墙配置 / Firewall configuration
+  firewall_enabled: false
+
+  # SSH免密登录配置 / SSH passwordless login
+  ssh:
+    passwordless_login: true
+    # SSH用户 / SSH user
+    user: "root"
+
+# =============================================================================
+# 15. 普通用户配置 / Regular User Configuration
+# =============================================================================
+user:
+  # 普通用户名 / Regular username
+  name: "appusr"
+  # 是否配置kubectl权限 / Configure kubectl permissions or not
+  kubectl_access: true
+
+# =============================================================================
+# 16. F5高可用配置 / F5 High Availability Configuration
+# =============================================================================
+f5:
+  # 是否配置F5高可用 / Configure F5 HA or not
+  enabled: false
+  # 主中心F5 IP / Primary center F5 IP
+  primary_ip: ""
+  # 副中心F5 IP / Secondary center F5 IP
+  secondary_ip: ""
+
+# =============================================================================
+# 17. 定时任务配置 / Cron Job Configuration
+# =============================================================================
+cron_jobs:
+  # ETCD备份 / ETCD backup
+  etcd_backup:
+    enabled: true
+    schedule: "10 2 * * *"  # 每天凌晨2点10分执行 / Daily at 2:10 AM
+    center: "primary"  # primary or secondary
+
+  # Traefik清理 / Traefik cleanup
+  traefik_cleanup:
+    enabled: true
+    schedule: "0 2 * * *"  # 每天凌晨2点执行 / Daily at 2:00 AM
+
+  # 应用日志清理 / Application log cleanup
+  log_cleanup:
+    enabled: true
+    schedule: "0 2 * * *"  # 每天凌晨2点执行 / Daily at 2:00 AM
+    retention_days: 7  # 保留天数 / Retention days
+
+# =============================================================================
+# 18. 部署选项 / Deployment Options
+# =============================================================================
+deployment:
+  # 是否部署高可用控制平面 / Deploy HA control plane or not
+  ha_control_plane: true
+
+  # 是否部署双栈网络 / Deploy dual-stack network or not
+  dual_stack: true
+
+  # 部署模式: all, control-plane, worker / Deployment mode
+  mode: "all"
+
+  # 是否跳过某些步骤 / Skip certain steps or not
+  skip_steps: []
+
+  # 是否在执行前备份 / Backup before execution or not
+  backup_before_execution: true
+
+  # 是否启用详细日志 / Enable verbose logging or not
+  verbose_logging: true
+
+# =============================================================================
+# 19. Helm配置 / Helm Configuration
+# =============================================================================
+helm:
+  # Helm版本 / Helm version
+  version: "v3.0.0"
+  # Helm可执行文件路径 / Helm executable path
+  binary_path: "/usr/local/bin/helm"
+  # Helm仓库配置 / Helm repository configuration
+  repositories: []
+
+# =============================================================================
+# 20. 日志配置 / Logging Configuration
+# =============================================================================
+logging:
+  # 日志级别: debug, info, warn, error / Log level
+  level: "info"
+  # 日志文件路径 / Log file path
+  file: "/var/log/k8s-deployment.log"
+  # 是否输出到控制台 / Output to console or not
+  console: true
