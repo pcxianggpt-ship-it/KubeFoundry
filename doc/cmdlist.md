@@ -1,5 +1,59 @@
 # K8S 安装命令清单
 
+## 部署顺序概览
+
+### 第一阶段：K8S底座安装
+1. **服务器规划** - 确认节点配置和网络规划
+2. **前置检查与准备**
+   - 2.1 初始化参数配置
+   - 2.2 检查配置文件完整性
+   - 2.3 检查必要工具安装
+     - 检查本地必要工具（ssh、scp、rsync、yaml、jq、bc）
+     - 检查配置文件中指定的工具路径
+     - 检查SSH连接（到所有节点）
+3. **安装k8s底座**
+   - 3.1 配置本地yum源（k8sc1）
+   - 3.2 配置SSH免密登录（可选）
+   - 3.3 配置本地k8s repo源客户端（所有节点）
+   - 3.4 安装K8s依赖包（所有控制平面和工作节点）
+   - 3.5 替换kubeadm为支持100年证书版本（k8sc1）
+   - 3.6 环境配置（所有节点）
+     - 3.6.1 修改DNS
+     - 3.6.2 修改网络配置（IPv6）
+     - 3.6.3 修改主机名
+     - 3.6.4 修改open files参数
+     - 3.6.5 配置环境变量
+   - 3.7 安装containerd（所有节点）
+   - 3.8 安装镜像仓库（registry节点）
+   - 3.9 安装Kubernetes
+     - 3.9.1 初始化K8S集群（k8sc1）
+     - 3.9.2 添加K8S控制节点（k8sc2、k8sc3）
+     - 3.9.3 添加K8S工作节点（k8sw1-k8sw6）
+     - 3.9.4 安装CNI插件-Flannel（k8sc1）
+
+### 第二阶段：Kubemate及生态组件安装
+4. **Kubemate安装**（以下操作除非特别说明，均在k8sc1执行）
+   - 4.1 创建命名空间
+   - 4.2 安装kubemate管理界面
+   - 4.3 安装NFS插件
+   - 4.4 安装elasticsearch
+   - 4.5 安装skywalking
+   - 4.6 安装loki
+   - 4.7 安装traefik
+   - 4.8 安装traefik-mesh
+   - 4.9 安装prometheus
+   - 4.10 更新coredns配置
+   - 4.11 安装metrics-server
+   - 4.12 配置普通用户kubectl权限
+   - 4.13 配置F5 master高可用（所有控制节点）
+   - 4.14 安装redis哨兵模式（可选）
+   - 4.15 定时任务
+     - 4.15.1 ETCD备份
+     - 4.15.2 Traefik清理
+     - 4.15.3 应用日志清理（所有工作节点）
+
+---
+
 # 1 服务器规划
 
 ## 1.控制节点
@@ -19,9 +73,226 @@
 
 
 
-# 2.安装k8s底座
+# 2. 前置检查与准备
 
-## 2.1 配置本地yum源
+## 2.1 初始化参数配置
+
+执行机器：管理节点（本地执行）
+
+```bash
+# 1. 加载配置文件
+# 读取 config/config.yaml 配置文件
+# 解析 YAML 格式的配置参数
+
+# 2. 验证配置文件格式
+# 检查 YAML 语法是否正确
+# 检查必需参数是否存在
+
+# 3. 初始化全局变量
+# 从配置文件读取 K8S 版本、网络参数等
+# 设置部署阶段的默认值
+
+# 4. 显示配置摘要
+echo "======================================"
+echo "K8S 集群部署配置"
+echo "======================================"
+echo "K8S 版本: ${k8s_version}"
+echo "Pod 网段: ${pod_subnet}"
+echo "Service 网段: ${service_subnet}"
+echo "控制节点数量: ${control_node_count}"
+echo "工作节点数量: ${worker_node_count}"
+echo "======================================"
+```
+
+#### 4. 验证安装结果
+
+```bash
+# 检查配置文件是否成功加载
+if [ -z "${k8s_version}" ]; then
+    echo "【ERROR】: 配置文件加载失败"
+    exit 1
+fi
+
+echo "【INFO】: 配置参数初始化完成"
+```
+
+---
+
+## 2.2 检查配置文件完整性
+
+执行机器：管理节点（本地执行）
+
+```bash
+# 1. 检查配置文件是否存在
+if [ ! -f "config/config.yaml" ]; then
+    echo "【ERROR】: 配置文件不存在: config/config.yaml"
+    exit 1
+fi
+
+echo "【INFO】: 配置文件检查通过"
+
+# 2. 检查必需的配置项
+required_params=(
+    "k8s.version"
+    "network.cluster.pod_subnet"
+    "network.cluster.service_subnet"
+    "network.control_plane.endpoint"
+)
+
+for param in "${required_params[@]}"; do
+    # 使用 config_get 方法检查参数
+    value=$(config_get ".$param")
+
+    if [ -z "$value" ]; then
+        echo "【ERROR】: 必需参数缺失: $param"
+        exit 1
+    fi
+done
+
+echo "【INFO】: 必需参数检查通过"
+
+# 3. 验证 IP 地址格式
+echo "【INFO】: 验证节点 IP 地址格式..."
+all_nodes=$(config_get_all_nodes)
+for node in $all_nodes; do
+    node_ip=$(config_get_node "$node" "ip")
+
+    # 验证 IPv4 格式
+    if ! validate_ip "$node_ip"; then
+        echo "【ERROR】: 节点 $node 的 IP 地址格式错误: $node_ip"
+        exit 1
+    fi
+done
+
+echo "【INFO】: IP 地址格式验证通过"
+
+# 4. 验证端口号有效性
+echo "【INFO】: 验证端口号..."
+api_server_port=$(config_get ".network.api_server_port" "6443")
+if ! validate_port "$api_server_port"; then
+    echo "【ERROR】: API Server 端口号无效: $api_server_port"
+    exit 1
+fi
+
+echo "【INFO】: 端口号验证通过"
+
+# 5. 验证文件路径可访问性
+echo "【INFO】: 验证文件路径..."
+repo_source=$(config_get ".repo.source_path")
+if [ -n "$repo_source" ] && [ ! -f "$repo_source" ]; then
+    echo "【WARN】: YUM 源文件不存在: $repo_source"
+fi
+
+echo "【INFO】: 配置文件完整性检查完成"
+```
+
+#### 4. 验证安装结果
+
+```bash
+# 检查配置验证是否通过
+if [ $? -eq 0 ]; then
+    echo "【SUCCESS】: 配置文件完整性验证通过"
+else
+    echo "【ERROR】: 配置文件完整性验证失败"
+    exit 1
+fi
+```
+
+---
+
+## 2.3 检查必要工具安装
+
+执行机器：管理节点（本地执行）
+
+```bash
+# 1. 检查本地必要工具
+echo "【INFO】: 检查本地必要工具..."
+
+local_tools=("ssh" "scp" "rsync" "yaml" "jq" "bc")
+
+for tool in "${local_tools[@]}"; do
+    if ! command -v $tool &> /dev/null; then
+        echo "【ERROR】: 本地缺少必要工具: $tool"
+        echo "请先安装: yum install -y $tool"
+        exit 1
+    fi
+    echo "【INFO】: ✓ $tool 已安装"
+done
+
+echo "【SUCCESS】: 本地工具检查通过"
+
+# 2. 检查配置文件中指定的工具路径
+echo "【INFO】: 检查配置文件中指定的工具..."
+
+# 检查 helm 工具
+helm_path=$(config_get ".tools.helm_path" "/usr/local/bin/helm")
+if [ -n "$helm_path" ] && [ ! -f "$helm_path" ]; then
+    echo "【WARN】: helm 未找到: $helm_path"
+fi
+
+echo "【INFO】: 工具路径检查完成"
+
+# 3. 检查 SSH 连接（到所有节点）
+echo "【INFO】: 检查 SSH 连接..."
+all_nodes=$(config_get_all_nodes)
+failed_nodes=()
+
+for node in $all_nodes; do
+    node_ip=$(config_get_node "$node" "ip")
+
+    if ! ssh_check_connection "$node_ip"; then
+        echo "【ERROR】: 无法连接到节点 $node ($node_ip)"
+        failed_nodes+=("$node")
+    else
+        echo "【INFO】: ✓ 节点 $node ($node_ip) SSH 连接正常"
+    fi
+done
+
+if [ ${#failed_nodes[@]} -gt 0 ]; then
+    echo "【ERROR】: 以下节点 SSH 连接失败:"
+    printf '%s\n' "${failed_nodes[@]}"
+    echo "请检查:"
+    echo "1. 节点是否启动"
+    echo "2. SSH 服务是否运行"
+    echo "3. 网络连通性"
+    echo "4. SSH 密钥是否配置"
+    exit 1
+fi
+
+echo "【SUCCESS】: SSH 连接检查通过"
+
+# 4. 生成检查报告
+echo ""
+echo "======================================"
+echo "前置检查报告"
+echo "======================================"
+echo "配置文件: ✓ 通过"
+echo "配置参数: ✓ 通过"
+echo "IP 地址格式: ✓ 通过"
+echo "端口号: ✓ 通过"
+echo "本地工具: ✓ 通过"
+echo "SSH 连接: ✓ 通过"
+echo "======================================"
+echo ""
+```
+
+#### 3. 验证安装结果
+
+```bash
+# 所有检查应该通过，否则退出
+if [ $? -eq 0 ]; then
+    echo "【SUCCESS】: 前置检查全部通过，可以开始部署"
+else
+    echo "【ERROR】: 前置检查失败，请修复错误后重试"
+    exit 1
+fi
+```
+
+---
+
+# 3. 安装k8s底座
+
+## 3.1 配置本地yum源
 
 执行机器：控制平面（主）
 
@@ -76,11 +347,11 @@ systemctl disable firewalld >/dev/null 2>&1
 
 
 
-## 2.2 配置SSH免密登录
+## 3.2 配置SSH免密登录
 
 
 
-## 2.3 配置本地k8s repo源客户端
+## 3.3 配置本地k8s repo源客户端
 
 执行机器：除k8sc1外，所有服务器执行
 
@@ -99,7 +370,17 @@ yum -q makecache
 
 
 
-## 2.4替换kubeadm为支持100年证书版本
+## 3.4 安装K8s依赖包
+
+执行机器：所有控制平面和所有工作节点安装
+
+```
+yum install -y cri-tools kubeadm kubectl kubelet kubernetes-cni nfs
+```
+
+
+
+## 3.5 替换kubeadm为支持100年证书版本
 
 执行机器：仅在k8sc1上执行
 
@@ -115,21 +396,11 @@ scp "$kubeadm_100y_file" /usr/bin/kubeadm
 
 
 
-## 2.5 安装K8s依赖包
+## 3.6 环境配置
 
-执行机器：所有机器上执行
+### 3.6.1 修改DNS
 
-```
-yum install -y cri-tools kubeadm kubectl kubelet kubernetes-cni 
-```
-
-
-
-## 2.6 环境配置
-
-### 2.6.1 修改DNS
-
-#### 1. 所有控制节点、工作节点执行命令
+执行机器： 1. 所有控制节点、工作节点执行命令
 
 ```bash
 # 1. 查看网卡中的GATEWAY地址
@@ -140,11 +411,11 @@ vi /etc/systemd/resolved.conf
 # 修改 [Resolve] 部分，将 DNS= 设置为 GATEWAY 地址
 ```
 
-### 2.6.2 修改网络配置（如需配置ipv6双栈网络时才进行配置）
+### 3.6.2 修改网络配置（如需配置ipv6双栈网络时才进行配置）
 
-执行机器：1.控制节点执行命令   2. 工作节点执行命令 3. 镜像仓库执行命令
+执行机器：1.控制节点执行命令 2. 工作节点执行命令 3. 镜像仓库执行命令
 
-IPV6ADDR 为配置文件中的Ip
+IPV6ADDR 为配置文件中的Ipv6地址
 
 ```
 # 1. 查看网卡中的GATEWAY地址
@@ -183,7 +454,7 @@ ip a
 
 ---
 
-### 2.3.2 修改主机名
+### 3.6.3 修改主机名
 
 #### 1. 控制节点执行命令
 
@@ -294,7 +565,7 @@ cat /etc/hosts
 
 ---
 
-### 2.6.3 修改open files参数
+### 3.6.4 修改open files参数
 
 执行机器：所有节点执行
 
@@ -310,7 +581,7 @@ vi /etc/security/limits.conf
 
 ---
 
-### 2.3.4 配置环境变量
+### 3.6.5 配置环境变量
 
 执行机器：所有节点执行
 
@@ -377,7 +648,7 @@ systemctl enable systemd-resolved > /dev/null 2>&1
 
 
 
-## 2.4 安装containerd
+## 3.7 安装containerd
 
 执行机器：所有节点执行
 
@@ -442,9 +713,9 @@ systemctl enable --now containerd
 
 ---
 
-## 2.5 安装镜像仓库
+## 3.8 安装镜像仓库
 
-### 2.5.1 安装registry免密
+### 3.8.1 安装registry免密
 
 执行机器：镜像仓库执行
 
@@ -459,11 +730,11 @@ sh /data/k8s_install/04.registry/registry_install.sh 10.3.66.20
 
 
 
-## 2.6 安装Kubernetes
+## 3.9 安装Kubernetes
 
 
 
-### 2.6.1 初始化K8S集群
+### 3.9.1 初始化K8S集群
 
 #### 1. 控制节点执行命令
 
@@ -513,7 +784,7 @@ kubectl get pods -A
 
 ---
 
-### 2.6.3 修改证书有效期
+### 3.9.2 修改证书有效期
 
 #### 1. 控制节点执行命令
 
@@ -543,7 +814,7 @@ kubeadm certs check-expiration
 
 ---
 
-### 2.6.4 添加K8S控制节点
+### 3.9.3 添加K8S控制节点
 
 > **说明：** 搭建高可用时执行，单master节点部署可跳过该步骤
 
@@ -552,7 +823,7 @@ kubeadm certs check-expiration
 执行机器： k8sc2和k8sc3节点执行（一台执行完后再执行另一台）
 
 ```bash
-# 使用2.6.2章节中保存的kubeadm join控制节点命令
+# 使用3.9.1章节中保存的kubeadm join控制节点命令
 # 示例（实际命令以k8sc1初始化输出为准）：
 kubeadm join k8sc1:6443 --token abcdef.0123456789abcdef \
   --discovery-token-ca-cert-hash sha256:be3037375048669762a18c0d820994613d4611c768f524fca5d808ca3caf47da \
@@ -569,7 +840,7 @@ export KUBECONFIG=/etc/kubernetes/admin.conf
 
 ---
 
-### 2.6.5 添加K8S工作节点
+### 3.9.4 添加K8S工作节点
 
 #### 1. 控制节点执行命令
 
@@ -580,7 +851,7 @@ export KUBECONFIG=/etc/kubernetes/admin.conf
 **所有工作节点（k8sw1-k8sw6）执行：**
 
 ```bash
-# 使用2.6.2章节中保存的kubeadm join工作节点命令
+# 使用3.9.1章节中保存的kubeadm join工作节点命令
 # 示例（实际命令以k8sc1初始化输出为准）：
 kubeadm join k8sc1:6443 --token abcdef.0123456789abcdef \
   --discovery-token-ca-cert-hash sha256:abb882fd3462e84cd1c1f9ecf39ca305f6acb8bd8f2ffb72ccf3cba3341df05e
@@ -610,7 +881,7 @@ kubectl get nodes
 
 ---
 
-### 2.6.6 安装CNI插件-Flannel
+### 3.9.5 安装CNI插件-Flannel
 
 #### 1. 控制节点执行命令
 
@@ -659,11 +930,11 @@ kubectl describe pod kube-flannel-ds-xxxx -n kube-flannel
 
 ---
 
-# 3    Kubemate安装
+# 4 Kubemate安装
 
 > **操作说明：** 如无特殊说明，以下所有操作仅在 k8sc1（master1）控制节点上执行。
 
-## 3.1  创建命名空间
+## 4.1  创建命名空间
 
 #### 1. 控制节点执行命令
 
@@ -690,7 +961,7 @@ kubectl get namespace
 
 ---
 
-## 3.2  安装kubemate管理界面
+## 4.2  安装kubemate管理界面
 
 #### 1. 控制节点执行命令
 
@@ -729,31 +1000,7 @@ kubectl get pods -n kubemate-system
 
 ---
 
-## 3.3  创建全局镜像仓库
-
-#### 1. 控制节点执行命令
-
-此步骤在kubemate管理界面中操作：
-1. 登录kubemate管理界面（http://10.3.66.18:30088）
-2. 进入"保密配置"
-3. 添加"全局镜像仓库"
-4. 录入镜像仓库地址、用户名和密码
-
-#### 2. 工作节点执行命令
-
-无需执行。
-
-#### 3. 镜像仓库执行命令
-
-无需执行。
-
-#### 4. 验证安装结果
-
-在kubemate管理界面中确认全局镜像仓库已添加。
-
----
-
-## 3.4  安装NFS插件
+## 4.3  安装NFS插件
 
 #### 1. 控制节点执行命令
 
@@ -844,7 +1091,7 @@ df -h | grep nas_root
 
 ---
 
-## 3.5  安装elasticsearch
+## 4.4  安装elasticsearch
 
 #### 1. 控制节点执行命令
 
@@ -876,7 +1123,7 @@ kubectl get po -A | grep es-skywalking
 
 ---
 
-## 3.6  安装skywalking
+## 4.5  安装skywalking
 
 #### 1. 控制节点执行命令
 
@@ -915,7 +1162,7 @@ kubectl get pod -n kubemate-system | grep skywalking
 
 ---
 
-## 3.7  安装loki
+## 4.6  安装loki
 
 #### 1. 控制节点执行命令
 
@@ -950,7 +1197,7 @@ kubectl get pod -n kubemate-system | grep loki
 
 ---
 
-## 3.8  安装traefik
+## 4.7  安装traefik
 
 #### 1. 控制节点执行命令
 
@@ -982,7 +1229,7 @@ kubectl get pod -n kubemate-system | grep traefik
 
 ---
 
-## 3.9  安装traefik-mesh
+## 4.8  安装traefik-mesh
 
 #### 1. 控制节点执行命令
 
@@ -1012,7 +1259,7 @@ kubectl get pod -n kubemate-system | grep traefik-mesh
 
 ---
 
-## 3.10  安装prometheus
+## 4.9  安装prometheus
 
 #### 1. 控制节点执行命令
 
@@ -1051,7 +1298,7 @@ kubectl get pod -n kubemate-monitoring-system
 
 ---
 
-## 3.11  更新coredns配置
+## 4.10  更新coredns配置
 
 #### 1. 控制节点执行命令
 
@@ -1104,7 +1351,7 @@ kubectl get pod -n kube-system | grep coredns
 
 ---
 
-## 3.12  安装metrics-server
+## 4.11  安装metrics-server
 
 #### 1. 控制节点执行命令
 
@@ -1136,7 +1383,7 @@ kubectl top nodes
 
 ---
 
-## 3.13  配置普通用户kubectl权限
+## 4.12  配置普通用户kubectl权限
 
 #### 1. 控制节点执行命令
 
@@ -1166,7 +1413,7 @@ kubectl get nodes
 
 ---
 
-## 3.14  配置F5 master高可用
+## 4.13  配置F5 master高可用
 
 #### 1. 控制节点执行命令
 
@@ -1195,7 +1442,7 @@ cat /etc/hosts | grep k8sc1
 
 ---
 
-## 3.15  安装redis哨兵模式
+## 4.14  安装redis哨兵模式
 
 #### 1. 控制节点执行命令
 
@@ -1228,279 +1475,9 @@ kubectl get pod -n redis-sentinel
 
 ---
 
-## 3.16  安装redis集群
+## 4.15  定时任务
 
-### 3.16.1  创建工作路径
-
-#### 1. 控制节点执行命令
-
-无需执行。
-
-#### 2. 工作节点执行命令
-
-```bash
-# 所有工作节点执行
-
-mkdir -p /data/redis_root
-```
-
-#### 3. 镜像仓库执行命令
-
-无需执行。
-
-#### 4. 验证安装结果
-
-```bash
-# 在工作节点上验证
-
-ls -ld /data/redis_root
-# 目录应该存在
-```
-
----
-
-### 3.16.2  安装redis集群
-
-#### 1. 控制节点执行命令
-
-```bash
-# 仅在k8sc1控制节点上执行
-
-# 1. 创建命名空间
-kubectl create ns redis-opt
-
-# 2. 创建存储卷
-cd /data/k8s_install/03.setup_file/allyaml/redis/redis-pvc
-kubectl apply -f localstorageclass.yaml
-kubectl apply -f redis-pv.yml
-
-# 3. 创建redis-secret
-kubectl create secret generic redis-secret -n redis-opt --from-literal=password=Xxkjb_Fxcps_Redis2024
-
-# 4. 安装redis-operator
-/data/k8s_install/06.redis-cluster/linux-amd64/helm install -n redis-opt redis-operator /data/k8s_install/06.redis-cluster/allyaml/redis-operator
-
-# 5. 安装redis-cluster
-/data/k8s_install/06.redis-cluster/linux-amd64/helm install -n redis-opt redis-cluster /data/k8s_install/06.redis-cluster/allyaml/redis-cluster
-```
-
-#### 2. 工作节点执行命令
-
-无需执行。
-
-#### 3. 镜像仓库执行命令
-
-无需执行。
-
-#### 4. 验证安装结果
-
-```bash
-# 在k8sc1控制节点上执行
-
-kubectl get pod -n redis-opt
-# 应该看到redis-cluster-leader和redis-cluster-follower的Pod，状态为Running
-
-# 可在kubemate管理界面的"有状态发布"中查看leader和follower状态
-```
-
----
-
-### 3.16.3  修改redis密码
-
-#### 1. 控制节点执行命令
-
-```bash
-# 在kubemate管理界面中操作
-# 1. 进入"保密配置"，找到redis-secret，修改redis密码
-
-# 2. 修改密码后，通过kubemate界面重启redis集群
-# 重启步骤见 3.16.5
-
-# 3. 进入redis-cluster-leader或redis-cluster-follower的Pod终端验证密码
-redis-cli
-auth <新密码>
-# 显示ok即为修改成功
-```
-
-#### 2. 工作节点执行命令
-
-无需执行。
-
-#### 3. 镜像仓库执行命令
-
-无需执行。
-
-#### 4. 验证安装结果
-
-在Pod终端中验证新密码能否正常登录。
-
----
-
-### 3.16.4  卸载redis集群
-
-#### 1. 控制节点执行命令
-
-```bash
-# 仅在k8sc1控制节点上执行
-
-# 1. 查看安装详情
-/data/k8s_install/06.redis-cluster/linux-amd64/helm list -A
-
-# 2. 卸载redis集群
-/data/k8s_install/06.redis-cluster/linux-amd64/helm uninstall -n redis-opt redis-cluster
-/data/k8s_install/06.redis-cluster/linux-amd64/helm uninstall -n redis-opt redis-operator
-
-# 3. 删除服务器文件（所有工作节点执行）
-rm -rf /data/redis_root/*
-```
-
-#### 2. 工作节点执行命令
-
-```bash
-# 所有工作节点执行
-
-rm -rf /data/redis_root/*
-```
-
-#### 3. 镜像仓库执行命令
-
-无需执行。
-
-#### 4. 验证安装结果
-
-```bash
-# 在k8sc1控制节点上执行
-
-kubectl get pod -n redis-opt
-# 应该没有redis相关的Pod
-```
-
----
-
-### 3.16.5  重启redis集群
-
-#### 1. 控制节点执行命令
-
-```bash
-# 在kubemate管理界面中按以下顺序操作：
-
-# 1. 将redis-operator的副本数改为0，等待Pod停止
-# 2. 将redis-leader的副本数改为0，等待Pod停止
-# 3. 将redis-follower的副本数改为0，等待Pod停止
-# 4. 进入/data/redis_root目录，删除目录下所有文件（所有工作节点执行）
-# 5. 将redis-operator的副本数改为1，等待operator把Pod拉起来
-```
-
-#### 2. 工作节点执行命令
-
-```bash
-# 所有工作节点执行
-
-# 步骤4：删除redis数据目录
-cd /data/redis_root
-rm -rf *
-```
-
-#### 3. 镜像仓库执行命令
-
-无需执行。
-
-#### 4. 验证安装结果
-
-```bash
-# 在k8sc1控制节点上执行
-
-kubectl get pod -n redis-opt
-# redis相关Pod应该重新启动并运行正常
-```
-
----
-
-## 3.17  Bitnami redis-cluster安装（可选）
-
-#### 1. 控制节点执行命令
-
-```bash
-# 仅在k8sc1控制节点上执行
-
-# 安装
-helm install -n redis-opt myredis-cluster \
-  --set "password=amarsoft,cluster.nodes=6,image.registry=registry:5000,image.tag=8.0.3,global.security.allowInsecureImages=true,global.storageClass=managed-nfs-storage" \
-  /root/redis/redis-cluster/redis-cluster
-
-# 卸载
-helm uninstall -n redis-opt myredis-cluster
-cd /data/nas_data/
-rm -rf $(find redis-opt-redis-data-myredis-cluster-* -name ap* )
-rm -f $(find redis-opt-redis-data-myredis-cluster-* -name node* )
-```
-
-#### 2. 工作节点执行命令
-
-无需执行。
-
-#### 3. 镜像仓库执行命令
-
-无需执行。
-
-#### 4. 验证安装结果
-
-```bash
-# 在k8sc1控制节点上执行
-
-kubectl get pod -n redis-opt
-# redis-cluster相关Pod状态应为Running
-```
-
----
-
-## 3.18  配置redis监控
-
-#### 1. 控制节点执行命令
-
-```bash
-# 仅在k8sc1控制节点上执行
-
-# 1. 安装redis-exporter
-kubectl apply -f /data/k8s_install/03.setup_file/allyaml/redis/allyaml/exporter/redis-exporter-all.yml
-```
-
-#### 2. 工作节点执行命令
-
-无需执行。
-
-#### 3. 镜像仓库执行命令
-
-无需执行。
-
-#### 4. 配置prometheus（在kubemate界面操作）
-
-```bash
-# 在kubemate管理界面中操作：
-
-# 1. 进入"集群监控->保密配置"
-# 2. 命名空间选择为kubemate-monitoring-system
-# 3. 点击编辑按钮，在末尾添加redis-exporter配置：
-#    - job_name: redis
-#      static_configs:
-#        - targets: ["redis-exporter:9121"]
-
-# 4. 进入"系统管理->应用中间件配置"
-# 5. 添加redis监控页面
-# 6. 地址填写：client:///middleware/redis （注意是三个///）
-
-# 7. 重新登录后验证
-```
-
-#### 5. 验证安装结果
-
-在kubemate管理界面中验证redis监控页面能正常显示。
-
----
-
-## 3.19  定时任务
-
-### 3.19.1 ETCD备份
+### 4.15.1 ETCD备份
 
 #### 1. 控制节点执行命令
 
@@ -1536,7 +1513,7 @@ ls -lh /data/crontab_task/etcdbak/
 
 ---
 
-### 3.19.2 Traefik清理
+### 4.15.2 Traefik清理
 
 #### 1. 控制节点执行命令
 
@@ -1570,7 +1547,7 @@ cat /data/k8s_install/05.crontab/traefikClear.log
 
 ---
 
-### 3.19.3 应用日志清理
+### 4.15.3 应用日志清理
 
 #### 1. 控制节点执行命令
 
