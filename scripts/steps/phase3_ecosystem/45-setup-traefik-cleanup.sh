@@ -1,0 +1,26 @@
+#!/bin/bash
+
+#===============================================================================
+# 脚本名称：45-setup-traefik-cleanup.sh
+# 功能：Traefik清理
+# 执行机器：主副中心的k8sc1控制节点执行（root权限）
+# 作者：KubeFoundry Team
+# 版本：1.0.0
+#===============================================================================
+
+echo "【INFO】: 开始配置Traefik定时清理..."
+
+crontab -e
+# 添加以下内容：
+0 2 * * * nohup sh /data/k8s_install/05.crontab/traefikClear.sh >> /data/k8s_install/05.crontab/traefikClear.log &
+
+echo "【INFO】: Traefik定时清理配置完成"
+
+# 验证安装结果
+# 查看定时任务
+crontab -l
+# 应该能看到Traefik清理任务
+
+# 查看清理日志
+cat /data/k8s_install/05.crontab/traefikClear.log
+# 应该能看到清理日志
