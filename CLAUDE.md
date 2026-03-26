@@ -64,26 +64,6 @@ KubeFoundry/
 Write("path/to/file.sh", content_with_lf)
 ```
 
-**手动创建文件时：**
-
-```bash
-# 方法 1：使用 echo 添加换行符
-echo -n "line1
-line2" > file.sh
-
-# 方法 2：使用 printf
-printf "line1\nline2\n" > file.sh
-
-# 方法 3：使用 heredoc
-cat << 'EOF' > file.sh
-line1
-line2
-line3
-EOF
-
-# 方法 4：使用 dos2unix 转换（如果已存在）
-dos2unix file.sh
-```
 
 #### 3. 验证文件格式
 
