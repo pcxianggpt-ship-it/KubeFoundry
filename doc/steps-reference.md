@@ -53,50 +53,50 @@
 
 ## 阶段1：前置检查与准备
 
-本阶段包含3个脚本，主要用于配置文件加载、验证和环境检查，所有脚本均在**管理节点（本地）**执行。
+本阶段包含3个脚本，主要用于环境检查、配置文件加载和验证，所有脚本均在**管理节点（本地）**执行。
 
-### 01-init-config.sh
+### 01-check-tools.sh
+
+| 项目 | 说明 |
+|------|------|
+| **对应章节** | cmdlist.md 2.3 检查必要工具安装 |
+| **脚本路径** | `scripts/steps/phase1_precheck/01-check-tools.sh` |
+| **执行机器** | 管理节点（本地执行） |
+| **批量执行函数** | 无需远程执行，本地直接运行脚本 |
+| **依赖关系** | 无前置依赖 |
+| **主要功能** | 检查本地必要工具（ssh、scp、rsync、yaml、jq、bc）、检查配置文件中指定的工具路径（如 helm）、检查 SSH 连接到所有节点的连通性、生成前置检查报告 |
+| **检查清单** | ssh、scp、rsync、yaml、jq、bc、helm（可选）、SSH 连通性 |
+| **所需参数** | 所有节点 IP、ssh.user、ssh.port、ssh.timeout<br>（来源：config.control_plane[].ip、config.workers[].ip、config.ssh.*） |
+
+---
+
+### 02-init-config.sh
 
 | 项目 | 说明 |
 |------|------|
 | **对应章节** | cmdlist.md 2.1 初始化参数配置 |
-| **脚本路径** | `scripts/steps/phase1_precheck/01-init-config.sh` |
+| **脚本路径** | `scripts/steps/phase1_precheck/02-init-config.sh` |
 | **执行机器** | 管理节点（本地执行） |
 | **批量执行函数** | 无需远程执行，本地直接运行脚本 |
-| **依赖关系** | 无前置依赖 |
+| **依赖关系** | 依赖 01-check-tools.sh |
 | **主要功能** | 加载 `config/config.yaml` 配置文件<br>解析 YAML 格式的配置参数<br>验证配置文件格式<br>初始化全局变量（K8S版本、网络参数等）<br>显示配置摘要（K8S版本、Pod网段、Service网段、节点数量） |
 | **关键输出** | K8S 版本、Pod 网段、Service 网段、控制节点数量、工作节点数量 |
 | **所需参数** | cluster.k8s_version、cluster.pod_subnet、cluster.service_subnet、cluster.name、control_plane[].hostname、control_plane[].ip、workers[].hostname、workers[].ip、paths.k8s_install<br>（来源：config.cluster.*、config.control_plane[]、config.workers[]、config.paths.k8s_install） |
 
 ---
 
-### 02-validate-config.sh
+### 03-validate-config.sh
 
 | 项目 | 说明 |
 |------|------|
 | **对应章节** | cmdlist.md 2.2 检查配置文件完整性 |
-| **脚本路径** | `scripts/steps/phase1_precheck/02-validate-config.sh` |
+| **脚本路径** | `scripts/steps/phase1_precheck/03-validate-config.sh` |
 | **执行机器** | 管理节点（本地执行） |
 | **批量执行函数** | 无需远程执行，本地直接运行脚本 |
-| **依赖关系** | 依赖 01-init-config.sh |
+| **依赖关系** | 依赖 02-init-config.sh |
 | **主要功能** | 检查配置文件是否存在、验证必需配置项、验证所有节点 IP 地址格式（IPv4）、验证 API Server 端口号有效性、验证文件路径可访问性（如 YUM 源文件）、生成验证报告 |
 | **验证内容** | IP 地址格式、端口号范围、文件路径存在性 |
 | **所需参数** | 所有节点 IP、network.api_server_port、paths.repo_source、paths.kubeadm_100y、paths.container_runtime、paths.registry_install<br>（来源：config.control_plane[].ip、config.workers[].ip、config.network.*、config.paths.*） |
-
----
-
-### 03-check-tools.sh
-
-| 项目 | 说明 |
-|------|------|
-| **对应章节** | cmdlist.md 2.3 检查必要工具安装 |
-| **脚本路径** | `scripts/steps/phase1_precheck/03-check-tools.sh` |
-| **执行机器** | 管理节点（本地执行） |
-| **批量执行函数** | 无需远程执行，本地直接运行脚本 |
-| **依赖关系** | 依赖 01-init-config.sh 和 02-validate-config.sh |
-| **主要功能** | 检查本地必要工具（ssh、scp、rsync、yaml、jq、bc）、检查配置文件中指定的工具路径（如 helm）、检查 SSH 连接到所有节点的连通性、生成前置检查报告 |
-| **检查清单** | ssh、scp、rsync、yaml、jq、bc、helm（可选）、SSH 连通性 |
-| **所需参数** | 所有节点 IP、ssh.user、ssh.port、ssh.timeout<br>（来源：config.control_plane[].ip、config.workers[].ip、config.ssh.*） |
 
 ---
 
@@ -110,8 +110,8 @@
 |------|------|
 | **对应章节** | cmdlist.md 3.1 配置本地yum源 |
 | **脚本路径** | `scripts/steps/phase2_k8s_base/10-setup-yum-source.sh` |
-| **执行机器** | 控制平面（主）k8sc1 |
-| **批量执行函数** | `exec_remote_script "k8sc1" "scripts/steps/phase2_k8s_base/10-setup-yum-source.sh"` |
+| **执行机器** | 管理节点（本地执行） |
+| **批量执行函数** | 无需远程执行，本地直接运行脚本 |
 | **依赖关系** | 无前置依赖 |
 | **主要功能** | 验证 YUM 源文件是否存在、解压 YUM 源到 `/var/www/html/`、添加 `.repo` 文件配置、刷新 YUM 缓存、验证 k8s yum 源（搜索 kubelet）、安装 httpd 服务并设置开机自启、关闭防火墙 |
 | **关键服务** | httpd（YUM 源 HTTP 服务）、firewalld（已关闭） |
@@ -568,11 +568,11 @@
 ### 阶段1：前置检查与准备（必须在管理节点执行）
 
 ```
-01-init-config.sh
+01-check-tools.sh
     ↓
-02-validate-config.sh
+02-init-config.sh
     ↓
-03-check-tools.sh
+03-validate-config.sh
 ```
 
 ### 阶段2：K8S底座安装
