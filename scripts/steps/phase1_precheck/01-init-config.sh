@@ -7,34 +7,73 @@
 # 版本：1.0.0
 #===============================================================================
 
+# 加载必要的库
+source "$(dirname "$0")/../../lib/logger.sh"
+source "$(dirname "$0")/../../lib/config.sh"
+
 # 1. 加载配置文件
-# 读取 config/config.yaml 配置文件
-# 解析 YAML 格式的配置参数
-
-# 2. 验证配置文件格式
-# 检查 YAML 语法是否正确
-# 检查必需参数是否存在
-
-# 3. 初始化全局变量
-# 从配置文件读取 K8S 版本、网络参数等
-# 设置部署阶段的默认值
-
-# 4. 显示配置摘要
-echo "======================================"
-echo "K8S 集群部署配置"
-echo "======================================"
-echo "K8S 版本: ${k8s_version}"
-echo "Pod 网段: ${pod_subnet}"
-echo "Service 网段: ${service_subnet}"
-echo "控制节点数量: ${control_node_count}"
-echo "工作节点数量: ${worker_node_count}"
-echo "======================================"
-
-# 4. 验证安装结果
-# 检查配置文件是否成功加载
-if [ -z "${k8s_version}" ]; then
-    echo "【ERROR】: 配置文件加载失败"
+log_info "加载配置文件..."
+if ! load_config "config/cluster.yaml"; then
+    log_error "配置文件加载失败"
     exit 1
 fi
 
-echo "【INFO】: 配置参数初始化完成"
+log_success "配置文件加载成功"
+
+# 2. 验证配置文件格式
+log_info "验证配置文件格式..."
+
+# 检查必需的配置项
+local cluster_name
+cluster_name=$(get_cluster_name)
+if [ -z "$cluster_name" ]; then
+    log_error "集群名称未配置"
+    exit 1
+fi
+
+local k8s_version
+k8s_version=$(get_k8s_version)
+if [ -z "$k8s_version" ]; then
+    log_error "K8S 版本未配置"
+    exit 1
+fi
+
+log_success "配置文件格式验证通过"
+
+# 3. 初始化全局变量
+log_info "初始化全局变量..."
+
+# 从配置文件读取参数
+local pod_subnet
+pod_subnet=$(get_pod_subnet)
+
+local service_subnet
+service_subnet=$(get_service_subnet)
+
+local control_node_count
+control_node_count=$(config_get_length '.control_plane')
+
+local worker_node_count
+worker_node_count=$(config_get_length '.workers')
+
+log_success "全局变量初始化完成"
+
+# 4. 显示配置摘要
+log_separator
+log_info "K8S 集群部署配置"
+log_separator
+log_info "K8S 版本: ${k8s_version}"
+log_info "Pod 网段: ${pod_subnet}"
+log_info "Service 网段: ${service_subnet}"
+log_info "控制节点数量: ${control_node_count}"
+log_info "工作节点数量: ${worker_node_count}"
+log_separator
+
+# 5. 验证安装结果
+# 检查配置文件是否成功加载
+if [ -z "${k8s_version}" ]; then
+    log_error "配置文件加载失败"
+    exit 1
+fi
+
+log_success "配置参数初始化完成"
