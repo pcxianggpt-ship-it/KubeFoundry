@@ -275,7 +275,7 @@ get_all_node_ips() {
 
     for ((i = 0; i < control_plane_count; i++)); do
         local ip
-        ip=$(config_get_node 'control_plane' "$i' 'ip')
+        ip=$(config_get_node 'control_plane' "$i" 'ip')
 
         if [ "$ip" = "$registry_ip" ]; then
             found=true
