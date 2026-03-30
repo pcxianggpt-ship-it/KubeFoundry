@@ -114,6 +114,9 @@ ssh:
   # SSH 端口（默认 22）
   port: 22
 
+  # SSH 密码（用于自动配置免密登录）
+  password: "your_ssh_password"
+
   # SSH 密钥路径（默认 ~/.ssh/id_rsa）
   key_path: "~/.ssh/id_rsa"
 
@@ -132,7 +135,7 @@ paths:
   # - 03.setup_file/      # 配置文件和模板
   # - 04.registry/        # 镜像仓库安装脚本
   # - 05.crontab/         # 定时任务脚本
-  k8s_install: "/data/k8s_install"
+  k8s_soft: "/data/k8s_install"  # 默认路径，可根据实际环境修改
 
   # YUM 源文件路径（3.1 配置本地yum源使用）
   # 说明：这是 YUM 源的压缩包文件路径
@@ -197,10 +200,10 @@ env:
   kubelet_root: "/data/kubelet_root"
 
   # Containerd 数据目录
-  containerd_root: "/var/lib/containerd"
+  containerd_root: "/data/containerd-data"
 
   # ETCD 数据目录
-  etcd_data_dir: "/var/lib/etcd"
+  etcd_data_dir: "/data/kubelet_root"
 
 #===============================================================================
 # 注意事项

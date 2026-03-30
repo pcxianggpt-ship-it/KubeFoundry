@@ -8,11 +8,22 @@
 # 版本：1.0.0
 #===============================================================================
 
-echo "【INFO】: 开始安装Metrics Server..."
+# 获取脚本所在目录的绝对路径
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
-sh /data/k8s_install/03.setup_file/mertics-server/mertics-server-install.sh amd64
+# 加载公共函数库
+source "${PROJECT_ROOT}/scripts/lib/logger.sh"
+source "${PROJECT_ROOT}/scripts/lib/config.sh"
 
-echo "【INFO】: Metrics Server安装完成"
+log_info "开始安装Metrics Server..."
+
+# 获取 K8S 安装目录
+K8S_SOFT=$(get_k8s_soft)
+
+sh "${K8S_SOFT}/03.setup_file/mertics-server/mertics-server-install.sh" amd64
+
+log_info "Metrics Server安装完成"
 
 # 验证安装结果
 # 在k8sc1控制节点上执行

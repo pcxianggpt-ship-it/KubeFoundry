@@ -8,13 +8,24 @@
 # 版本：1.0.0
 #===============================================================================
 
-echo "【INFO】: 开始配置应用日志定时清理..."
+# 获取脚本所在目录的绝对路径
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+
+# 加载公共函数库
+source "${PROJECT_ROOT}/scripts/lib/logger.sh"
+source "${PROJECT_ROOT}/scripts/lib/config.sh"
+
+log_info "开始配置应用日志定时清理..."
+
+# 获取 K8S 安装目录
+K8S_SOFT=$(get_k8s_soft)
 
 crontab -e
 # 添加以下内容：
-0 2 * * * nohup sh /data/k8s_install/05.crontab/logback.sh >> /data/k8s_install/05.crontab/logback.log &
+0 2 * * * nohup sh "${K8S_SOFT}/05.crontab/logback.sh" >> "${K8S_SOFT}/05.crontab/logback.log" &
 
-echo "【INFO】: 应用日志定时清理配置完成"
+log_info "应用日志定时清理配置完成"
 
 # 验证安装结果
 # 在工作节点上验证
@@ -24,5 +35,5 @@ crontab -l
 # 应该能看到应用日志清理任务
 
 # 查看清理日志
-cat /data/k8s_install/05.crontab/logback.log
+cat "${K8S_SOFT}/05.crontab/logback.log"
 # 应该能看到清理日志

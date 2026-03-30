@@ -8,12 +8,23 @@
 # 版本：1.0.0
 #===============================================================================
 
-echo "【INFO】: 开始安装Traefik Mesh服务网格..."
+# 获取脚本所在目录的绝对路径
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
-cd /data/k8s_install/03.setup_file/allyaml
+# 加载公共函数库
+source "${PROJECT_ROOT}/scripts/lib/logger.sh"
+source "${PROJECT_ROOT}/scripts/lib/config.sh"
+
+log_info "开始安装Traefik Mesh服务网格..."
+
+# 获取 K8S 安装目录
+K8S_SOFT=$(get_k8s_soft)
+
+cd "${K8S_SOFT}/03.setup_file/allyaml"
 kubectl apply -f 5-1.traefik-mesh.yml
 
-echo "【INFO】: Traefik Mesh服务网格安装完成"
+log_info "Traefik Mesh服务网格安装完成"
 
 # 验证安装结果
 # 在k8sc1控制节点上执行

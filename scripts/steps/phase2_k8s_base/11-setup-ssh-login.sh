@@ -2,7 +2,7 @@
 
 #===============================================================================
 # 脚本名称：11-setup-ssh-login.sh
-# 功能：配置SSH免密登录（可选）
+# 功能：配置SSH免密登录（自动使用sshpass）
 # 执行机器：管理节点
 # 作者：KubeFoundry Team
 # 版本：1.0.0
@@ -27,19 +27,42 @@ KEY_BITS="4096"
 #===============================================================================
 # 开始执行
 #===============================================================================
+#===============================================================================
+# 1. 安装 sshpass 工具（如果需要）
+#===============================================================================
+log_substep "检查 sshpass 工具"
 
-log_step "11" "配置SSH免密登录"
+if ! command -v sshpass &>/dev/null; then
+    log_info "sshpass 未安装，开始安装..."
 
-# 检查必要工具
-if ! command -v ssh &>/dev/null; then
-    log_error "缺少必要工具: ssh"
-    log_error "请安装 OpenSSH 客户端"
-    return 1
+    # 检查包管理器并安装 sshpass
+    if command -v yum &>/dev/null; then
+        log_info "使用 yum 安装 sshpass..."
+        if yum install -y sshpass >/dev/null 2>&1; then
+            log_success "sshpass 安装成功"
+        else
+            log_error "sshpass 安装失败，请手动安装: yum install -y sshpass"
+            return 1
+        fi
+    elif command -v apt-get &>/dev/null; then
+        log_info "使用 apt-get 安装 sshpass..."
+        if apt-get update && apt-get install -y sshpass >/dev/null 2>&1; then
+            log_success "sshpass 安装成功"
+        else
+            log_error "sshpass 安装失败，请手动安装: apt-get install -y sshpass"
+            return 1
+        fi
+    else
+        log_error "未检测到支持的包管理器（yum 或 apt-get），无法自动安装 sshpass"
+        return 1
+    fi
+else
+    log_success "sshpass 已安装"
 fi
 
 
 #===============================================================================
-# 1. 检查并生成SSH密钥对
+# 2. 检查并生成SSH密钥对
 #===============================================================================
 log_substep "检查SSH密钥对"
 
@@ -68,33 +91,24 @@ else
     fi
 fi
 
-#===============================================================================
-# 2. 读取SSH密码（如果需要）
-#===============================================================================
-local need_password=false
 
-# 检查是否可以使用 ssh-copy-id
-if ! command -v ssh-copy-id &>/dev/null; then
-    # 检查是否可以使用 sshpass
-    if command -v sshpass &>/dev/null; then
-        need_password=true
-        echo ""
-        local password
-        echo -n "请输入SSH密码: "
-        read -s password
-        echo
+#===============================================================================
+# 3. 从配置文件读取 SSH 密码
+#===============================================================================
+log_substep "读取 SSH 配置"
 
-        if [ -z "$password" ]; then
-            log_error "密码不能为空"
-            return 1
-        fi
-    else
-        log_warn "未安装 ssh-copy-id 和 sshpass 工具，需要手动复制公钥"
-    fi
+local ssh_password
+ssh_password=$(config_get '.ssh.password' '' 2>/dev/null)
+
+if [ -z "$ssh_password" ]; then
+    log_error "未配置 SSH 密码，请在配置文件中设置 .ssh.password 字段"
+    return 1
 fi
 
+log_info "已从配置文件读取 SSH 密码"
+
 #===============================================================================
-# 3. 复制公钥到所有节点
+# 4. 复制公钥到所有节点
 #===============================================================================
 
 # 获取SSH配置
@@ -125,33 +139,22 @@ if [ -n "$all_ips" ]; then
 
         log_info "复制公钥到节点: ${node_display} (${ssh_user}@${node_ip}:${ssh_port})"
 
-        if command -v ssh-copy-id &>/dev/null; then
-            # 使用 ssh-copy-id
-            if ssh-copy-id -i "$DEFAULT_SSH_PUB_KEY" -p "$ssh_port" "${ssh_user}@${node_ip}" >/dev/null 2>&1; then
-                log_success "公钥复制成功: ${node_display}"
-            else
-                log_error "公钥复制失败: ${node_display}"
-            fi
-        elif [ "$need_password" = true ]; then
-            # 使用 sshpass
-            sshpass -p "$password" ssh -p "$ssh_port" -o StrictHostKeyChecking=no \
-                "${ssh_user}@${node_ip}" "mkdir -p ~/.ssh && chmod 700 ~/.ssh" >/dev/null 2>&1
+        # 使用 sshpass 创建 .ssh 目录并设置权限
+        sshpass -p "$ssh_password" ssh -p "$ssh_port" -o StrictHostKeyChecking=no \
+            "${ssh_user}@${node_ip}" "mkdir -p ~/.ssh && chmod 700 ~/.ssh" >/dev/null 2>&1
 
-            if sshpass -p "$password" ssh -p "$ssh_port" -o StrictHostKeyChecking=no \
-                "${ssh_user}@${node_ip}" "echo '${pub_key_content}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys" >/dev/null 2>&1; then
-                log_success "公钥复制成功: ${node_display}"
-            else
-                log_error "公钥复制失败: ${node_display}（密码错误或连接失败）"
-                log_warn "手动命令: ssh-copy-id -i ${DEFAULT_SSH_PUB_KEY} -p ${ssh_port} ${ssh_user}@${node_ip}"
-            fi
+        # 使用 sshpass 将公钥添加到 authorized_keys
+        if sshpass -p "$ssh_password" ssh -p "$ssh_port" -o StrictHostKeyChecking=no \
+            "${ssh_user}@${node_ip}" "echo '${pub_key_content}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys" >/dev/null 2>&1; then
+            log_success "公钥复制成功: ${node_display}"
         else
-            log_warn "请手动复制公钥: ssh-copy-id -i ${DEFAULT_SSH_PUB_KEY} -p ${ssh_port} ${ssh_user}@${node_ip}"
+            log_error "公钥复制失败: ${node_display}（密码错误或连接失败）"
         fi
     done <<< "$all_ips"
 fi
 
 #===============================================================================
-# 4. 验证所有节点的免密登录
+# 5. 验证所有节点的免密登录
 #===============================================================================
 log_substep "验证免密登录"
 

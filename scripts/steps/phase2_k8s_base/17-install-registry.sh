@@ -8,12 +8,23 @@
 # 版本：1.0.0
 #===============================================================================
 
+# 获取脚本所在目录的绝对路径
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+
+# 加载公共函数库
+source "${PROJECT_ROOT}/scripts/lib/logger.sh"
+source "${PROJECT_ROOT}/scripts/lib/config.sh"
+
 REGISTRY_IP="${1:-10.3.66.20}"
 
-echo "【INFO】: 开始安装镜像仓库，IP地址: $REGISTRY_IP"
+log_info "开始安装镜像仓库，IP地址: $REGISTRY_IP"
+
+# 获取 K8S 安装目录
+K8S_SOFT=$(get_k8s_soft)
 
 # 2. 安装镜像仓库
-sh /data/k8s_install/04.registry/registry_install.sh $REGISTRY_IP
+sh "${K8S_SOFT}/04.registry/registry_install.sh" "$REGISTRY_IP"
 # 参数说明：第一个参数为镜像仓库的IP地址
 
-echo "【INFO】: 镜像仓库安装完成"
+log_info "镜像仓库安装完成"

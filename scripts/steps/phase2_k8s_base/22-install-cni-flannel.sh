@@ -8,17 +8,28 @@
 # 版本：1.0.0
 #===============================================================================
 
-echo "【INFO】: 开始安装Flannel CNI插件..."
+# 获取脚本所在目录的绝对路径
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+
+# 加载公共函数库
+source "${PROJECT_ROOT}/scripts/lib/logger.sh"
+source "${PROJECT_ROOT}/scripts/lib/config.sh"
+
+log_info "开始安装Flannel CNI插件..."
+
+# 获取 K8S 安装目录
+K8S_SOFT=$(get_k8s_soft)
 
 # 1. 查看kube-flannel.yml中的网络配置
-cd /data/k8s_install/03.setup_file
+cd "${K8S_SOFT}/03.setup_file"
 vi kube-flannel.yml
 # 确认网络配置与cluster.yaml中的网段一致
 
 # 2. 安装Flannel
-kubectl apply -f /data/k8s_install/03.setup_file/kube-flannel.yml
+kubectl apply -f "${K8S_SOFT}/03.setup_file/kube-flannel.yml"
 
-echo "【INFO】: Flannel CNI插件安装完成"
+log_info "Flannel CNI插件安装完成"
 
 # 验证安装结果
 # 在k8sc1控制节点上执行

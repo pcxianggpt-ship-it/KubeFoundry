@@ -8,9 +8,20 @@
 # 版本：1.0.0
 #===============================================================================
 
-echo "【INFO】: 开始安装Prometheus监控系统..."
+# 获取脚本所在目录的绝对路径
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
-cd /data/k8s_install/03.setup_file/allyaml/prometheus
+# 加载公共函数库
+source "${PROJECT_ROOT}/scripts/lib/logger.sh"
+source "${PROJECT_ROOT}/scripts/lib/config.sh"
+
+log_info "开始安装Prometheus监控系统..."
+
+# 获取 K8S 安装目录
+K8S_SOFT=$(get_k8s_soft)
+
+cd "${K8S_SOFT}/03.setup_file/allyaml/prometheus"
 kubectl create -f 1-crd.yml
 kubectl apply -f 2-namespace.yml
 kubectl apply -f 3-rbac.yml
@@ -22,7 +33,7 @@ kubectl apply -f 8-prometheus-rule.yml
 kubectl apply -f node-exporter.yml
 kubectl apply -f kube-state-metrics.yml
 
-echo "【INFO】: Prometheus监控系统安装完成"
+log_info "Prometheus监控系统安装完成"
 
 # 验证安装结果
 # 在k8sc1控制节点上执行

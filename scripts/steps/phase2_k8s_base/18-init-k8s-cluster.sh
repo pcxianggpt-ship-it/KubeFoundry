@@ -8,10 +8,22 @@
 # 版本：1.0.0
 #===============================================================================
 
-echo "【INFO】: 开始初始化K8S集群..."
+# 获取脚本所在目录的绝对路径
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+
+# 加载公共函数库
+source "${PROJECT_ROOT}/scripts/lib/logger.sh"
+source "${PROJECT_ROOT}/scripts/lib/config.sh"
+
+log_info "开始初始化K8S集群..."
+
+# 获取 K8S 安装目录和 kubelet 数据目录
+K8S_SOFT=$(get_k8s_soft)
+KUBELET_ROOT=$(config_get '.env.kubelet_root' '/data/kubelet_root')
 
 # 1. 设置集群初始化文件
-cd /data/k8s_install/03.setup_file
+cd "${K8S_SOFT}/03.setup_file"
 vi cluster.yaml
 # 修改以下配置：
 # - controlPlaneEndpoint: 设置为控制平面地址（如：10.3.66.18:6443）
@@ -20,10 +32,10 @@ vi cluster.yaml
 # - serviceSubnet: Service网络网段
 
 # 2. 配置kubelet路径
-echo KUBELET_EXTRA_ARGS='--root-dir=/data/kubelet_root' > /etc/sysconfig/kubelet
+echo "KUBELET_EXTRA_ARGS='--root-dir=${KUBELET_ROOT}'" > /etc/sysconfig/kubelet
 
 # 3. 初始化并启动集群
-cd /data/k8s_install/03.setup_file
+cd "${K8S_SOFT}/03.setup_file"
 kubeadm init --upload-certs --config cluster.yaml
 # 记录输出中的kubeadm join命令，供后续添加节点使用
 
@@ -38,8 +50,8 @@ export KUBECONFIG=/etc/kubernetes/admin.conf
 # - 控制节点加入命令（包含--control-plane参数）
 # - 工作节点加入命令（不包含--control-plane参数）
 
-echo "【INFO】: K8S集群初始化完成"
-echo "【INFO】: 请记录kubeadm join命令，用于后续添加节点"
+log_info "K8S集群初始化完成"
+log_info "请记录kubeadm join命令，用于后续添加节点"
 
 # 验证安装结果
 # 在k8sc1控制节点上执行

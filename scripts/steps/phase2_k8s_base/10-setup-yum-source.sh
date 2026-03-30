@@ -36,10 +36,17 @@ EOF
 yum -q clean all
 yum -q makecache
 
-# 4. 验证k8s yum源是否存在，能找到kubelet说明yum源部署成功
-echo "【INFO】: 验证k8s yum源..."
 
-yum -q search kubelet
+# 4. 验证k8s yum源是否存在
+echo "【INFO】: 验证k8s yum源..."
+if [ $(yum -q search kubelet | wc -l)  -gt "0" ]; then
+    echo "【SUCCESS】: 本地yum源已经安装"
+    echo "【INFO】: kubelet包搜索结果:"
+    yum search kubelet | head -5
+else
+    log_error "本地yum源安装失败，无法找到kubelet包"
+    exit 1
+fi
 
 
 # 5. 安装httpd并开机自启动服务
