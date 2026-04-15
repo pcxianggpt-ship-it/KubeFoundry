@@ -187,7 +187,7 @@ run_k8s_base() {
     # 2.1 配置本地yum源（本地执行）
     log_info "配置本地yum源..."
     local repo_source
-    repo_source=$(config_get '.paths.repo_source')
+    repo_source=$(config_resolve '.paths.repo_source')
     ( cd "${PROJECT_ROOT}"; source "${P2}/10-setup-yum-source.sh" "$repo_source" )
     if [ $? -ne 0 ]; then
         log_error "配置yum源失败"
@@ -204,7 +204,16 @@ run_k8s_base() {
     fi
     log_success "SSH免密登录配置完成"
 
-    # 2.3 配置本地k8s repo源客户端（除主控制节点外所有节点）
+    # 2.3 配置主机名和hosts解析（管理节点本地执行）
+    log_info "配置主机名和hosts解析..."
+    ( cd "${PROJECT_ROOT}"; source "${P2}/11b-setup-hostname.sh" )
+    if [ $? -ne 0 ]; then
+        log_error "主机名和hosts解析配置失败"
+        return 1
+    fi
+    log_success "主机名和hosts解析配置完成"
+
+    # 2.4 配置本地k8s repo源客户端（除主控制节点外所有节点）
     log_info "配置k8s repo源客户端..."
     exec_script_on_workers "${P2}/12-setup-k8s-repo.sh"
     if [ $? -ne 0 ]; then
@@ -213,7 +222,7 @@ run_k8s_base() {
     fi
     log_success "k8s repo源配置完成"
 
-    # 2.4 安装K8s依赖包（所有节点）
+    # 2.5 安装K8s依赖包（所有节点）
     log_info "安装K8s依赖包..."
     exec_script_on_all_nodes "${P2}/13-install-k8s-deps.sh"
     if [ $? -ne 0 ]; then
@@ -222,7 +231,7 @@ run_k8s_base() {
     fi
     log_success "K8s依赖包安装完成"
 
-    # 2.5 替换kubeadm为支持100年证书版本（仅主控制节点）
+    # 2.6 替换kubeadm为支持100年证书版本（仅主控制节点）
     log_info "替换kubeadm..."
     exec_script_on_control_plane "${P2}/14-replace-kubeadm.sh"
     if [ $? -ne 0 ]; then
@@ -231,7 +240,7 @@ run_k8s_base() {
     fi
     log_success "kubeadm替换完成"
 
-    # 2.6 环境配置（所有节点）
+    # 2.7 环境配置（所有节点）
     log_info "执行环境配置..."
     exec_script_on_all_nodes "${P2}/15-environment-config.sh"
     if [ $? -ne 0 ]; then
@@ -240,7 +249,7 @@ run_k8s_base() {
     fi
     log_success "环境配置完成"
 
-    # 2.7 安装containerd（所有节点）
+    # 2.8 安装containerd（所有节点）
     log_info "安装containerd..."
     exec_script_on_all_nodes "${P2}/16-install-containerd.sh"
     if [ $? -ne 0 ]; then
@@ -249,7 +258,7 @@ run_k8s_base() {
     fi
     log_success "containerd安装完成"
 
-    # 2.8 安装镜像仓库（registry节点）
+    # 2.9 安装镜像仓库（registry节点）
     log_info "安装镜像仓库..."
     exec_script_on_registry "${P2}/17-install-registry.sh"
     if [ $? -ne 0 ]; then
@@ -258,7 +267,7 @@ run_k8s_base() {
     fi
     log_success "镜像仓库安装完成"
 
-    # 2.9 初始化K8S集群（仅主控制节点）
+    # 2.10 初始化K8S集群（仅主控制节点）
     log_info "初始化K8S集群..."
     exec_script_on_control_plane "${P2}/18-init-k8s-cluster.sh"
     if [ $? -ne 0 ]; then
@@ -267,7 +276,7 @@ run_k8s_base() {
     fi
     log_success "K8S集群初始化完成"
 
-    # 2.10 修改证书有效期（仅主控制节点）
+    # 2.11 修改证书有效期（仅主控制节点）
     log_info "修改证书有效期..."
     exec_script_on_control_plane "${P2}/19-modify-cert-expiry.sh"
     if [ $? -ne 0 ]; then
@@ -276,7 +285,7 @@ run_k8s_base() {
     fi
     log_success "证书有效期修改完成"
 
-    # 2.11 添加控制节点（其他控制节点）
+    # 2.12 添加控制节点（其他控制节点）
     log_info "添加控制节点..."
     exec_script_on_control_plane "${P2}/20-add-control-nodes.sh"
     if [ $? -ne 0 ]; then
@@ -285,7 +294,7 @@ run_k8s_base() {
     fi
     log_success "控制节点添加完成"
 
-    # 2.12 添加工作节点
+    # 2.13 添加工作节点
     log_info "添加工作节点..."
     exec_script_on_workers "${P2}/21-add-worker-nodes.sh"
     if [ $? -ne 0 ]; then
@@ -294,7 +303,7 @@ run_k8s_base() {
     fi
     log_success "工作节点添加完成"
 
-    # 2.13 安装CNI插件-Flannel（仅主控制节点）
+    # 2.14 安装CNI插件-Flannel（仅主控制节点）
     log_info "安装CNI插件Flannel..."
     exec_script_on_control_plane "${P2}/22-install-cni-flannel.sh"
     if [ $? -ne 0 ]; then
