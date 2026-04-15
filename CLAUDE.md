@@ -20,6 +20,7 @@ KubeFoundry/
 ├── scripts/                    # 脚本目录
 │   ├── main.sh               # 主入口脚本
 │   ├── lib/                  # 公共函数库
+│   │   ├── tools.sh          # 工具检查与安装（yq/helm）
 │   │   ├── logger.sh        # 日志函数
 │   │   ├── config.sh        # 配置解析
 │   │   ├── ssh.sh          # SSH/SCP 操作

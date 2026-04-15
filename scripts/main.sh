@@ -297,6 +297,12 @@ main() {
         log_warn "跳过验证步骤：不推荐在生产环境使用"
     fi
 
+    # 确保 yq/helm 可用（load_config 依赖 yq 解析 YAML）
+    bash "${SCRIPT_DIR}/lib/tools.sh"
+    if [ $? -ne 0 ]; then
+        exit 1
+    fi
+
     # 加载配置文件
     log_info "加载配置文件..."
     if ! load_config "$CONFIG_FILE"; then

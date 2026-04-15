@@ -1,46 +1,27 @@
 #!/bin/bash
 
 #===============================================================================
-# 脚本名称：03-check-tools.sh
-# 功能：检查必要工具安装
+# 脚本名称：01-check-tools.sh
+# 功能：检查工具安装 + SSH 连接
 # 作者：KubeFoundry Team
 # 版本：1.0.0
 #===============================================================================
 
 # 加载必要的库
-source "$(dirname "$0")/../../lib/logger.sh"
-source "$(dirname "$0")/../../lib/config.sh"
-source "$(dirname "$0")/../../lib/ssh.sh"
-source "$(dirname "$0")/../../lib/validator.sh"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+source "${SCRIPT_DIR}/../../lib/logger.sh"
+source "${SCRIPT_DIR}/../../lib/config.sh"
+source "${SCRIPT_DIR}/../../lib/ssh.sh"
+source "${SCRIPT_DIR}/../../lib/validator.sh"
 
-# 1. 检查本地必要工具
-log_info "检查本地必要工具..."
-
-local_tools=("ssh" "scp" "rsync" "yq" "bc")
-
-for tool in "${local_tools[@]}"; do
-    if ! validate_command "$tool"; then
-        log_error "本地缺少必要工具: $tool"
-        log_info "请先安装: yum install -y $tool"
-        exit 1
-    fi
-    log_debug "✓ $tool 已安装"
-done
-
-log_success "本地工具检查通过"
-
-# 2. 检查配置文件中指定的工具路径
-log_info "检查配置文件中指定的工具..."
-
-# 检查 helm 工具
-helm_path=$(config_get '.tools.helm_path' '/usr/local/bin/helm')
-if [ -n "$helm_path" ] && [ ! -f "$helm_path" ]; then
-    log_warn "helm 未找到: $helm_path"
+# 1. 工具检查与安装（复用 lib 中的逻辑）
+bash "${SCRIPT_DIR}/../../lib/tools.sh"
+if [ $? -ne 0 ]; then
+    exit 1
 fi
 
-log_success "工具路径检查完成"
-
-# 3. 检查 SSH 连接（到所有节点）
+# 2. 检查 SSH 连接（到所有节点）
 log_info "检查 SSH 连接..."
 failed_nodes=()
 
@@ -111,13 +92,14 @@ fi
 
 log_success "SSH 连接检查通过"
 
-# 4. 生成检查报告
+# 3. 生成检查报告
 log_info ""
 log_separator
 log_info "前置检查报告"
 log_separator
-log_info "配置文件: ✓ 通过"
 log_info "本地工具: ✓ 通过"
+log_info "yq:      ✓ 通过"
+log_info "helm:    ✓ 通过"
 log_info "SSH 连接: ✓ 通过"
 log_separator
 log_success "前置检查全部通过，可以开始部署"
