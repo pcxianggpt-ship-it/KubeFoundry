@@ -184,11 +184,11 @@ run_k8s_base() {
     log_info "阶段二：K8S 基础环境安装"
     log_separator
 
-    # 2.1 配置本地yum源（仅主控制节点）
+    # 2.1 配置本地yum源（本地执行）
     log_info "配置本地yum源..."
     local repo_source
     repo_source=$(config_get '.paths.repo_source')
-    exec_script_on_control_plane "${P2}/10-setup-yum-source.sh" "$repo_source"
+    ( cd "${PROJECT_ROOT}"; source "${P2}/10-setup-yum-source.sh" "$repo_source" )
     if [ $? -ne 0 ]; then
         log_error "配置yum源失败"
         return 1
