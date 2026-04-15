@@ -28,11 +28,10 @@ _get_ssh_target() {
     # 尝试从配置文件获取 hostname
     hostname=$(get_node_hostname "$node_ip" 2>/dev/null)
 
-    if [ -n "$hostname" ] && [ "$hostname" != "$node_ip" ]; then
-        # 返回 hostname
+    # hostname 存在且可解析时才使用，否则回退到 IP
+    if [ -n "$hostname" ] && [ "$hostname" != "$node_ip" ] && getent hosts "$hostname" >/dev/null 2>&1; then
         echo "$hostname"
     else
-        # 返回 IP
         echo "$node_ip"
     fi
 }
@@ -74,11 +73,6 @@ check_ssh_connection() {
         return 0
     else
         log_error "SSH 连接失败: ${target}"
-        log_error "请检查："
-        log_error "  1. SSH 密钥路径是否正确: ${ssh_key}"
-        log_error "  2. 目标节点 SSH 服务是否启动"
-        log_error "  3. 目标节点防火墙是否开放端口 ${ssh_port}"
-        log_error "  4. /etc/hosts 是否配置了 hostname 解析（如果使用 hostname）"
         return 1
     fi
 }
