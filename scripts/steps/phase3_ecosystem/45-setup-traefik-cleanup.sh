@@ -8,9 +8,7 @@
 # 版本：1.0.0
 #===============================================================================
 
-# 获取脚本所在目录的绝对路径
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+# PROJECT_ROOT 由 main.sh export，无需推算
 
 # 加载公共函数库
 source "${PROJECT_ROOT}/scripts/lib/logger.sh"

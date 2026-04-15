@@ -7,10 +7,12 @@
 # 版本：1.0.0
 #===============================================================================
 
+# PROJECT_ROOT 由 main.sh export，无需推算
+
 # 加载必要的库
-source "$(dirname "$0")/../../lib/logger.sh"
-source "$(dirname "$0")/../../lib/config.sh"
-source "$(dirname "$0")/../../lib/validator.sh"
+source "${PROJECT_ROOT}/scripts/lib/logger.sh"
+source "${PROJECT_ROOT}/scripts/lib/config.sh"
+source "${PROJECT_ROOT}/scripts/lib/validator.sh"
 
 # 1. 检查配置文件是否存在
 log_info "检查配置文件..."
