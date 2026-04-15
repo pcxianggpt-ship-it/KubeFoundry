@@ -7,6 +7,10 @@
 # 版本：1.0.0
 #===============================================================================
 
+# 防止重复加载
+[ -n "$_SSH_LOADED" ] && return 0
+_SSH_LOADED=1
+
 # 从配置文件加载 SSH 参数
 _SSH_USER=$(config_get '.ssh.user' 'root' 2>/dev/null)
 _SSH_PORT=$(config_get '.ssh.port' '22' 2>/dev/null)

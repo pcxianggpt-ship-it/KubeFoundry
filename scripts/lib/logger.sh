@@ -7,6 +7,10 @@
 # 版本：1.0.0
 #===============================================================================
 
+# 防止重复加载
+[ -n "$_LOGGER_LOADED" ] && return 0
+_LOGGER_LOADED=1
+
 # 日志文件路径
 LOG_FILE="${LOG_FILE:-/tmp/kubefoundry_install.log}"
 

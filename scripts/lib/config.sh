@@ -7,6 +7,10 @@
 # 版本：1.0.0
 #===============================================================================
 
+# 防止重复加载
+[ -n "$_CONFIG_LOADED" ] && return 0
+_CONFIG_LOADED=1
+
 # 配置文件路径（相对于项目根目录）
 CONFIG_FILE="${CONFIG_FILE:-config/cluster.yaml}"
 
