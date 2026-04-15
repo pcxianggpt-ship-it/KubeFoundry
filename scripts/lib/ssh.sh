@@ -160,6 +160,116 @@ scp_exec() {
 }
 
 #===============================================================================
+# 函数：scp_dir_to_node()
+# 功能：传输本地目录到远程节点（支持 hostname 和 IP）
+# 参数：
+#   $1 - 本地目录路径
+#   $2 - 远程目标父目录（目录将放置在此路径下）
+#   $3 - 目标节点 IP 地址或 hostname
+# 返回值：
+#   0 - 传输成功
+#   非 0 - 传输失败
+#===============================================================================
+scp_dir_to_node() {
+    local local_dir="$1"
+    local remote_parent="$2"
+    local node="$3"
+
+    # 检查本地目录是否存在
+    if [ ! -d "$local_dir" ]; then
+        log_error "本地目录不存在: ${local_dir}"
+        return 1
+    fi
+
+    # 获取连接目标（优先 hostname）
+    local target
+    target=$(_get_ssh_target "$node")
+
+    # 展开路径中的 ~
+    local ssh_key="${_SSH_KEY/#\~/$HOME}"
+
+    log_info "传输目录: ${local_dir} -> ${target}:${remote_parent}/"
+
+    # 远程创建父目录
+    ssh -n -i "${ssh_key}" -p "${_SSH_PORT}" -o ConnectTimeout="${_SSH_TIMEOUT}" \
+        -o StrictHostKeyChecking=no \
+        "${_SSH_USER}@${target}" "mkdir -p ${remote_parent}" || return 1
+
+    # 执行 scp -r 传输目录
+    if scp -r -i "${ssh_key}" -P "${_SSH_PORT}" -o ConnectTimeout="${_SSH_TIMEOUT}" \
+        -o StrictHostKeyChecking=no \
+        "${local_dir}" "${_SSH_USER}@${target}:${remote_parent}/"; then
+        log_success "目录传输成功: ${target}"
+        return 0
+    else
+        log_error "目录传输失败: ${target}, 源目录: ${local_dir}"
+        return 1
+    fi
+}
+
+#===============================================================================
+# 函数：scp_dir_to_all_nodes()
+# 功能：传输本地目录到所有节点
+# 参数：
+#   $1 - 本地目录路径
+#   $2 - 远程目标父目录
+# 返回值：
+#   0 - 所有节点传输成功
+#   非 0 - 至少一个节点传输失败
+#===============================================================================
+scp_dir_to_all_nodes() {
+    local local_dir="$1"
+    local remote_parent="$2"
+    local success=true
+
+    log_info "分发目录到所有节点: ${local_dir} -> ${remote_parent}/"
+
+    # 分发到控制节点
+    local control_plane_ips
+    control_plane_ips=$(get_all_control_plane_ips)
+    while IFS= read -r node_ip; do
+        if ! scp_dir_to_node "$local_dir" "$remote_parent" "$node_ip"; then
+            success=false
+        fi
+    done <<< "$control_plane_ips"
+
+    # 分发到工作节点
+    local worker_ips
+    worker_ips=$(get_all_worker_ips)
+    while IFS= read -r node_ip; do
+        if ! scp_dir_to_node "$local_dir" "$remote_parent" "$node_ip"; then
+            success=false
+        fi
+    done <<< "$worker_ips"
+
+    # 分发到镜像仓库节点（如果与控制节点不同）
+    local registry_ip
+    registry_ip=$(get_registry_ip)
+    if [ -n "$registry_ip" ]; then
+        local found=false
+        while IFS= read -r ip; do
+            if [ "$ip" = "$registry_ip" ]; then
+                found=true
+                break
+            fi
+        done <<< "$control_plane_ips"
+        if [ "$found" = false ]; then
+            if ! scp_dir_to_node "$local_dir" "$remote_parent" "$registry_ip"; then
+                success=false
+            fi
+        fi
+    fi
+
+    if [ "$success" = true ]; then
+        log_success "所有节点目录分发成功"
+        return 0
+    else
+        log_error "部分节点目录分发失败"
+        return 1
+    fi
+}
+
+#===============================================================================
 # 函数：ssh_exec_capture()
 # 功能：在远程节点执行命令并捕获输出（支持 hostname 和 IP）
 # 参数：

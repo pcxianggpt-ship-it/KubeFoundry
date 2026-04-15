@@ -295,6 +295,21 @@ run_k8s_base() {
     if step_is_done "2.8"; then
         log_info "[跳过] 2.8 安装containerd（已完成）"
     else
+        # 分发 container_runtime 目录到所有节点
+        log_info "分发container_runtime安装包到所有节点..."
+        local container_runtime_dir
+        container_runtime_dir=$(config_resolve '.paths.container_runtime')
+        if [ ! -d "$container_runtime_dir" ]; then
+            log_error "container_runtime目录不存在: ${container_runtime_dir}"
+            return 1
+        fi
+        scp_dir_to_all_nodes "$container_runtime_dir" "/tmp/k8s"
+        if [ $? -ne 0 ]; then
+            log_error "container_runtime安装包分发失败"
+            return 1
+        fi
+        log_success "container_runtime安装包分发完成"
+
         log_info "安装containerd..."
         exec_script_on_all_nodes "${P2}/16-install-containerd.sh"
         if [ $? -ne 0 ]; then
