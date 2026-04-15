@@ -9,7 +9,7 @@
 
 #===============================================================================
 # 函数：exec_script_on_single_node()
-# 功能：在单个节点上执行本地脚本（底层实现函数）
+# 功能：在单个节点上通过 SSH 管道直接执行本地脚本（底层实现函数）
 # 参数：
 #   $1 - 节点 IP 地址
 #   $2 - 本地脚本路径
@@ -18,8 +18,8 @@
 #   0 - 执行成功
 #   非 0 - 执行失败
 # 说明：
-#   - 自动将脚本传输到远程节点的 /tmp/ 目录
-#   - 执行失败时会保留远程脚本用于调试
+#   - 通过 ssh ... 'bash -s' < script 直接执行，无需 SCP 传输
+#   - 远程节点不留残余文件
 #   - 使用配置文件中的 SSH 参数（用户、端口、密钥、超时）
 #===============================================================================
 exec_script_on_single_node() {
@@ -37,50 +37,25 @@ exec_script_on_single_node() {
         return 1
     fi
 
-    # 检查脚本是否可执行
-    if [ ! -x "$script_path" ]; then
-        log_warn "脚本文件不可执行: ${script_path}，尝试添加执行权限"
-        chmod +x "$script_path"
-    fi
-
     log_node "control_plane" "${node_hostname}" "执行脚本: ${script_path}"
 
-    # 生成远程脚本路径
-    local script_name
-    script_name=$(basename "$script_path")
-    local remote_script="/tmp/${script_name}.$$"
-
-    # 传输脚本到远程节点
-    log_debug "传输脚本到远程节点: ${node_hostname}:${remote_script}"
-    if ! scp_exec "$script_path" "$remote_script" "$node_ip"; then
-        log_error "脚本传输失败: ${script_path}"
-        return 1
+    # 构建 bash -s 命令（支持透传参数）
+    local bash_command="bash -s"
+    if [ $# -gt 0 ]; then
+        bash_command="bash -s -- $(printf '%q ' "$@")"
     fi
 
-    # 在远程节点添加执行权限
-    log_debug "添加脚本执行权限"
-    ssh_exec "$node_ip" "chmod +x ${remote_script}"
+    # 获取 SSH 连接参数
+    local target
+    target=$(_get_ssh_target "$node_ip")
+    local ssh_key="${_SSH_KEY/#\~/$HOME}"
 
-    # 执行脚本
-    log_debug "执行远程脚本，参数: $*"
-    local result
-    result=$(ssh_exec "$node_ip" "${remote_script} $*" 2>&1)
-    local exit_code=$?
+    log_debug "通过SSH管道执行脚本，参数: $*"
 
-    # 打印脚本输出
-    if [ -n "$result" ]; then
-        echo "$result"
-    fi
-
-    # 清理远程脚本（成功时）
-    if [ $exit_code -eq 0 ]; then
-        log_debug "清理远程脚本: ${remote_script}"
-        ssh_exec "$node_ip" "rm -f ${remote_script}"
-    else
-        log_error "脚本执行失败，保留远程脚本用于调试: ${remote_script}"
-    fi
-
-    return $exit_code
+    # 通过 stdin 管道将脚本内容传入远程 bash
+    ssh -i "${ssh_key}" -p "${_SSH_PORT}" -o ConnectTimeout="${_SSH_TIMEOUT}" \
+        -o StrictHostKeyChecking=no \
+        "${_SSH_USER}@${target}" "$bash_command" < "$script_path"
 }
 
 #===============================================================================
