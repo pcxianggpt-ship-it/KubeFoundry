@@ -132,11 +132,11 @@ if [ -n "$all_ips" ]; then
         log_info "复制公钥到节点: ${node_display} (${ssh_user}@${node_ip}:${ssh_port})"
 
         # 使用 sshpass 创建 .ssh 目录并设置权限
-        sshpass -p "$ssh_password" ssh -p "$ssh_port" -o StrictHostKeyChecking=no \
+        sshpass -p "$ssh_password" ssh -n -p "$ssh_port" -o StrictHostKeyChecking=no \
             "${ssh_user}@${node_ip}" "mkdir -p ~/.ssh && chmod 700 ~/.ssh" >/dev/null 2>&1
 
         # 使用 sshpass 将公钥添加到 authorized_keys
-        if sshpass -p "$ssh_password" ssh -p "$ssh_port" -o StrictHostKeyChecking=no \
+        if sshpass -p "$ssh_password" ssh -n -p "$ssh_port" -o StrictHostKeyChecking=no \
             "${ssh_user}@${node_ip}" "echo '${pub_key_content}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys" >/dev/null 2>&1; then
             log_success "公钥复制成功: ${node_display}"
         else
@@ -165,7 +165,7 @@ if [ -n "$all_ips" ]; then
         log_info "验证免密登录: ${node_display} (${ssh_user}@${node_ip}:${ssh_port})"
 
         # 尝试 SSH 连接（使用密钥）
-        if ssh -i "${DEFAULT_SSH_KEY}" -p "$ssh_port" -o ConnectTimeout=10 \
+        if ssh -n -i "${DEFAULT_SSH_KEY}" -p "$ssh_port" -o ConnectTimeout=10 \
             -o StrictHostKeyChecking=no -o BatchMode=yes \
             "${ssh_user}@${node_ip}" "echo 'SSH connection successful'" >/dev/null 2>&1; then
             log_success "免密登录验证成功: ${node_display}"
