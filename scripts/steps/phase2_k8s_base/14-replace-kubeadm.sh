@@ -13,7 +13,7 @@ mkdir -p /tmp/k8s
 
 # 备份原始kubeadm
 cp /usr/bin/kubeadm /tmp/k8s/kubeadm_bak
-local kubeadm_100y_file="$data_path/01.rpm_package/kubeadm-$k8s_version-100y-$arch_type"
+kubeadm_100y_file="$data_path/01.rpm_package/kubeadm-$k8s_version-100y-$arch_type"
 scp "$kubeadm_100y_file" /usr/bin/kubeadm
 
 echo "【INFO】: kubeadm已替换为支持100年证书版本"

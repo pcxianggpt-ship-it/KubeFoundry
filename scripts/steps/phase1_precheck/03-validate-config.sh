@@ -34,14 +34,12 @@ log_success "配置文件加载成功"
 log_info "验证必需的配置项..."
 
 # 验证集群配置
-local cluster_name
 cluster_name=$(get_cluster_name)
 if [ -z "$cluster_name" ]; then
     log_error "集群名称未配置"
     exit 1
 fi
 
-local k8s_version
 k8s_version=$(get_k8s_version)
 if [ -z "$k8s_version" ]; then
     log_error "K8S 版本未配置"
@@ -54,7 +52,6 @@ log_success "必需参数检查通过"
 log_info "验证节点 IP 地址格式..."
 
 # 验证控制节点
-local control_plane_count
 control_plane_count=$(config_get_length '.control_plane')
 
 if [ "$control_plane_count" -eq 0 ]; then
@@ -63,9 +60,7 @@ if [ "$control_plane_count" -eq 0 ]; then
 fi
 
 for ((i = 0; i < control_plane_count; i++)); do
-    local node_ip
     node_ip=$(config_get_node 'control_plane' "$i" 'ip')
-    local node_hostname
     node_hostname=$(config_get_node 'control_plane' "$i" 'hostname')
 
     # 验证 IP 格式
@@ -86,16 +81,13 @@ done
 log_success "控制节点 IP 和 hostname 验证通过"
 
 # 验证工作节点
-local worker_count
 worker_count=$(config_get_length '.workers')
 
 if [ "$worker_count" -eq 0 ]; then
     log_warn "未找到工作节点配置"
 else
     for ((i = 0; i < worker_count; i++)); do
-        local node_ip
         node_ip=$(config_get_node 'workers' "$i" 'ip')
-        local node_hostname
         node_hostname=$(config_get_node 'workers' "$i" 'hostname')
 
         # 验证 IP 格式
@@ -117,9 +109,7 @@ else
 fi
 
 # 验证镜像仓库节点
-local registry_hostname
 registry_hostname=$(get_registry_hostname)
-local registry_ip
 registry_ip=$(get_registry_ip)
 
 if [ -n "$registry_ip" ]; then
@@ -141,7 +131,6 @@ fi
 
 # 5. 验证端口号有效性
 log_info "验证端口号..."
-local api_server_port
 api_server_port=$(config_get '.network.api_server_port' '6443')
 if ! validate_port "$api_server_port"; then
     log_error "API Server 端口号无效: $api_server_port"
@@ -152,13 +141,11 @@ log_success "端口号验证通过"
 
 # 6. 验证文件路径可访问性
 log_info "验证文件路径..."
-local repo_source
 repo_source=$(config_get '.paths.repo_source')
 if [ -n "$repo_source" ] && [ ! -f "$repo_source" ]; then
     log_warn "YUM 源文件不存在: $repo_source"
 fi
 
-local k8s_install_path
 k8s_install_path=$(config_get '.paths.k8s_install')
 if [ ! -d "$k8s_install_path" ]; then
     log_warn "K8S 安装目录不存在: $k8s_install_path"

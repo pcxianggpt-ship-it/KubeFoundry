@@ -97,7 +97,6 @@ fi
 #===============================================================================
 log_substep "读取 SSH 配置"
 
-local ssh_password
 ssh_password=$(config_get '.ssh.password' '' 2>/dev/null)
 
 if [ -z "$ssh_password" ]; then
@@ -112,18 +111,14 @@ log_info "已从配置文件读取 SSH 密码"
 #===============================================================================
 
 # 获取SSH配置
-local ssh_user
 ssh_user=$(config_get '.ssh.user' 'root' 2>/dev/null)
-local ssh_port
 ssh_port=$(config_get '.ssh.port' '22' 2>/dev/null)
 
 # 读取公钥内容
-local pub_key_content
 pub_key_content=$(cat "$DEFAULT_SSH_PUB_KEY")
 
 log_substep "复制公钥到所有节点"
 
-local all_ips
 all_ips=$(get_all_node_ips)
 
 if [ -n "$all_ips" ]; then
@@ -133,9 +128,8 @@ if [ -n "$all_ips" ]; then
         fi
 
         # 获取节点主机名
-        local node_hostname
         node_hostname=$(get_node_hostname "$node_ip" 2>/dev/null)
-        local node_display="${node_hostname:-$node_ip}"
+        node_display="${node_hostname:-$node_ip}"
 
         log_info "复制公钥到节点: ${node_display} (${ssh_user}@${node_ip}:${ssh_port})"
 
@@ -158,7 +152,6 @@ fi
 #===============================================================================
 log_substep "验证免密登录"
 
-local all_ips
 all_ips=$(get_all_node_ips)
 
 if [ -n "$all_ips" ]; then
@@ -168,9 +161,8 @@ if [ -n "$all_ips" ]; then
         fi
 
         # 获取节点主机名
-        local node_hostname
         node_hostname=$(get_node_hostname "$node_ip" 2>/dev/null)
-        local node_display="${node_hostname:-$node_ip}"
+        node_display="${node_hostname:-$node_ip}"
 
         log_info "验证免密登录: ${node_display} (${ssh_user}@${node_ip}:${ssh_port})"
 

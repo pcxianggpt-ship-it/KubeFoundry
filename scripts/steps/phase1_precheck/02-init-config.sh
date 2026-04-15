@@ -24,14 +24,12 @@ log_success "配置文件加载成功"
 log_info "验证配置文件格式..."
 
 # 检查必需的配置项
-local cluster_name
 cluster_name=$(get_cluster_name)
 if [ -z "$cluster_name" ]; then
     log_error "集群名称未配置"
     exit 1
 fi
 
-local k8s_version
 k8s_version=$(get_k8s_version)
 if [ -z "$k8s_version" ]; then
     log_error "K8S 版本未配置"
@@ -44,16 +42,12 @@ log_success "配置文件格式验证通过"
 log_info "初始化全局变量..."
 
 # 从配置文件读取参数
-local pod_subnet
 pod_subnet=$(get_pod_subnet)
 
-local service_subnet
 service_subnet=$(get_service_subnet)
 
-local control_node_count
 control_node_count=$(config_get_length '.control_plane')
 
-local worker_node_count
 worker_node_count=$(config_get_length '.workers')
 
 log_success "全局变量初始化完成"
