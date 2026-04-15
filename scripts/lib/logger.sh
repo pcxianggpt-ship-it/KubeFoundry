@@ -8,7 +8,7 @@
 #===============================================================================
 
 # 日志文件路径
-LOG_FILE="/tmp/kubefoundry_install.log"
+LOG_FILE="${LOG_FILE:-/tmp/kubefoundry_install.log}"
 
 # 日志颜色定义
 readonly COLOR_RESET='\033[0m'
