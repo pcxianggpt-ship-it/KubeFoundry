@@ -51,6 +51,49 @@ config_get() {
 }
 
 #===============================================================================
+# 函数：config_resolve()
+# 功能：从配置文件中获取配置值，并展开 ${xxx} 占位符
+# 参数：
+#   $1 - YAML 路径（如 .paths.repo_source）
+#   $2 - 默认值（可选）
+# 返回值：
+#   展开后的配置值（字符串）
+# 说明：
+#   支持 ${xxx} 格式的占位符，xxx 为 .paths 下的同级配置项名称
+#   例如：${install_media} 会替换为 .paths.install_media 的值
+#         ${arch} 会替换为 .paths.arch 的值
+#===============================================================================
+config_resolve() {
+    local path="$1"
+    local default="$2"
+
+    local value
+    value=$(config_get "$path" "$default")
+
+    if [ -z "$value" ]; then
+        echo ""
+        return 0
+    fi
+
+    # 展开 ${xxx} 占位符：逐个匹配并替换为 .paths.xxx 的值
+    while [[ "$value" =~ \$\{([a-zA-Z_][a-zA-Z0-9_]*)\} ]]; do
+        local placeholder="${BASH_REMATCH[0]}"
+        local var_name="${BASH_REMATCH[1]}"
+        local var_value
+        var_value=$(config_get ".paths.${var_name}" "")
+
+        if [ -n "$var_value" ]; then
+            value="${value//${placeholder}/${var_value}}"
+        else
+            # 变量未定义，移除占位符
+            value="${value//${placeholder}/}"
+        fi
+    done
+
+    echo "$value"
+}
+
+#===============================================================================
 # 函数：config_get_array()
 # 功能：从配置文件中获取数组
 # 参数：
@@ -393,11 +436,16 @@ get_service_subnet() {
 }
 
 #===============================================================================
-# 函数：get_k8s_soft()
+# 函数：get_k8s_home()
 # 功能：获取 K8S 安装根目录路径
 # 返回值：
 #   K8S 安装根目录路径
 #===============================================================================
+get_k8s_home() {
+    config_get '.paths.k8s_home' '/data/k8s_install'
+}
+
+# 兼容旧名称
 get_k8s_soft() {
-    config_get '.paths.k8s_soft' '/data/k8s_install'
+    get_k8s_home
 }

@@ -135,17 +135,31 @@ paths:
   # - 03.setup_file/      # 配置文件和模板
   # - 04.registry/        # 镜像仓库安装脚本
   # - 05.crontab/         # 定时任务脚本
-  k8s_soft: "/data/k8s_install"  # 默认路径，可根据实际环境修改
+  k8s_home: "/data/k8s_install"  # K8S安装目录，可根据实际环境修改
+
+  # 安装介质包根目录（管理节点本地存放安装介质的路径）
+  # 说明：包含各操作系统和架构的安装介质包
+  # 目录结构示例：
+  #   ${install_media}/
+  #   ├── k8srepo_kylinos_sp3_amd64.tar.gz
+  #   ├── k8srepo_kylinos_sp3_arm64.tar.gz
+  #   ├── k8srepo_centos7_amd64.tar.gz
+  #   └── ...
+  install_media: "/root/kube-media"  # 安装介质包根目录，可按需修改
+
+  # 系统架构（自动检测或手动指定）
+  # 可选值：amd64, arm64
+  arch: "amd64"
 
   # YUM 源文件路径（3.1 配置本地yum源使用）
-  # 说明：这是 YUM 源的压缩包文件路径
-  # 示例：/data/repo/rhel7-k8s-repo.tar.gz
-  repo_source: "/data/repo/rhel7-k8s-repo.tar.gz"
+  # 说明：支持 ${install_media} 和 ${arch} 变量占位符，运行时自动展开
+  # 示例：${install_media}/01.rpm_package/k8srepo_kylinos_sp3_${arch}.tar.gz
+  repo_source: "${install_media}/01.rpm_package/k8srepo_kylinos_sp3_${arch}.tar.gz"
 
   # 100 年证书版本 kubeadm 文件路径（3.5 替换kubeadm使用）
   # 说明：这是修改过证书有效期的 kubeadm 二进制文件
   # 示例：/data/k8s_install/01.rpm_package/kubeadm-1.29.0-100y-amd64
-  kubeadm_100y: "/data/k8s_install/01.rpm_package/kubeadm-1.29.0-100y-amd64"
+  kubeadm_100y: "${install_media}/01.rpm_package/kubeadm-1.30.14-100y-amd64"
 
   # Containerd 安装包路径（3.7 安装containerd使用）
   # 说明：此目录应包含以下文件：
@@ -157,12 +171,12 @@ paths:
   # - config-1.7.18.toml
   # - containerd.service
   # - buildkit.service
-  container_runtime: "/data/k8s_install/02.container_runtime"
+  container_runtime: "${install_media}/02.container_runtime"
 
   # 镜像仓库安装脚本路径（3.8 安装镜像仓库使用）
   # 说明：镜像仓库安装脚本路径
-  # 示例：/data/k8s_install/04.registry/registry_install.sh
-  registry_install: "/data/k8s_install/04.registry/registry_install.sh"
+  # 示例：/data/k8s_install/04.registry
+  registry_install: "${install_media}/04.registry"
 
 #===============================================================================
 # 高级配置（可选）
