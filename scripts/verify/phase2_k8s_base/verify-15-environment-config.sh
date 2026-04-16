@@ -35,7 +35,7 @@ while IFS= read -r node_ip; do
     fi
 
     # 2. fstab中无swap条目
-    result=$(ssh_exec_capture "$node_ip" "grep -c swap /etc/fstab 2>/dev/null || echo 0")
+    result=$(ssh_exec_capture "$node_ip" "grep -c swap /etc/fstab 2>/dev/null || true" | tr -d '[:space:]')
     if [ "$result" -eq 0 ]; then
         check_pass "fstab 已移除swap: ${node_display}"
     else
@@ -51,7 +51,7 @@ while IFS= read -r node_ip; do
     fi
 
     # 4. 内核模块 overlay 已加载
-    result=$(ssh_exec_capture "$node_ip" "lsmod | grep -c '^overlay' 2>/dev/null || echo 0")
+    result=$(ssh_exec_capture "$node_ip" "lsmod | grep -c '^overlay' 2>/dev/null || true" | tr -d '[:space:]')
     if [ "$result" -ge 1 ]; then
         check_pass "overlay 模块已加载: ${node_display}"
     else
@@ -59,7 +59,7 @@ while IFS= read -r node_ip; do
     fi
 
     # 5. 内核模块 br_netfilter 已加载
-    result=$(ssh_exec_capture "$node_ip" "lsmod | grep -c '^br_netfilter' 2>/dev/null || echo 0")
+    result=$(ssh_exec_capture "$node_ip" "lsmod | grep -c '^br_netfilter' 2>/dev/null || true" | tr -d '[:space:]')
     if [ "$result" -ge 1 ]; then
         check_pass "br_netfilter 模块已加载: ${node_display}"
     else
@@ -101,7 +101,7 @@ while IFS= read -r node_ip; do
 
     # 10. open files 参数
     result=$(ssh_exec_capture "$node_ip" \
-        "grep -c '65535' /etc/security/limits.conf 2>/dev/null || echo 0")
+        "grep -c '65535' /etc/security/limits.conf 2>/dev/null || true" | tr -d '[:space:]')
     if [ "$result" -ge 1 ]; then
         check_pass "nofile 65535 已配置: ${node_display}"
     else

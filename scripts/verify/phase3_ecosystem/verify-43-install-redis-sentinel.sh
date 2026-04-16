@@ -24,7 +24,7 @@ primary_cp=$(get_all_control_plane_ips | head -1)
 
 # 1. redis-sentinel 命名空间存在
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get ns redis-sentinel --no-headers 2>/dev/null | grep -c 'Active' || echo 0")
+    "kubectl get ns redis-sentinel --no-headers 2>/dev/null | grep -c 'Active' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "redis-sentinel 命名空间存在"
 else
@@ -33,7 +33,7 @@ fi
 
 # 2. redis Pod 运行
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pods -n redis-sentinel --no-headers 2>/dev/null | grep -c 'Running' || echo 0")
+    "kubectl get pods -n redis-sentinel --no-headers 2>/dev/null | grep -c 'Running' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "redis Pod 运行中 (${result} 个)"
 else
@@ -42,7 +42,7 @@ fi
 
 # 3. redis helm release 存在
 result=$(ssh_exec_capture "$primary_cp" \
-    "helm list -n redis-sentinel 2>/dev/null | grep -c 'redis' || echo 0")
+    "helm list -n redis-sentinel 2>/dev/null | grep -c 'redis' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "redis helm release 存在"
 else
@@ -51,7 +51,7 @@ fi
 
 # 4. redis PV 已绑定
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pv --no-headers 2>/dev/null | grep 'redis' | grep -c 'Bound' || echo 0")
+    "kubectl get pv --no-headers 2>/dev/null | grep 'redis' | grep -c 'Bound' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "redis PV 已绑定 (${result} 个)"
 else

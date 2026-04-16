@@ -28,7 +28,7 @@ for ((i = 0; i < control_count; i++)); do
     expected_hn=$(config_get_node 'control_plane' "$i" 'hostname')
 
     result=$(ssh_exec_capture "$primary_cp" \
-        "kubectl get nodes --no-headers 2>/dev/null | grep -c '${expected_hn}' || echo 0")
+        "kubectl get nodes --no-headers 2>/dev/null | grep -c '${expected_hn}' || true" | tr -d '[:space:]')
     if [ "$result" -ge 1 ]; then
         check_pass "控制节点已加入集群: ${expected_hn}"
     else
@@ -41,7 +41,7 @@ for ((i = 0; i < control_count; i++)); do
     expected_hn=$(config_get_node 'control_plane' "$i" 'hostname')
 
     result=$(ssh_exec_capture "$primary_cp" \
-        "kubectl get nodes --no-headers 2>/dev/null | grep '${expected_hn}' | grep -c 'control-plane' || echo 0")
+        "kubectl get nodes --no-headers 2>/dev/null | grep '${expected_hn}' | grep -c 'control-plane' || true" | tr -d '[:space:]')
     if [ "$result" -ge 1 ]; then
         check_pass "控制节点角色标记正确: ${expected_hn}"
     else
@@ -51,7 +51,7 @@ done
 
 # 3. etcd 集群成员
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pods -n kube-system --no-headers 2>/dev/null | grep -c 'etcd' || echo 0")
+    "kubectl get pods -n kube-system --no-headers 2>/dev/null | grep -c 'etcd' || true" | tr -d '[:space:]')
 if [ "$result" -ge "$control_count" ]; then
     check_pass "etcd Pod 数量正确 (期望 >=${control_count}, 实际 ${result})"
 else

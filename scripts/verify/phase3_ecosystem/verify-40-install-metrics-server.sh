@@ -24,7 +24,7 @@ primary_cp=$(get_all_control_plane_ips | head -1)
 
 # 1. metrics-server Pod 运行
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pods -n kube-system --no-headers 2>/dev/null | grep 'metrics-server' | grep -c 'Running' || echo 0")
+    "kubectl get pods -n kube-system --no-headers 2>/dev/null | grep 'metrics-server' | grep -c 'Running' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "metrics-server Pod 运行中"
 else

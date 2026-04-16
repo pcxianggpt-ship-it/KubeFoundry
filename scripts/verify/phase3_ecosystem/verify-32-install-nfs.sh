@@ -44,7 +44,7 @@ fi
 
 # 3. nfs-subdir-external-provisioner helm release
 result=$(ssh_exec_capture "$primary_cp" \
-    "helm list 2>/dev/null | grep -c 'nfs-subdir-external-provisioner' || echo 0")
+    "helm list 2>/dev/null | grep -c 'nfs-subdir-external-provisioner' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "nfs-subdir-external-provisioner helm release 存在"
 else
@@ -53,7 +53,7 @@ fi
 
 # 4. nfs provisioner Pod 运行
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pods --all-namespaces --no-headers 2>/dev/null | grep 'nfs' | grep -c 'Running' || echo 0")
+    "kubectl get pods --all-namespaces --no-headers 2>/dev/null | grep 'nfs' | grep -c 'Running' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "nfs provisioner Pod 运行中 (${result} 个)"
 else

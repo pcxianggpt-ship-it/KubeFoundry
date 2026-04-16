@@ -33,7 +33,7 @@ fi
 
 # 2. 所有 Pod 状态为 Running
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep -cv 'Running' || echo 0")
+    "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep -cv 'Running' || true" | tr -d '[:space:]')
 if [ "$result" -eq 0 ]; then
     check_pass "所有 kubemate Pod 状态为 Running"
 else
@@ -42,7 +42,7 @@ fi
 
 # 3. NodePort 服务可访问（30088）
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get svc -n kubemate-system --no-headers 2>/dev/null | grep -c '30088' || echo 0")
+    "kubectl get svc -n kubemate-system --no-headers 2>/dev/null | grep -c '30088' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "kubemate UI NodePort 服务存在 (30088)"
 else

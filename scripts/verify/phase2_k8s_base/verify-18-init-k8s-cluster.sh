@@ -62,7 +62,7 @@ fi
 # 5. kubelet 数据目录配置
 kubelet_root=$(config_get '.env.kubelet_root' '/data/kubelet_root')
 result=$(ssh_exec_capture "$primary_cp" \
-    "grep -c 'KUBELET_EXTRA_ARGS' /etc/sysconfig/kubelet 2>/dev/null || echo 0")
+    "grep -c 'KUBELET_EXTRA_ARGS' /etc/sysconfig/kubelet 2>/dev/null || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "kubelet 数据目录已配置: ${node_display}"
 else
@@ -72,7 +72,7 @@ fi
 # 6. 静态 Pod 运行（etcd/apiserver/controller/scheduler）
 for component in etcd kube-apiserver kube-controller-manager kube-scheduler; do
     result=$(ssh_exec_capture "$primary_cp" \
-        "kubectl get pods -n kube-system --no-headers 2>/dev/null | grep -c '${component}' || echo 0")
+        "kubectl get pods -n kube-system --no-headers 2>/dev/null | grep -c '${component}' || true" | tr -d '[:space:]')
     if [ "$result" -ge 1 ]; then
         check_pass "${component} Pod 存在: ${node_display}"
     else

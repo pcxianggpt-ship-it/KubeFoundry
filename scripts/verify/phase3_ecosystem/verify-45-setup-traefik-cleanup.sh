@@ -26,7 +26,7 @@ node_display="${node_display:-$primary_cp}"
 
 # 1. crontab 中包含 traefikClear 任务
 result=$(ssh_exec_capture "$primary_cp" \
-    "crontab -l 2>/dev/null | grep -c 'traefikClear' || echo 0")
+    "crontab -l 2>/dev/null | grep -c 'traefikClear' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "crontab 包含 Traefik 清理任务: ${node_display}"
 else

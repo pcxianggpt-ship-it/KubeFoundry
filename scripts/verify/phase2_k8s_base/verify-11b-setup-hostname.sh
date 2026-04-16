@@ -69,7 +69,7 @@ while IFS= read -r node_ip; do
     node_display=$(get_node_hostname "$node_ip" 2>/dev/null)
     node_display="${node_display:-$node_ip}"
 
-    result=$(ssh_exec_capture "$node_ip" "grep -c '${HOSTS_BEGIN}' /etc/hosts 2>/dev/null || echo 0")
+    result=$(ssh_exec_capture "$node_ip" "grep -c '${HOSTS_BEGIN}' /etc/hosts 2>/dev/null || true" | tr -d '[:space:]')
     if [ "$result" -ge 1 ]; then
         check_pass "/etc/hosts 包含集群解析: ${node_display}"
     else

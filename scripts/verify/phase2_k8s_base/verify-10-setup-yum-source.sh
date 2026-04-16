@@ -31,7 +31,7 @@ fi
 
 # 2. 验证repo文件内容
 result=$(ssh_exec_capture "$(get_all_control_plane_ips | head -1)" \
-    "grep -c 'k8s-yum' /etc/yum.repos.d/k8s.repo 2>/dev/null || echo 0")
+    "grep -c 'k8s-yum' /etc/yum.repos.d/k8s.repo 2>/dev/null || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "k8s-yum repo 段配置正确"
 else

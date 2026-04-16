@@ -24,7 +24,7 @@ primary_cp=$(get_all_control_plane_ips | head -1)
 
 # 1. coredns Pod 运行
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pods -n kube-system --no-headers 2>/dev/null | grep 'coredns' | grep -c 'Running' || echo 0")
+    "kubectl get pods -n kube-system --no-headers 2>/dev/null | grep 'coredns' | grep -c 'Running' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "coredns Pod 运行中 (${result} 个)"
 else
@@ -33,7 +33,7 @@ fi
 
 # 2. coredns 反亲和性配置
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get deployment coredns -n kube-system -o yaml 2>/dev/null | grep -c 'podAntiAffinity' || echo 0")
+    "kubectl get deployment coredns -n kube-system -o yaml 2>/dev/null | grep -c 'podAntiAffinity' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "coredns 已配置 podAntiAffinity"
 else

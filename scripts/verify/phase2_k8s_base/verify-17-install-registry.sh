@@ -32,7 +32,7 @@ node_display="${registry_hn:-$registry_ip}"
 # 1. registry 容器运行中
 result=$(ssh_exec_capture "$registry_ip" \
     "nerdctl ps --format '{{.Names}}' 2>/dev/null | grep -c '^registry$' || \
-     docker ps --format '{{.Names}}' 2>/dev/null | grep -c '^registry$' || echo 0")
+     docker ps --format '{{.Names}}' 2>/dev/null | grep -c '^registry$' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "registry 容器运行中: ${node_display}"
 else
@@ -41,7 +41,7 @@ fi
 
 # 2. registry 端口 5000 监听
 result=$(ssh_exec_capture "$registry_ip" \
-    "ss -tlnp 2>/dev/null | grep -c ':5000' || echo 0")
+    "ss -tlnp 2>/dev/null | grep -c ':5000' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "registry 端口 5000 已监听: ${node_display}"
 else
@@ -51,7 +51,7 @@ fi
 # 3. registry UI 容器运行中
 result=$(ssh_exec_capture "$registry_ip" \
     "nerdctl ps --format '{{.Names}}' 2>/dev/null | grep -c 'registry-ui' || \
-     docker ps --format '{{.Names}}' 2>/dev/null | grep -c 'registry-ui' || echo 0")
+     docker ps --format '{{.Names}}' 2>/dev/null | grep -c 'registry-ui' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "registry UI 容器运行中: ${node_display}"
 else
@@ -60,7 +60,7 @@ fi
 
 # 4. registry UI 端口 5080 监听
 result=$(ssh_exec_capture "$registry_ip" \
-    "ss -tlnp 2>/dev/null | grep -c ':5080' || echo 0")
+    "ss -tlnp 2>/dev/null | grep -c ':5080' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "registry UI 端口 5080 已监听: ${node_display}"
 else
@@ -79,7 +79,7 @@ fi
 # 6. registry 镜像列表
 result=$(ssh_exec_capture "$registry_ip" \
     "nerdctl images 2>/dev/null | grep registry | awk '{print \$2}' | grep -c '2.8.3' || \
-     docker images 2>/dev/null | grep registry | awk '{print \$2}' | grep -c '2.8.3' || echo 0")
+     docker images 2>/dev/null | grep registry | awk '{print \$2}' | grep -c '2.8.3' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "registry:2.8.3 镜像存在: ${node_display}"
 else

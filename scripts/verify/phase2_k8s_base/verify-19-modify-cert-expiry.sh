@@ -26,7 +26,7 @@ node_display="${node_display:-$primary_cp}"
 
 # 1. kube-controller-manager 配置中包含签名时长参数
 result=$(ssh_exec_capture "$primary_cp" \
-    "grep -c 'cluster-signing-duration' /etc/kubernetes/manifests/kube-controller-manager.yaml 2>/dev/null || echo 0")
+    "grep -c 'cluster-signing-duration' /etc/kubernetes/manifests/kube-controller-manager.yaml 2>/dev/null || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "cluster-signing-duration 参数已配置: ${node_display}"
 else
@@ -48,7 +48,7 @@ fi
 
 # 3. kube-controller-manager Pod 运行中
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pods -n kube-system --no-headers 2>/dev/null | grep 'kube-controller-manager' | grep -c 'Running' || echo 0")
+    "kubectl get pods -n kube-system --no-headers 2>/dev/null | grep 'kube-controller-manager' | grep -c 'Running' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "kube-controller-manager 运行正常: ${node_display}"
 else

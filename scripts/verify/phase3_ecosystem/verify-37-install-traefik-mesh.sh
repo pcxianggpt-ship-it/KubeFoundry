@@ -33,7 +33,7 @@ fi
 
 # 2. traefik-mesh Pod 运行状态
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'traefik-mesh' | grep -c 'Running' || echo 0")
+    "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'traefik-mesh' | grep -c 'Running' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "traefik-mesh Pod 运行中 (${result} 个)"
 else
@@ -42,7 +42,7 @@ fi
 
 # 3. traefik-mesh controller 运行
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'traefik-mesh-controller' | grep -c 'Running' || echo 0")
+    "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'traefik-mesh-controller' | grep -c 'Running' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "traefik-mesh-controller 运行中"
 else

@@ -33,7 +33,7 @@ else
 
         # 1. crontab 中包含 logback 任务
         result=$(ssh_exec_capture "$node_ip" \
-            "crontab -l 2>/dev/null | grep -c 'logback' || echo 0")
+            "crontab -l 2>/dev/null | grep -c 'logback' || true" | tr -d '[:space:]')
         if [ "$result" -ge 1 ]; then
             check_pass "crontab 包含日志清理任务: ${node_display}"
         else

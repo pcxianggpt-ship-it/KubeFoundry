@@ -33,7 +33,7 @@ fi
 
 # 2. skywalking-oap Pod 运行
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'skywalking' | grep -c 'Running' || echo 0")
+    "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'skywalking' | grep -c 'Running' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "skywalking Pod 运行中 (${result} 个)"
 else
@@ -42,7 +42,7 @@ fi
 
 # 3. ES secret 可访问
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get secret es-skywalking-es-elastic-user -n kubemate-system --no-headers 2>/dev/null | grep -c 'es-skywalking' || echo 0")
+    "kubectl get secret es-skywalking-es-elastic-user -n kubemate-system --no-headers 2>/dev/null | grep -c 'es-skywalking' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "Elasticsearch 用户 Secret 存在"
 else

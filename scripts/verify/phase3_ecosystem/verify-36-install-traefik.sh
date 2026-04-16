@@ -33,7 +33,7 @@ fi
 
 # 2. traefik Pod 运行状态（排除 traefik-mesh 的 Pod）
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'traefik' | grep -v 'mesh' | grep -c 'Running' || echo 0")
+    "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'traefik' | grep -v 'mesh' | grep -c 'Running' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "traefik Pod 运行中 (${result} 个)"
 else

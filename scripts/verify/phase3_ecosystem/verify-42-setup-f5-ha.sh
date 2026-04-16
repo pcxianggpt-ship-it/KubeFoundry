@@ -29,7 +29,7 @@ for ((i = 0; i < control_count; i++)); do
     node_display=$(get_node_hostname "$ip" 2>/dev/null)
     node_display="${node_display:-$ip}"
 
-    result=$(ssh_exec_capture "$ip" "grep -c 'k8sc1' /etc/hosts 2>/dev/null || echo 0")
+    result=$(ssh_exec_capture "$ip" "grep -c 'k8sc1' /etc/hosts 2>/dev/null || true" | tr -d '[:space:]')
     if [ "$result" -ge 1 ]; then
         check_pass "/etc/hosts 包含 k8sc1 解析: ${node_display}"
     else

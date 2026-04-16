@@ -33,7 +33,7 @@ fi
 
 # 2. es-skywalking Pod 运行状态
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pods -A --no-headers 2>/dev/null | grep 'es-skywalking' | grep -c 'Running' || echo 0")
+    "kubectl get pods -A --no-headers 2>/dev/null | grep 'es-skywalking' | grep -c 'Running' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "es-skywalking Pod 运行中 (${result} 个)"
 else
@@ -42,7 +42,7 @@ fi
 
 # 3. es CRD 已注册
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get crd 2>/dev/null | grep -c 'elasticsearch' || echo 0")
+    "kubectl get crd 2>/dev/null | grep -c 'elasticsearch' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "Elasticsearch CRD 已注册"
 else

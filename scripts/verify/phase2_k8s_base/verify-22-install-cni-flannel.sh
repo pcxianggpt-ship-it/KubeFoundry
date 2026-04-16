@@ -26,7 +26,7 @@ node_display="${node_display:-$primary_cp}"
 
 # 1. flannel 命名空间存在
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get ns kube-flannel --no-headers 2>/dev/null | grep -c 'Active' || echo 0")
+    "kubectl get ns kube-flannel --no-headers 2>/dev/null | grep -c 'Active' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "kube-flannel 命名空间存在"
 else
@@ -35,7 +35,7 @@ fi
 
 # 2. flannel DaemonSet Pod 运行
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pods -n kube-flannel --no-headers 2>/dev/null | grep 'kube-flannel-ds' | grep -c 'Running' || echo 0")
+    "kubectl get pods -n kube-flannel --no-headers 2>/dev/null | grep 'kube-flannel-ds' | grep -c 'Running' || true" | tr -d '[:space:]')
 all_node_count=$(( $(config_get_length '.control_plane') + $(config_get_length '.workers') ))
 if [ "$result" -ge "$all_node_count" ]; then
     check_pass "flannel Pod 全部Running (${result}/${all_node_count})"
@@ -45,7 +45,7 @@ fi
 
 # 3. 所有节点状态为 Ready
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get nodes --no-headers 2>/dev/null | grep -c 'NotReady' || echo 0")
+    "kubectl get nodes --no-headers 2>/dev/null | grep -c 'NotReady' || true" | tr -d '[:space:]')
 if [ "$result" -eq 0 ]; then
     check_pass "所有节点状态为 Ready"
 else
@@ -54,7 +54,7 @@ fi
 
 # 4. coredns Pod 状态
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pods -n kube-system --no-headers 2>/dev/null | grep 'coredns' | grep -c 'Running' || echo 0")
+    "kubectl get pods -n kube-system --no-headers 2>/dev/null | grep 'coredns' | grep -c 'Running' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "coredns Pod 运行正常 (${result} 个)"
 else

@@ -41,7 +41,7 @@ else
 
         # 检查repo内容
         result=$(ssh_exec_capture "$node_ip" \
-            "grep -c 'k8s-repo' /etc/yum.repos.d/k8s-http.repo 2>/dev/null || echo 0")
+            "grep -c 'k8s-repo' /etc/yum.repos.d/k8s-http.repo 2>/dev/null || true" | tr -d '[:space:]')
         if [ "$result" -ge 1 ]; then
             check_pass "k8s-repo 段配置正确: ${node_display}"
         else

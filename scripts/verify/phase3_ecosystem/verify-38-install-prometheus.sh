@@ -25,7 +25,7 @@ MONITORING_NS="kubemate-monitoring-system"
 
 # 1. 监控命名空间存在
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get ns ${MONITORING_NS} --no-headers 2>/dev/null | grep -c 'Active' || echo 0")
+    "kubectl get ns ${MONITORING_NS} --no-headers 2>/dev/null | grep -c 'Active' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "${MONITORING_NS} 命名空间存在"
 else
@@ -34,7 +34,7 @@ fi
 
 # 2. prometheus-operator Pod 运行
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pods -n ${MONITORING_NS} --no-headers 2>/dev/null | grep 'prometheus-operator' | grep -c 'Running' || echo 0")
+    "kubectl get pods -n ${MONITORING_NS} --no-headers 2>/dev/null | grep 'prometheus-operator' | grep -c 'Running' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "prometheus-operator 运行中"
 else
@@ -43,7 +43,7 @@ fi
 
 # 3. prometheus Pod 运行
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pods -n ${MONITORING_NS} --no-headers 2>/dev/null | grep 'prometheus-prometheus' | grep -c 'Running' || echo 0")
+    "kubectl get pods -n ${MONITORING_NS} --no-headers 2>/dev/null | grep 'prometheus-prometheus' | grep -c 'Running' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "prometheus 运行中 (${result} 个)"
 else
@@ -52,7 +52,7 @@ fi
 
 # 4. alertmanager Pod 运行
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pods -n ${MONITORING_NS} --no-headers 2>/dev/null | grep 'alertmanager' | grep -c 'Running' || echo 0")
+    "kubectl get pods -n ${MONITORING_NS} --no-headers 2>/dev/null | grep 'alertmanager' | grep -c 'Running' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "alertmanager 运行中"
 else
@@ -61,7 +61,7 @@ fi
 
 # 5. node-exporter 运行
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pods -n ${MONITORING_NS} --no-headers 2>/dev/null | grep 'node-exporter' | grep -c 'Running' || echo 0")
+    "kubectl get pods -n ${MONITORING_NS} --no-headers 2>/dev/null | grep 'node-exporter' | grep -c 'Running' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "node-exporter 运行中 (${result} 个)"
 else
@@ -70,7 +70,7 @@ fi
 
 # 6. kube-state-metrics 运行
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pods -n ${MONITORING_NS} --no-headers 2>/dev/null | grep 'kube-state-metrics' | grep -c 'Running' || echo 0")
+    "kubectl get pods -n ${MONITORING_NS} --no-headers 2>/dev/null | grep 'kube-state-metrics' | grep -c 'Running' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "kube-state-metrics 运行中"
 else

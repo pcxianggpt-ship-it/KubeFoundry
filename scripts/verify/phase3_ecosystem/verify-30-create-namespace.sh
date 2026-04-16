@@ -24,7 +24,7 @@ primary_cp=$(get_all_control_plane_ips | head -1)
 
 # 1. kubemate-system 命名空间存在
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get ns kubemate-system --no-headers 2>/dev/null | grep -c 'Active' || echo 0")
+    "kubectl get ns kubemate-system --no-headers 2>/dev/null | grep -c 'Active' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "kubemate-system 命名空间存在且为 Active"
 else

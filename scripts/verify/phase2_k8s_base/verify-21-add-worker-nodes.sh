@@ -28,7 +28,7 @@ for ((i = 0; i < worker_count; i++)); do
     expected_hn=$(config_get_node 'workers' "$i" 'hostname')
 
     result=$(ssh_exec_capture "$primary_cp" \
-        "kubectl get nodes --no-headers 2>/dev/null | grep -c '${expected_hn}' || echo 0")
+        "kubectl get nodes --no-headers 2>/dev/null | grep -c '${expected_hn}' || true" | tr -d '[:space:]')
     if [ "$result" -ge 1 ]; then
         check_pass "工作节点已加入集群: ${expected_hn}"
     else
@@ -41,7 +41,7 @@ for ((i = 0; i < worker_count; i++)); do
     expected_hn=$(config_get_node 'workers' "$i" 'hostname')
 
     result=$(ssh_exec_capture "$primary_cp" \
-        "kubectl get nodes --no-headers 2>/dev/null | grep '${expected_hn}' | grep -c 'control-plane' || echo 0")
+        "kubectl get nodes --no-headers 2>/dev/null | grep '${expected_hn}' | grep -c 'control-plane' || true" | tr -d '[:space:]')
     if [ "$result" -eq 0 ]; then
         check_pass "工作节点无control-plane角色: ${expected_hn}"
     else
