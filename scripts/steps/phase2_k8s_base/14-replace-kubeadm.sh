@@ -6,12 +6,13 @@
 # 执行机器：仅在k8sc1上执行
 # 作者：KubeFoundry Team
 # 版本：1.0.0
+# 环境变量依赖（由 exec_script_on_single_node 注入）：
+#   INSTALL_MEDIA - 安装介质包根目录
+#   K8S_VERSION   - K8S版本
+#   ARCH          - 系统架构
 #===============================================================================
 
-install_media=$(config_resolve '.paths.install_media')
-k8s_version=$(get_k8s_version)
-arch=$(config_resolve '.paths.arch')
-kubeadm_100y_file="${install_media}/01.rpm_package/kubeadm-v${k8s_version}-100y-${arch}"
+kubeadm_100y_file="${INSTALL_MEDIA}/01.rpm_package/kubeadm-v${K8S_VERSION}-100y-${ARCH}"
 
 # 1. 检查100年版本kubeadm文件是否存在
 if [ ! -f "$kubeadm_100y_file" ]; then
