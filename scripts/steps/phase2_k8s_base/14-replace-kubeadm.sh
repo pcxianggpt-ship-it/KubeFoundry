@@ -25,7 +25,7 @@ cp /usr/bin/kubeadm /tmp/k8s/kubeadm_bak
 log_info "原始kubeadm已备份到: /tmp/k8s/kubeadm_bak"
 
 # 3. 替换kubeadm
-cp "$kubeadm_100y_file" /usr/bin/kubeadm
+scp "$kubeadm_100y_file" /usr/bin/kubeadm
 chmod +x /usr/bin/kubeadm
 
 log_success "kubeadm已替换为支持100年证书版本"
