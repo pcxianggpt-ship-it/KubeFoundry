@@ -58,7 +58,9 @@ exec_script_on_single_node() {
     local _inj_ssh_user _inj_ssh_password _inj_ssh_port
     local _inj_pod_subnet _inj_service_subnet _inj_dual_stack
     local _inj_etcd_data_dir _inj_api_server_port
+    local _inj_install_media
     _inj_k8s_soft=$(config_get '.paths.k8s_home' '/data/k8s_install' 2>/dev/null)
+    _inj_install_media=$(config_resolve '.paths.install_media' 2>/dev/null)
     _inj_arch=$(config_get '.paths.arch' 'amd64' 2>/dev/null)
     _inj_kubelet_root=$(config_get '.env.kubelet_root' '/data/kubelet_root' 2>/dev/null)
     _inj_k8s_version=$(config_get '.cluster.k8s_version' '1.30.14' 2>/dev/null)
@@ -94,6 +96,7 @@ export SERVICE_SUBNET="${_inj_service_subnet}"
 export DUAL_STACK="${_inj_dual_stack}"
 export ETCD_DATA_DIR="${_inj_etcd_data_dir}"
 export API_SERVER_PORT="${_inj_api_server_port}"
+export INSTALL_MEDIA="${_inj_install_media}"
 
 # 内联日志函数（不依赖远程文件）
 log_info()    { echo -e "\033[0;34m[INFO]\033[0m \$*"; }
