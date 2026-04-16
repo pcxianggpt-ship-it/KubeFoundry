@@ -186,10 +186,10 @@ storage:
   nfs_server: "192.168.123.130"
 
   # NFS 共享路径
-  nfs_path: "/data/nas_root"
+  nfs_path: "/data/nfs_root"
 
   # NFS 本地挂载点
-  nfs_mount_point: "/data/nas_root"
+  nfs_mount_point: "/data/nfs_root"
 
   # StorageClass 名称
   storage_class: "nfs-storage"

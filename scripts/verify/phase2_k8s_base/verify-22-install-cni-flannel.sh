@@ -24,6 +24,22 @@ primary_cp=$(get_all_control_plane_ips | head -1)
 node_display=$(get_node_hostname "$primary_cp" 2>/dev/null)
 node_display="${node_display:-$primary_cp}"
 
+# 等待Flannel Pod就绪（最多120秒）
+all_node_count=$(( $(config_get_length '.control_plane') + $(config_get_length '.workers') ))
+log_info "等待Flannel Pod启动（最多120秒）..."
+wait_count=0
+while [ $wait_count -lt 12 ]; do
+    running=$(ssh_exec_capture "$primary_cp" \
+        "kubectl get pods -n kube-flannel --no-headers 2>/dev/null | grep 'kube-flannel-ds' | grep -c 'Running' || true" | tr -d '[:space:]')
+    if [ "$running" -ge "$all_node_count" ]; then
+        log_success "Flannel Pod已全部Running (${running}/${all_node_count})"
+        break
+    fi
+    log_info "Flannel Pod启动中... (${running:-0}/${all_node_count})"
+    sleep 10
+    wait_count=$((wait_count + 1))
+done
+
 # 1. flannel 命名空间存在
 result=$(ssh_exec_capture "$primary_cp" \
     "kubectl get ns kube-flannel --no-headers 2>/dev/null | grep -c 'Active' || true" | tr -d '[:space:]')
