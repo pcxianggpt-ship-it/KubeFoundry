@@ -19,9 +19,9 @@ if [ ! -f "$KUBEMATE_FILE" ]; then
     exit 1
 fi
 
-# 2. 用yq修改hostAliases中的IP为主控节点IP
+# 2. 修改hostAliases中的IP为主控节点IP（sed精确替换，不影响其他资源）
 primary_cp=$(get_all_control_plane_ips | head -1)
-yq -i ".spec.template.spec.hostAliases[0].ip = \"${primary_cp}\"" "$KUBEMATE_FILE"
+sed -i "s/- ip: .*/- ip: ${primary_cp}/" "$KUBEMATE_FILE"
 log_info "已将hostAliases IP修改为: ${primary_cp}"
 
 # 3. 安装kubemate（执行两遍，避免CRD未就绪错误）
