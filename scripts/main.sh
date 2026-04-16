@@ -465,17 +465,25 @@ run_k8s_base() {
     if step_is_done "2.12"; then
         log_info "[跳过] 2.12 添加控制节点（已完成）"
     else
-        log_info "添加控制节点..."
-        exec_script_on_control_plane "${P2}/20-add-control-nodes.sh"
-        if [ $? -ne 0 ]; then
-            log_error "添加控制节点失败"
-            return 1
-        fi
-        log_success "控制节点添加完成"
-        verify_step "${V2}/verify-20-add-control-nodes.sh" "控制节点"
-        if [ $? -ne 0 ]; then
-            log_error "控制节点验证失败"
-            return 1
+        local _cp_count
+        _cp_count=$(config_get_length '.control_plane')
+        if [ "$_cp_count" -le 1 ]; then
+            log_info "[跳过] 2.12 添加控制节点（单控制节点部署，无需join）"
+        else
+            log_info "添加控制节点..."
+            local _primary_cp
+            _primary_cp=$(get_all_control_plane_ips | head -1)
+            exec_script_on_control_plane "${P2}/20-add-control-nodes.sh" "$_primary_cp"
+            if [ $? -ne 0 ]; then
+                log_error "添加控制节点失败"
+                return 1
+            fi
+            log_success "控制节点添加完成"
+            verify_step "${V2}/verify-20-add-control-nodes.sh" "控制节点"
+            if [ $? -ne 0 ]; then
+                log_error "控制节点验证失败"
+                return 1
+            fi
         fi
         step_done "2.12"
     fi

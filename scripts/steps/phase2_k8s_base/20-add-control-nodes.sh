@@ -2,25 +2,50 @@
 
 #===============================================================================
 # 脚本名称：20-add-control-nodes.sh
-# 功能：添加K8S控制节点
-# 执行机器：k8sc2和k8sc3节点执行（一台执行完后再执行另一台）
+# 功能：添加K8S控制节点（非主控制节点执行kubeadm join）
+# 执行机器：所有控制节点（主控制节点自动跳过）
 # 作者：KubeFoundry Team
 # 版本：1.0.0
 #===============================================================================
 
-echo "【INFO】: 开始添加K8S控制节点..."
-echo "【说明】: 搭建高可用时执行，单master节点部署可跳过该步骤"
+# 参数1: 主控制节点IP（由exec_script注入）
+PRIMARY_CP_IP="$1"
 
-# 使用3.9.1章节中保存的kubeadm join控制节点命令
-# 示例（实际命令以k8sc1初始化输出为准）：
-kubeadm join k8sc1:6443 --token abcdef.0123456789abcdef \
-  --discovery-token-ca-cert-hash sha256:be3037375048669762a18c0d820994613d4611c768f524fca5d808ca3caf47da \
-  --control-plane --certificate-key 8cc3bc5f73f00cfb37c77413a73c87513dad3142ab3c5052a124387efc8b8742
+# 获取本机IP
+LOCAL_IP=$(hostname -I | awk '{print $1}')
+
+# 如果是主控制节点，跳过
+if [ "$LOCAL_IP" = "$PRIMARY_CP_IP" ]; then
+    log_info "当前节点(${LOCAL_IP})为主控制节点，跳过join"
+    exit 0
+fi
+
+log_info "开始添加控制节点 ${LOCAL_IP}..."
+
+# 检查join命令文件
+JOIN_FILE="/tmp/k8s/kube_join_master"
+if [ ! -f "$JOIN_FILE" ]; then
+    log_error "join命令文件不存在: ${JOIN_FILE}"
+    exit 1
+fi
+
+# 读取并执行join命令
+JOIN_CMD=$(cat "$JOIN_FILE")
+if [ -z "$JOIN_CMD" ]; then
+    log_error "join命令为空: ${JOIN_FILE}"
+    exit 1
+fi
+
+log_info "执行join命令..."
+eval "$JOIN_CMD"
+if [ $? -ne 0 ]; then
+    log_error "控制节点join失败: ${LOCAL_IP}"
+    exit 1
+fi
 
 # 配置kubectl
 mkdir -p $HOME/.kube
-sudo scp /etc/kubernetes/admin.conf $HOME/.kube/config
-sudo chown $(id -u):$(id -g) $HOME/.kube/config
-export KUBECONFIG=/etc/kubernetes/admin.conf
+cp /etc/kubernetes/admin.conf $HOME/.kube/config
+chown $(id -u):$(id -g) $HOME/.kube/config
 
-echo "【INFO】: 控制节点添加完成"
+log_success "控制节点 ${LOCAL_IP} 添加完成"
