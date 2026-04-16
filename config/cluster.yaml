@@ -184,7 +184,7 @@ paths:
 advanced:
   # 是否启用 IPv6 双栈网络
   # 说明：启用后集群将同时支持 IPv4 和 IPv6
-  enable_ipv6_dual_stack: true
+  enable_ipv6_dual_stack: false
 
   # 是否启用自动回滚
   # 说明：安装失败时自动执行回滚操作

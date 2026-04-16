@@ -16,10 +16,7 @@ source "${PROJECT_ROOT}/scripts/lib/config.sh"
 
 log_info "开始安装Prometheus监控系统..."
 
-# 获取 K8S 安装目录
-K8S_SOFT=$(get_k8s_soft)
-
-cd "${K8S_SOFT}/03.setup_file/allyaml/prometheus"
+cd "${INSTALL_MEDIA}/03.setup_file/allyaml/prometheus"
 kubectl create -f 1-crd.yml
 kubectl apply -f 2-namespace.yml
 kubectl apply -f 3-rbac.yml

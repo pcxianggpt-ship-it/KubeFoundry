@@ -16,10 +16,7 @@ source "${PROJECT_ROOT}/scripts/lib/config.sh"
 
 log_info "创建kubemate-system命名空间..."
 
-# 获取 K8S 安装目录
-K8S_SOFT=$(get_k8s_soft)
-
-kubectl apply -f "${K8S_SOFT}/03.setup_file/allyaml/0.kubemate-namespace.yaml"
+kubectl apply -f "${INSTALL_MEDIA}/03.setup_file/allyaml/0.kubemate-namespace.yaml"
 
 log_info "命名空间创建完成"
 

@@ -16,11 +16,8 @@ source "${PROJECT_ROOT}/scripts/lib/config.sh"
 
 log_info "开始安装kubemate管理界面..."
 
-# 获取 K8S 安装目录
-K8S_SOFT=$(get_k8s_soft)
-
 # 1. 修改配置文件
-cd "${K8S_SOFT}/03.setup_file/allyaml"
+cd "${INSTALL_MEDIA}/03.setup_file/allyaml"
 vi 1.kubemate.yml
 # 修改第730行，改为k8sc1的IP地址（如：10.3.66.18）
 

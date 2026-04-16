@@ -16,14 +16,11 @@ source "${PROJECT_ROOT}/scripts/lib/config.sh"
 
 log_info "开始安装Skywalking..."
 
-# 获取 K8S 安装目录
-K8S_SOFT=$(get_k8s_soft)
-
 # 1. 获取Elasticsearch密码（保存到本地）
 kubectl get -n kubemate-system secret es-skywalking-es-elastic-user -o go-template='{{.data.elastic | base64decode}}'
 
 # 2. 修改skywalking配置文件
-cd "${K8S_SOFT}/03.setup_file/allyaml"
+cd "${INSTALL_MEDIA}/03.setup_file/allyaml"
 vi 3.skywalking-es.yml
 # 修改第74-76行，将ES_PASSWORD替换为步骤1获取的密码
 

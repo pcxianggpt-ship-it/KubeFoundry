@@ -16,10 +16,7 @@ source "${PROJECT_ROOT}/scripts/lib/config.sh"
 
 log_info "开始安装Loki日志系统..."
 
-# 获取 K8S 安装目录
-K8S_SOFT=$(get_k8s_soft)
-
-cd "${K8S_SOFT}/03.setup_file/allyaml"
+cd "${INSTALL_MEDIA}/03.setup_file/allyaml"
 kubectl apply -f 4.loki.yml
 kubectl apply -f 4.loki-sec.yml
 

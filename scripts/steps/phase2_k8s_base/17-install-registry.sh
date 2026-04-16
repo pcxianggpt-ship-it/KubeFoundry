@@ -8,7 +8,7 @@
 # 版本：1.0.0
 # 环境变量依赖（由 exec_script_on_single_node 注入）：
 #   REGISTRY_IP - 镜像仓库IP地址
-#   K8S_HOME    - K8S安装目录
+#   INSTALL_MEDIA - 安装介质目录
 #   ARCH        - 系统架构（amd64/arm64）
 #===============================================================================
 
@@ -23,8 +23,8 @@ if [[ -z "$ARCH" ]]; then
     exit 1
 fi
 
-if [[ -z "$K8S_HOME" ]]; then
-    echo "【ERROR】：缺少环境变量 K8S_HOME（K8S安装目录）"
+if [[ -z "$INSTALL_MEDIA" ]]; then
+    echo "【ERROR】：缺少环境变量 INSTALL_MEDIA（安装介质目录）"
     exit 1
 fi
 
@@ -39,10 +39,10 @@ else
 fi
 
 echo "【INFO】：使用容器运行时: ${CONTAINER_CMD}"
-echo "【INFO】：镜像仓库IP: ${REGISTRY_IP}, 架构: ${ARCH}, 安装目录: ${K8S_HOME}"
+echo "【INFO】：镜像仓库IP: ${REGISTRY_IP}, 架构: ${ARCH}, 安装目录: ${INSTALL_MEDIA}"
 
 # 进入 registry 安装目录（由 2.9 步骤分发到此）
-REGISTRY_DIR="${K8S_HOME}/04.registry"
+REGISTRY_DIR="${INSTALL_MEDIA}/04.registry"
 if [ ! -d "$REGISTRY_DIR" ]; then
     echo "【ERROR】：registry安装目录不存在: ${REGISTRY_DIR}"
     exit 1

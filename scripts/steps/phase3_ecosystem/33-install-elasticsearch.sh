@@ -16,10 +16,7 @@ source "${PROJECT_ROOT}/scripts/lib/config.sh"
 
 log_info "开始安装Elasticsearch..."
 
-# 获取 K8S 安装目录
-K8S_SOFT=$(get_k8s_soft)
-
-cd "${K8S_SOFT}/03.setup_file/allyaml"
+cd "${INSTALL_MEDIA}/03.setup_file/allyaml"
 kubectl apply -f 2.es-crds.yml
 kubectl apply -f 2.es-operator.yml
 kubectl apply -f 2.es-skywalking.yml

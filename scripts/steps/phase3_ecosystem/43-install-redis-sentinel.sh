@@ -16,10 +16,7 @@ source "${PROJECT_ROOT}/scripts/lib/config.sh"
 
 log_info "开始安装Redis哨兵模式..."
 
-# 获取 K8S 安装目录
-K8S_SOFT=$(get_k8s_soft)
-
-cd "${K8S_SOFT}/03.setup_file/allyaml/redis"
+cd "${INSTALL_MEDIA}/03.setup_file/allyaml/redis"
 kubectl create ns redis-sentinel
 kubectl apply -f redis-sentinel/redis-pv.yml
 kubectl apply -f redis-sentinel/storageclass.yml

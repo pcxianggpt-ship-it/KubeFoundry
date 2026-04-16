@@ -16,11 +16,8 @@ source "${PROJECT_ROOT}/scripts/lib/config.sh"
 
 log_info "开始更新CoreDNS配置..."
 
-# 获取 K8S 安装目录
-K8S_SOFT=$(get_k8s_soft)
-
 # 1. 执行更新脚本
-cd "${K8S_SOFT}/03.setup_file/allyaml"
+cd "${INSTALL_MEDIA}/03.setup_file/allyaml"
 kubectl apply -f coredns-update.yml
 kubectl rollout restart -n kube-system deployment coredns
 sleep 5

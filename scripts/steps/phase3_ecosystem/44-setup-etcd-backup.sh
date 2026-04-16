@@ -16,12 +16,9 @@ source "${PROJECT_ROOT}/scripts/lib/config.sh"
 
 log_info "开始配置ETCD定时备份..."
 
-# 获取 K8S 安装目录
-K8S_SOFT=$(get_k8s_soft)
-
 crontab -e
 # 添加以下内容：
-10 2 * * * nohup sh "${K8S_SOFT}/05.crontab/etcdbak.sh" 1 >> /data/crontab_task/etcdbak/etcdbak.log &
+10 2 * * * nohup sh "${INSTALL_MEDIA}/05.crontab/etcdbak.sh" 1 >> /data/crontab_task/etcdbak/etcdbak.log &
 
 # 注意：etcdbak.sh后面的参数：1代表主中心，2代表副中心
 

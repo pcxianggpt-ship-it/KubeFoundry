@@ -16,12 +16,9 @@ source "${PROJECT_ROOT}/scripts/lib/config.sh"
 
 log_info "开始配置应用日志定时清理..."
 
-# 获取 K8S 安装目录
-K8S_SOFT=$(get_k8s_soft)
-
 crontab -e
 # 添加以下内容：
-0 2 * * * nohup sh "${K8S_SOFT}/05.crontab/logback.sh" >> "${K8S_SOFT}/05.crontab/logback.log" &
+0 2 * * * nohup sh "${INSTALL_MEDIA}/05.crontab/logback.sh" >> "${INSTALL_MEDIA}/05.crontab/logback.log" &
 
 log_info "应用日志定时清理配置完成"
 
@@ -33,5 +30,5 @@ crontab -l
 # 应该能看到应用日志清理任务
 
 # 查看清理日志
-cat "${K8S_SOFT}/05.crontab/logback.log"
+cat "${INSTALL_MEDIA}/05.crontab/logback.log"
 # 应该能看到清理日志

@@ -16,10 +16,7 @@ source "${PROJECT_ROOT}/scripts/lib/config.sh"
 
 log_info "开始安装Metrics Server..."
 
-# 获取 K8S 安装目录
-K8S_SOFT=$(get_k8s_soft)
-
-sh "${K8S_SOFT}/03.setup_file/mertics-server/mertics-server-install.sh" amd64
+sh "${INSTALL_MEDIA}/03.setup_file/mertics-server/mertics-server-install.sh" amd64
 
 log_info "Metrics Server安装完成"
 
