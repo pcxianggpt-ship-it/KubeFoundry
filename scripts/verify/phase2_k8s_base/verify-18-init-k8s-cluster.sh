@@ -69,6 +69,21 @@ else
     check_fail "kubelet 数据目录未配置: ${node_display}"
 fi
 
+# 等待静态Pod就绪（最多60秒）
+log_info "等待静态Pod启动（最多60秒）..."
+wait_count=0
+while [ $wait_count -lt 6 ]; do
+    running=$(ssh_exec_capture "$primary_cp" \
+        "kubectl get pods -n kube-system --no-headers 2>/dev/null | grep -E 'etcd|kube-apiserver|kube-controller-manager|kube-scheduler' | grep -c 'Running' || true" | tr -d '[:space:]')
+    if [ "$running" -ge 4 ]; then
+        log_success "静态Pod已就绪 (${running} 个)"
+        break
+    fi
+    log_info "静态Pod启动中... (${running:-0} 个已Running)"
+    sleep 10
+    wait_count=$((wait_count + 1))
+done
+
 # 6. 静态 Pod 运行（etcd/apiserver/controller/scheduler）
 for component in etcd kube-apiserver kube-controller-manager kube-scheduler; do
     result=$(ssh_exec_capture "$primary_cp" \

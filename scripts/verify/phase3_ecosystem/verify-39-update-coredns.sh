@@ -22,6 +22,21 @@ log_info "===== 验证：CoreDNS配置更新 ====="
 
 primary_cp=$(get_all_control_plane_ips | head -1)
 
+# 等待coredns Pod就绪（最多120秒）
+log_info "等待coredns Pod启动（最多120秒）..."
+wait_count=0
+while [ $wait_count -lt 12 ]; do
+    running=$(ssh_exec_capture "$primary_cp" \
+        "kubectl get pods -n kube-system --no-headers 2>/dev/null | grep 'coredns' | grep -c 'Running' || true" | tr -d '[:space:]')
+    if [ "$running" -ge 1 ]; then
+        log_success "coredns Pod已就绪 (${running} 个)"
+        break
+    fi
+    log_info "coredns Pod启动中... (${running:-0} 个已Running)"
+    sleep 10
+    wait_count=$((wait_count + 1))
+done
+
 # 1. coredns Pod 运行
 result=$(ssh_exec_capture "$primary_cp" \
     "kubectl get pods -n kube-system --no-headers 2>/dev/null | grep 'coredns' | grep -c 'Running' || true" | tr -d '[:space:]')

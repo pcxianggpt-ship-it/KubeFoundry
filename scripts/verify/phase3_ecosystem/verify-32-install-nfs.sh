@@ -51,6 +51,21 @@ else
     check_fail "nfs-subdir-external-provisioner helm release 未找到"
 fi
 
+# 等待nfs provisioner Pod就绪（最多120秒）
+log_info "等待nfs provisioner Pod启动（最多120秒）..."
+wait_count=0
+while [ $wait_count -lt 12 ]; do
+    running=$(ssh_exec_capture "$primary_cp" \
+        "kubectl get pods --all-namespaces --no-headers 2>/dev/null | grep 'nfs' | grep -c 'Running' || true" | tr -d '[:space:]')
+    if [ "$running" -ge 1 ]; then
+        log_success "nfs provisioner Pod已就绪 (${running} 个)"
+        break
+    fi
+    log_info "nfs provisioner Pod启动中... (${running:-0} 个已Running)"
+    sleep 10
+    wait_count=$((wait_count + 1))
+done
+
 # 4. nfs provisioner Pod 运行
 result=$(ssh_exec_capture "$primary_cp" \
     "kubectl get pods --all-namespaces --no-headers 2>/dev/null | grep 'nfs' | grep -c 'Running' || true" | tr -d '[:space:]')

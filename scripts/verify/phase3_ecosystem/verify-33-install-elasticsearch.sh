@@ -22,6 +22,21 @@ log_info "===== 验证：Elasticsearch安装 ====="
 
 primary_cp=$(get_all_control_plane_ips | head -1)
 
+# 等待es-skywalking Pod就绪（最多120秒）
+log_info "等待es-skywalking Pod启动（最多120秒）..."
+wait_count=0
+while [ $wait_count -lt 12 ]; do
+    running=$(ssh_exec_capture "$primary_cp" \
+        "kubectl get pods -A --no-headers 2>/dev/null | grep 'es-skywalking' | grep -c 'Running' || true" | tr -d '[:space:]')
+    if [ "$running" -ge 1 ]; then
+        log_success "es-skywalking Pod已就绪 (${running} 个)"
+        break
+    fi
+    log_info "es-skywalking Pod启动中... (${running:-0} 个已Running)"
+    sleep 10
+    wait_count=$((wait_count + 1))
+done
+
 # 1. es-skywalking 相关 Pod 存在
 result=$(ssh_exec_capture "$primary_cp" \
     "kubectl get pods -A --no-headers 2>/dev/null | grep 'es-skywalking' | wc -l")

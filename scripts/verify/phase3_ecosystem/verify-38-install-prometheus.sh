@@ -32,6 +32,21 @@ else
     check_fail "${MONITORING_NS} 命名空间不存在"
 fi
 
+# 等待prometheus-operator Pod就绪（最多120秒）
+log_info "等待prometheus-operator Pod启动（最多120秒）..."
+wait_count=0
+while [ $wait_count -lt 12 ]; do
+    running=$(ssh_exec_capture "$primary_cp" \
+        "kubectl get pods -n ${MONITORING_NS} --no-headers 2>/dev/null | grep 'prometheus-operator' | grep -c 'Running' || true" | tr -d '[:space:]')
+    if [ "$running" -ge 1 ]; then
+        log_success "prometheus-operator Pod已就绪 (${running} 个)"
+        break
+    fi
+    log_info "prometheus-operator Pod启动中... (${running:-0} 个已Running)"
+    sleep 10
+    wait_count=$((wait_count + 1))
+done
+
 # 2. prometheus-operator Pod 运行
 result=$(ssh_exec_capture "$primary_cp" \
     "kubectl get pods -n ${MONITORING_NS} --no-headers 2>/dev/null | grep 'prometheus-operator' | grep -c 'Running' || true" | tr -d '[:space:]')

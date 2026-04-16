@@ -22,6 +22,23 @@ log_info "===== 验证：kubemate管理界面安装 ====="
 
 primary_cp=$(get_all_control_plane_ips | head -1)
 
+# 等待kubemate Pod就绪（最多120秒）
+log_info "等待kubemate Pod启动（最多120秒）..."
+wait_count=0
+while [ $wait_count -lt 12 ]; do
+    running=$(ssh_exec_capture "$primary_cp" \
+        "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep -c 'Running' || true" | tr -d '[:space:]')
+    total=$(ssh_exec_capture "$primary_cp" \
+        "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | wc -l" | tr -d '[:space:]')
+    if [ "$total" -gt 0 ] && [ "$running" -ge "$total" ]; then
+        log_success "kubemate Pod已就绪 (${running}/${total})"
+        break
+    fi
+    log_info "kubemate Pod启动中... (${running:-0}/${total:-0} 个已Running)"
+    sleep 10
+    wait_count=$((wait_count + 1))
+done
+
 # 1. kubemate-system 命名空间中有 Pod
 result=$(ssh_exec_capture "$primary_cp" \
     "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | wc -l")

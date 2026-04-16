@@ -22,6 +22,21 @@ log_info "===== 验证：Redis哨兵模式安装 ====="
 
 primary_cp=$(get_all_control_plane_ips | head -1)
 
+# 等待redis Pod就绪（最多120秒）
+log_info "等待redis Pod启动（最多120秒）..."
+wait_count=0
+while [ $wait_count -lt 12 ]; do
+    running=$(ssh_exec_capture "$primary_cp" \
+        "kubectl get pods -n redis-sentinel --no-headers 2>/dev/null | grep -c 'Running' || true" | tr -d '[:space:]')
+    if [ "$running" -ge 1 ]; then
+        log_success "redis Pod已就绪 (${running} 个)"
+        break
+    fi
+    log_info "redis Pod启动中... (${running:-0} 个已Running)"
+    sleep 10
+    wait_count=$((wait_count + 1))
+done
+
 # 1. redis-sentinel 命名空间存在
 result=$(ssh_exec_capture "$primary_cp" \
     "kubectl get ns redis-sentinel --no-headers 2>/dev/null | grep -c 'Active' || true" | tr -d '[:space:]')

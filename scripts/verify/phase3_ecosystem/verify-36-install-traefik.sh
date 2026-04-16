@@ -22,6 +22,21 @@ log_info "===== 验证：Traefik网关安装 ====="
 
 primary_cp=$(get_all_control_plane_ips | head -1)
 
+# 等待traefik Pod就绪（最多120秒）
+log_info "等待traefik Pod启动（最多120秒）..."
+wait_count=0
+while [ $wait_count -lt 12 ]; do
+    running=$(ssh_exec_capture "$primary_cp" \
+        "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'traefik' | grep -v 'mesh' | grep -c 'Running' || true" | tr -d '[:space:]')
+    if [ "$running" -ge 1 ]; then
+        log_success "traefik Pod已就绪 (${running} 个)"
+        break
+    fi
+    log_info "traefik Pod启动中... (${running:-0} 个已Running)"
+    sleep 10
+    wait_count=$((wait_count + 1))
+done
+
 # 1. traefik 相关 Pod 存在
 result=$(ssh_exec_capture "$primary_cp" \
     "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'traefik' | wc -l")
