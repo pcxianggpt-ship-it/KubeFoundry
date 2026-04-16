@@ -10,7 +10,8 @@
 
 log_info "开始安装kubemate管理界面..."
 
-KUBEMATE_FILE="${INSTALL_MEDIA}/03.setup_file/allyaml/1.kubemate.yml"
+install_media=$(config_resolve '.paths.install_media')
+KUBEMATE_FILE="${install_media}/03.setup_file/allyaml/1.kubemate.yml"
 
 # 1. 检查配置文件
 if [ ! -f "$KUBEMATE_FILE" ]; then
