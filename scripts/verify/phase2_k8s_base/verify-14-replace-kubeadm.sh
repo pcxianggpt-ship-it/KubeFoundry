@@ -47,10 +47,9 @@ while IFS= read -r node_ip; do
     fi
 
     # 验证kubeadm可执行
-    result=$(ssh_exec_capture "$node_ip" \
-        "kubeadm version 2>/dev/null | grep -c 'gitVersion' || echo 0")
-    if [ "$result" -ge 1 ]; then
-        check_pass "kubeadm 可正常执行: ${node_display}"
+    result=$(ssh_exec_capture "$node_ip" "kubeadm version -o short 2>/dev/null")
+    if [ -n "$result" ]; then
+        check_pass "kubeadm 可正常执行 (${result}): ${node_display}"
     else
         check_fail "kubeadm 执行异常: ${node_display}"
     fi
