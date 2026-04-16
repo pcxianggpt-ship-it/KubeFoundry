@@ -149,6 +149,31 @@ P1="${STEPS}/phase1_precheck"
 P2="${STEPS}/phase2_k8s_base"
 P3="${STEPS}/phase3_ecosystem"
 
+VERIFY="${SCRIPT_DIR}/verify"
+V2="${VERIFY}/phase2_k8s_base"
+V3="${VERIFY}/phase3_ecosystem"
+
+#===============================================================================
+# 函数：verify_step()
+# 功能：执行验证脚本，验证通过返回0，跳过验证时也返回0
+# 参数：
+#   $1 - 验证脚本路径
+#   $2 - 步骤描述（用于日志）
+#===============================================================================
+verify_step() {
+    local verify_script="$1"
+    local desc="$2"
+
+    if [ "$SKIP_VERIFY" = true ]; then
+        log_info "跳过验证: ${desc}"
+        return 0
+    fi
+
+    log_info "验证: ${desc}..."
+    ( cd "${PROJECT_ROOT}"; source "${verify_script}" )
+    return $?
+}
+
 #===============================================================================
 # 阶段一：预检查
 #===============================================================================
@@ -204,6 +229,11 @@ run_k8s_base() {
             return 1
         fi
         log_success "yum源配置完成"
+        verify_step "${V2}/verify-10-setup-yum-source.sh" "yum源配置"
+        if [ $? -ne 0 ]; then
+            log_error "yum源验证失败"
+            return 1
+        fi
         step_done "2.1"
     fi
 
@@ -218,6 +248,11 @@ run_k8s_base() {
             return 1
         fi
         log_success "SSH免密登录配置完成"
+        verify_step "${V2}/verify-11-setup-ssh-login.sh" "SSH免密登录"
+        if [ $? -ne 0 ]; then
+            log_error "SSH免密登录验证失败"
+            return 1
+        fi
         step_done "2.2"
     fi
 
@@ -232,6 +267,11 @@ run_k8s_base() {
             return 1
         fi
         log_success "主机名和hosts解析配置完成"
+        verify_step "${V2}/verify-11b-setup-hostname.sh" "主机名和hosts解析"
+        if [ $? -ne 0 ]; then
+            log_error "主机名和hosts解析验证失败"
+            return 1
+        fi
         step_done "2.3"
     fi
 
@@ -246,6 +286,11 @@ run_k8s_base() {
             return 1
         fi
         log_success "k8s repo源配置完成"
+        verify_step "${V2}/verify-12-setup-k8s-repo.sh" "k8s repo源"
+        if [ $? -ne 0 ]; then
+            log_error "k8s repo源验证失败"
+            return 1
+        fi
         step_done "2.4"
     fi
 
@@ -260,6 +305,11 @@ run_k8s_base() {
             return 1
         fi
         log_success "K8s依赖包安装完成"
+        verify_step "${V2}/verify-13-install-k8s-deps.sh" "K8s依赖包"
+        if [ $? -ne 0 ]; then
+            log_error "K8s依赖包验证失败"
+            return 1
+        fi
         step_done "2.5"
     fi
 
@@ -274,6 +324,11 @@ run_k8s_base() {
             return 1
         fi
         log_success "kubeadm替换完成"
+        verify_step "${V2}/verify-14-replace-kubeadm.sh" "kubeadm替换"
+        if [ $? -ne 0 ]; then
+            log_error "kubeadm替换验证失败"
+            return 1
+        fi
         step_done "2.6"
     fi
 
@@ -288,6 +343,11 @@ run_k8s_base() {
             return 1
         fi
         log_success "环境配置完成"
+        verify_step "${V2}/verify-15-environment-config.sh" "环境配置"
+        if [ $? -ne 0 ]; then
+            log_error "环境配置验证失败"
+            return 1
+        fi
         step_done "2.7"
     fi
 
@@ -317,6 +377,11 @@ run_k8s_base() {
             return 1
         fi
         log_success "containerd安装完成"
+        verify_step "${V2}/verify-16-install-containerd.sh" "containerd"
+        if [ $? -ne 0 ]; then
+            log_error "containerd验证失败"
+            return 1
+        fi
         step_done "2.8"
     fi
 
@@ -350,6 +415,11 @@ run_k8s_base() {
             return 1
         fi
         log_success "镜像仓库安装完成"
+        verify_step "${V2}/verify-17-install-registry.sh" "镜像仓库"
+        if [ $? -ne 0 ]; then
+            log_error "镜像仓库验证失败"
+            return 1
+        fi
         step_done "2.9"
     fi
 
@@ -364,6 +434,11 @@ run_k8s_base() {
             return 1
         fi
         log_success "K8S集群初始化完成"
+        verify_step "${V2}/verify-18-init-k8s-cluster.sh" "K8S集群初始化"
+        if [ $? -ne 0 ]; then
+            log_error "K8S集群初始化验证失败"
+            return 1
+        fi
         step_done "2.10"
     fi
 
@@ -378,6 +453,11 @@ run_k8s_base() {
             return 1
         fi
         log_success "证书有效期修改完成"
+        verify_step "${V2}/verify-19-modify-cert-expiry.sh" "证书有效期"
+        if [ $? -ne 0 ]; then
+            log_error "证书有效期验证失败"
+            return 1
+        fi
         step_done "2.11"
     fi
 
@@ -392,6 +472,11 @@ run_k8s_base() {
             return 1
         fi
         log_success "控制节点添加完成"
+        verify_step "${V2}/verify-20-add-control-nodes.sh" "控制节点"
+        if [ $? -ne 0 ]; then
+            log_error "控制节点验证失败"
+            return 1
+        fi
         step_done "2.12"
     fi
 
@@ -406,6 +491,11 @@ run_k8s_base() {
             return 1
         fi
         log_success "工作节点添加完成"
+        verify_step "${V2}/verify-21-add-worker-nodes.sh" "工作节点"
+        if [ $? -ne 0 ]; then
+            log_error "工作节点验证失败"
+            return 1
+        fi
         step_done "2.13"
     fi
 
@@ -420,6 +510,11 @@ run_k8s_base() {
             return 1
         fi
         log_success "Flannel安装完成"
+        verify_step "${V2}/verify-22-install-cni-flannel.sh" "Flannel CNI"
+        if [ $? -ne 0 ]; then
+            log_error "Flannel验证失败"
+            return 1
+        fi
         step_done "2.14"
     fi
 
@@ -445,6 +540,11 @@ run_ecosystem() {
             return 1
         fi
         log_success "命名空间创建完成"
+        verify_step "${V3}/verify-30-create-namespace.sh" "命名空间"
+        if [ $? -ne 0 ]; then
+            log_error "命名空间验证失败"
+            return 1
+        fi
         step_done "3.1"
     fi
 
@@ -459,6 +559,11 @@ run_ecosystem() {
             return 1
         fi
         log_success "kubemate安装完成"
+        verify_step "${V3}/verify-31-install-kubemate-ui.sh" "kubemate"
+        if [ $? -ne 0 ]; then
+            log_error "kubemate验证失败"
+            return 1
+        fi
         step_done "3.2"
     fi
 
@@ -473,6 +578,11 @@ run_ecosystem() {
             return 1
         fi
         log_success "NFS安装完成"
+        verify_step "${V3}/verify-32-install-nfs.sh" "NFS"
+        if [ $? -ne 0 ]; then
+            log_error "NFS验证失败"
+            return 1
+        fi
         step_done "3.3"
     fi
 
@@ -487,6 +597,11 @@ run_ecosystem() {
             return 1
         fi
         log_success "elasticsearch安装完成"
+        verify_step "${V3}/verify-33-install-elasticsearch.sh" "elasticsearch"
+        if [ $? -ne 0 ]; then
+            log_error "elasticsearch验证失败"
+            return 1
+        fi
         step_done "3.4"
     fi
 
@@ -501,6 +616,11 @@ run_ecosystem() {
             return 1
         fi
         log_success "skywalking安装完成"
+        verify_step "${V3}/verify-34-install-skywalking.sh" "skywalking"
+        if [ $? -ne 0 ]; then
+            log_error "skywalking验证失败"
+            return 1
+        fi
         step_done "3.5"
     fi
 
@@ -515,6 +635,11 @@ run_ecosystem() {
             return 1
         fi
         log_success "loki安装完成"
+        verify_step "${V3}/verify-35-install-loki.sh" "loki"
+        if [ $? -ne 0 ]; then
+            log_error "loki验证失败"
+            return 1
+        fi
         step_done "3.6"
     fi
 
@@ -529,6 +654,11 @@ run_ecosystem() {
             return 1
         fi
         log_success "traefik安装完成"
+        verify_step "${V3}/verify-36-install-traefik.sh" "traefik"
+        if [ $? -ne 0 ]; then
+            log_error "traefik验证失败"
+            return 1
+        fi
         step_done "3.7"
     fi
 
@@ -543,6 +673,11 @@ run_ecosystem() {
             return 1
         fi
         log_success "traefik-mesh安装完成"
+        verify_step "${V3}/verify-37-install-traefik-mesh.sh" "traefik-mesh"
+        if [ $? -ne 0 ]; then
+            log_error "traefik-mesh验证失败"
+            return 1
+        fi
         step_done "3.8"
     fi
 
@@ -557,6 +692,11 @@ run_ecosystem() {
             return 1
         fi
         log_success "prometheus安装完成"
+        verify_step "${V3}/verify-38-install-prometheus.sh" "prometheus"
+        if [ $? -ne 0 ]; then
+            log_error "prometheus验证失败"
+            return 1
+        fi
         step_done "3.9"
     fi
 
@@ -571,6 +711,11 @@ run_ecosystem() {
             return 1
         fi
         log_success "coredns更新完成"
+        verify_step "${V3}/verify-39-update-coredns.sh" "coredns"
+        if [ $? -ne 0 ]; then
+            log_error "coredns验证失败"
+            return 1
+        fi
         step_done "3.10"
     fi
 
@@ -585,6 +730,11 @@ run_ecosystem() {
             return 1
         fi
         log_success "metrics-server安装完成"
+        verify_step "${V3}/verify-40-install-metrics-server.sh" "metrics-server"
+        if [ $? -ne 0 ]; then
+            log_error "metrics-server验证失败"
+            return 1
+        fi
         step_done "3.11"
     fi
 
@@ -599,6 +749,11 @@ run_ecosystem() {
             return 1
         fi
         log_success "kubectl权限配置完成"
+        verify_step "${V3}/verify-41-setup-kubectl-permission.sh" "kubectl权限"
+        if [ $? -ne 0 ]; then
+            log_error "kubectl权限验证失败"
+            return 1
+        fi
         step_done "3.12"
     fi
 
@@ -613,6 +768,11 @@ run_ecosystem() {
             return 1
         fi
         log_success "F5高可用配置完成"
+        verify_step "${V3}/verify-42-setup-f5-ha.sh" "F5高可用"
+        if [ $? -ne 0 ]; then
+            log_error "F5高可用验证失败"
+            return 1
+        fi
         step_done "3.13"
     fi
 
@@ -626,6 +786,10 @@ run_ecosystem() {
             log_warn "redis哨兵模式安装失败（可选组件，不影响主流程）"
         else
             log_success "redis哨兵模式安装完成"
+            verify_step "${V3}/verify-43-install-redis-sentinel.sh" "redis哨兵"
+            if [ $? -ne 0 ]; then
+                log_warn "redis哨兵验证失败（可选组件，不影响主流程）"
+            fi
         fi
         step_done "3.14"
     fi
@@ -641,6 +805,11 @@ run_ecosystem() {
             return 1
         fi
         log_success "ETCD备份定时任务配置完成"
+        verify_step "${V3}/verify-44-setup-etcd-backup.sh" "ETCD备份定时任务"
+        if [ $? -ne 0 ]; then
+            log_error "ETCD备份定时任务验证失败"
+            return 1
+        fi
         step_done "3.15a"
     fi
 
@@ -654,6 +823,11 @@ run_ecosystem() {
             return 1
         fi
         log_success "Traefik清理定时任务配置完成"
+        verify_step "${V3}/verify-45-setup-traefik-cleanup.sh" "Traefik清理定时任务"
+        if [ $? -ne 0 ]; then
+            log_error "Traefik清理定时任务验证失败"
+            return 1
+        fi
         step_done "3.15b"
     fi
 
@@ -667,6 +841,11 @@ run_ecosystem() {
             return 1
         fi
         log_success "日志清理定时任务配置完成"
+        verify_step "${V3}/verify-46-setup-log-cleanup.sh" "日志清理定时任务"
+        if [ $? -ne 0 ]; then
+            log_error "日志清理定时任务验证失败"
+            return 1
+        fi
         step_done "3.15c"
     fi
 
