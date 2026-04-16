@@ -43,12 +43,12 @@ tar -zxf nerdctl-2.2.0-linux-amd64.tar.gz
 chmod +x nerdctl
 mv nerdctl /usr/local/bin/
 
-# 配置镜像仓库地址（使用变量）
-mkdir -p /etc/containerd/certs.d/\$registry:5000
-cat > /etc/containerd/certs.d/\$registry:5000/hosts.toml <<EOF
-server = "http://\$registry:5000"
+# 配置镜像仓库地址（使用IP）
+mkdir -p /etc/containerd/certs.d/${REGISTRY_IP}:5000
+cat > /etc/containerd/certs.d/${REGISTRY_IP}:5000/hosts.toml <<EOF
+server = "http://${REGISTRY_IP}:5000"
 
-[host."http://\$registry:5000"]
+[host."http://${REGISTRY_IP}:5000"]
   capabilities = ["pull", "resolve", "push"]
 EOF
 
