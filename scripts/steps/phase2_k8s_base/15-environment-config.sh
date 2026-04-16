@@ -28,7 +28,7 @@ yum remove containerd -y > /dev/null 2>&1
 
 # 5. 配置DNS
 sed -i '/nameserver/d' /etc/resolv.conf
-echo "8.8.8.8 nameserver" >> /etc/resolv.conf
+echo "nameserver 8.8.8.8" >> /etc/resolv.conf
 
 # 6. 转发ipv4 ipv6并让iptables看到桥接流量
 cat << EOF | sudo tee /etc/modules-load.d/k8s.conf > /dev/null

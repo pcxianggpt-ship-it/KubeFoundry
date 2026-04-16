@@ -42,7 +42,7 @@ echo "【INFO】：使用容器运行时: ${CONTAINER_CMD}"
 echo "【INFO】：镜像仓库IP: ${REGISTRY_IP}, 架构: ${ARCH}, 安装目录: ${INSTALL_MEDIA}"
 
 # 进入 registry 安装目录（由 2.9 步骤分发到此）
-REGISTRY_DIR="${INSTALL_MEDIA}/04.registry"
+REGISTRY_DIR="${K8S_HOME}/04.registry"
 if [ ! -d "$REGISTRY_DIR" ]; then
     echo "【ERROR】：registry安装目录不存在: ${REGISTRY_DIR}"
     exit 1
@@ -52,7 +52,7 @@ cd "$REGISTRY_DIR"
 # 解压镜像文件
 echo "----正在解压镜像文件----"
 if [ -f registry-2.8.3.tar.gz ]; then
-    #tar -xzf registry-2.8.3.tar.gz --checkpoint=.1000
+    tar -xzf registry-2.8.3.tar.gz --checkpoint=.1000
     echo "----镜像文件解压成功----"
 else
     echo "【WARN】：未找到 registry-2.8.3.tar.gz，跳过解压（假设已解压）"

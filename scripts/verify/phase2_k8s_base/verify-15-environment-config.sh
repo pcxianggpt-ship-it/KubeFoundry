@@ -107,6 +107,14 @@ while IFS= read -r node_ip; do
     else
         check_fail "nofile 参数未配置: ${node_display}"
     fi
+
+    # 11. resolv.conf 包含有效的nameserver
+    result=$(ssh_exec_capture "$node_ip" "grep -c '^nameserver' /etc/resolv.conf 2>/dev/null || true" | tr -d '[:space:]')
+    if [ "$result" -ge 1 ]; then
+        check_pass "/etc/resolv.conf DNS配置正确: ${node_display}"
+    else
+        check_fail "/etc/resolv.conf 缺少有效的nameserver: ${node_display}"
+    fi
 done <<< "$all_ips"
 
 # 结果汇总
