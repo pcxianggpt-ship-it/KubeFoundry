@@ -559,12 +559,12 @@ run_ecosystem() {
         step_done "3.1"
     fi
 
-    # 3.2 安装kubemate管理界面（主控制节点）
+    # 3.2 安装kubemate管理界面（本地执行）
     if step_is_done "3.2"; then
         log_info "[跳过] 3.2 安装kubemate管理界面（已完成）"
     else
         log_info "安装kubemate管理界面..."
-        exec_script_on_control_plane "${P3}/31-install-kubemate-ui.sh"
+        ( cd "${PROJECT_ROOT}"; source "${P3}/31-install-kubemate-ui.sh" )
         if [ $? -ne 0 ]; then
             log_error "kubemate安装失败"
             return 1
