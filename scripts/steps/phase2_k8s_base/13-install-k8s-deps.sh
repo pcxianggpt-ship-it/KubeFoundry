@@ -28,5 +28,13 @@ if [ -n "$FAIL_LIST" ]; then
     exit 1
 fi
 
+# 启用kubelet服务
+systemctl enable kubelet
+if [ $? -ne 0 ]; then
+    log_error "kubelet enable 失败"
+    exit 1
+fi
+log_success "kubelet 已设置为开机自启"
+
 log_success "K8s依赖包安装完成"
 log_info "已安装: ${PACKAGES}"

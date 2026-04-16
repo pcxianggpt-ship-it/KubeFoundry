@@ -45,6 +45,14 @@ while IFS= read -r node_ip; do
     else
         check_fail "kubelet 版本获取失败: ${node_display}"
     fi
+
+    # 验证kubelet是否已启用
+    result=$(ssh_exec_capture "$node_ip" "systemctl is-enabled kubelet 2>/dev/null" | tr -d '[:space:]')
+    if [ "$result" = "enabled" ]; then
+        check_pass "kubelet 已启用: ${node_display}"
+    else
+        check_fail "kubelet 未启用: ${node_display}"
+    fi
 done <<< "$all_ips"
 
 # 结果汇总
