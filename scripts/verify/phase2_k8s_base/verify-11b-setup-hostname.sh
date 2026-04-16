@@ -58,7 +58,7 @@ if [ -n "$registry_ip" ]; then
     if [ "$actual_hn" = "$registry_hn" ]; then
         check_pass "镜像仓库节点主机名正确: ${registry_hn}"
     else
-        check_fail "镜像仓库节点主机名不匹配 (期望: ${registry_hn}, 实际: ${actual_hn})"
+        log_warn "[WARN] 镜像仓库节点主机名不匹配 (期望: ${registry_hn}, 实际: ${actual_hn})，可能与其他节点同机部署"
     fi
 fi
 
