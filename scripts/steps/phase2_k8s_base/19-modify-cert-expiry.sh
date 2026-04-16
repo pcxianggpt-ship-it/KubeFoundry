@@ -8,7 +8,6 @@
 # 版本：1.0.0
 #===============================================================================
 
-CERT_DURATION="867240h0m0s"
 MANIFEST="/etc/kubernetes/manifests/kube-controller-manager.yaml"
 
 log_info "开始修改证书有效期..."
@@ -26,11 +25,11 @@ if grep -q "cluster-signing-duration" "$MANIFEST"; then
 fi
 
 # 3. 在 spec.containers.command 下添加参数
-sed -i '/use-service-account-credentials/a\    - --cluster-signing-duration='"${CERT_DURATION}" "$MANIFEST"
+sed -i '/use-service-account-credentials/a\    - --cluster-signing-duration=867240h0m0s' "$MANIFEST"
 
 # 4. 验证修改结果
 if grep -q "cluster-signing-duration" "$MANIFEST"; then
-    log_success "已添加证书有效期配置: ${CERT_DURATION}"
+    log_success "已添加证书有效期配置: 867240h0m0s"
 else
     log_error "cluster-signing-duration 参数添加失败"
     exit 1
