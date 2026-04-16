@@ -59,8 +59,13 @@ exec_script_on_single_node() {
     local _inj_pod_subnet _inj_service_subnet _inj_dual_stack
     local _inj_etcd_data_dir _inj_api_server_port
     local _inj_install_media
+    local _inj_nfs_server _inj_nfs_path _inj_nfs_mount _inj_storage_class
     _inj_k8s_soft=$(config_get '.paths.k8s_home' '/data/k8s_install' 2>/dev/null)
     _inj_install_media=$(config_resolve '.paths.install_media' 2>/dev/null)
+_inj_nfs_server=$(config_get '.storage.nfs_server' '' 2>/dev/null)
+_inj_nfs_path=$(config_get '.storage.nfs_path' '' 2>/dev/null)
+_inj_nfs_mount=$(config_get '.storage.nfs_mount_point' '' 2>/dev/null)
+_inj_storage_class=$(config_get '.storage.storage_class' 'nfs-storage' 2>/dev/null)
     _inj_arch=$(config_get '.paths.arch' 'amd64' 2>/dev/null)
     _inj_kubelet_root=$(config_get '.env.kubelet_root' '/data/kubelet_root' 2>/dev/null)
     _inj_k8s_version=$(config_get '.cluster.k8s_version' '1.30.14' 2>/dev/null)
@@ -97,6 +102,10 @@ export DUAL_STACK="${_inj_dual_stack}"
 export ETCD_DATA_DIR="${_inj_etcd_data_dir}"
 export API_SERVER_PORT="${_inj_api_server_port}"
 export INSTALL_MEDIA="${_inj_install_media}"
+export NFS_SERVER="${_inj_nfs_server}"
+export NFS_PATH="${_inj_nfs_path}"
+export NFS_MOUNT_POINT="${_inj_nfs_mount}"
+export STORAGE_CLASS="${_inj_storage_class}"
 
 # 内联日志函数（不依赖远程文件）
 log_info()    { echo -e "\033[0;34m[INFO]\033[0m \$*"; }
