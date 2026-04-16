@@ -493,7 +493,10 @@ run_k8s_base() {
         log_info "[跳过] 2.13 添加工作节点（已完成）"
     else
         log_info "添加工作节点..."
-        exec_script_on_workers "${P2}/21-add-worker-nodes.sh"
+ 
+        joincmd=$(cat /tmp/k8s/kube_join_nodes)
+
+        exec_script_on_workers "${P2}/21-add-worker-nodes.sh" "$joincmd"
         if [ $? -ne 0 ]; then
             log_error "添加工作节点失败"
             return 1
