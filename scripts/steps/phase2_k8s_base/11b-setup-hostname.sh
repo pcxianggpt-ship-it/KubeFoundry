@@ -95,20 +95,28 @@ for ((i = 0; i < worker_count; i++)); do
     hosts_body="${hosts_body}${ip}    ${hn}"$'\n'
 done
 
-# 写入临时文件
-temp_hosts=$(mktemp)
+log_info "集群 hosts 条目:"
+echo "${HOSTS_BEGIN}"
+printf '%s' "$hosts_body"
+echo "${HOSTS_END}"
+
+#===============================================================================
+# 3. 更新本地 /etc/hosts，然后分发到所有节点
+#===============================================================================
+log_substep "更新本地 /etc/hosts"
+
+# 备份 + 删除旧标记段 + 追加新条目
+cp /etc/hosts /etc/hosts.bak
+sed -i "/^${HOSTS_BEGIN}/,/^${HOSTS_END}/d" /etc/hosts
 {
     echo "${HOSTS_BEGIN}"
     printf '%s' "$hosts_body"
     echo "${HOSTS_END}"
-} > "$temp_hosts"
+} >> /etc/hosts
 
-log_info "集群 hosts 条目:"
-cat "$temp_hosts"
+log_success "本地 /etc/hosts 更新完成"
 
-#===============================================================================
-# 3. 分发 /etc/hosts 到所有节点
-#===============================================================================
+# 分发到所有远程节点
 log_substep "分发 /etc/hosts 到所有节点"
 
 all_ips=$(get_all_node_ips)
@@ -122,20 +130,15 @@ if [ -n "$all_ips" ]; then
         node_display=$(get_node_hostname "$node_ip" 2>/dev/null)
         node_display="${node_display:-$node_ip}"
 
-        log_info "更新 /etc/hosts: ${node_display}"
+        log_info "分发 /etc/hosts: ${node_display}"
 
-        # 备份 + 删除旧标记段
-        ssh_exec "$node_ip" "cp /etc/hosts /etc/hosts.bak && sed -i '/^${HOSTS_BEGIN}/,/^${HOSTS_END}/d' /etc/hosts" || true
-
-        # 上传新条目并追加
-        scp_exec "$temp_hosts" "/tmp/.kf_hosts" "$node_ip" || { rm -f "$temp_hosts"; return 1; }
-        ssh_exec "$node_ip" "cat /tmp/.kf_hosts >> /etc/hosts && rm -f /tmp/.kf_hosts" || { rm -f "$temp_hosts"; return 1; }
-
-        log_success "/etc/hosts 更新成功: ${node_display}"
+        if scp_exec "/etc/hosts" "/etc/hosts" "$node_ip"; then
+            log_success "/etc/hosts 分发成功: ${node_display}"
+        else
+            log_error "/etc/hosts 分发失败: ${node_display}"
+            return 1
+        fi
     done 3<<< "$all_ips"
 fi
-
-# 清理临时文件
-rm -f "$temp_hosts"
 
 log_success "主机名和 hosts 解析配置完成"
