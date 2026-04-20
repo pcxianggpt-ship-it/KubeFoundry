@@ -59,7 +59,7 @@ log_info() {
     timestamp=$(_log_timestamp)
 
     # 输出到终端
-    echo -e "${COLOR_BLUE}[INFO]${COLOR_RESET} ${message}"
+    echo -e "[${timestamp}] ${COLOR_BLUE}[INFO]${COLOR_RESET} ${message}"
 
     # 写入日志文件
     _log_write "[INFO] ${message}"
@@ -79,7 +79,7 @@ log_success() {
     timestamp=$(_log_timestamp)
 
     # 输出到终端
-    echo -e "${COLOR_GREEN}[SUCCESS]${COLOR_RESET} ${message}"
+    echo -e "[${timestamp}] ${COLOR_GREEN}[SUCCESS]${COLOR_RESET} ${message}"
 
     # 写入日志文件
     _log_write "[SUCCESS] ${message}"
@@ -99,7 +99,7 @@ log_warn() {
     timestamp=$(_log_timestamp)
 
     # 输出到终端
-    echo -e "${COLOR_YELLOW}[WARN]${COLOR_RESET} ${message}"
+    echo -e "[${timestamp}] ${COLOR_YELLOW}[WARN]${COLOR_RESET} ${message}"
 
     # 写入日志文件
     _log_write "[WARN] ${message}"
@@ -119,7 +119,7 @@ log_error() {
     timestamp=$(_log_timestamp)
 
     # 输出到终端（stderr）
-    echo -e "${COLOR_RED}[ERROR]${COLOR_RESET} ${message}" >&2
+    echo -e "[${timestamp}] ${COLOR_RED}[ERROR]${COLOR_RESET} ${message}" >&2
 
     # 写入日志文件
     _log_write "[ERROR] ${message}"
@@ -145,7 +145,7 @@ log_debug() {
         timestamp=$(_log_timestamp)
 
         # 输出到终端
-        echo -e "\033[0;90m[DEBUG]${COLOR_RESET} ${message}"
+        echo -e "[${timestamp}] \033[0;90m[DEBUG]${COLOR_RESET} ${message}"
 
         # 写入日志文件
         _log_write "[DEBUG] ${message}"
