@@ -583,11 +583,19 @@ run_ecosystem() {
         log_info "[跳过] 3.3 安装NFS插件（已完成）"
     else
         log_info "安装NFS插件..."
+        source "${P3}/32-configure-nfs-exports.sh"
+        if [ $? -ne 0 ]; then
+            log_error "NFS exports配置失败"
+            return 1
+        fi
         exec_script_on_control_plane "${P3}/32-install-nfs.sh"
         if [ $? -ne 0 ]; then
             log_error "NFS安装失败"
             return 1
         fi
+
+        # 配置Worker节点挂载NFS
+        source "${P3}/32-mount-nfs-workers.sh"
         log_success "NFS安装完成"
         verify_step "${V3}/verify-32-install-nfs.sh" "NFS"
         if [ $? -ne 0 ]; then

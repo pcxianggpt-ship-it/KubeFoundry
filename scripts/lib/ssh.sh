@@ -105,7 +105,7 @@ ssh_exec() {
     log_info "在节点 ${target} 执行命令: ${command}"
 
     # 执行 SSH 命令
-    if ssh -i "${ssh_key}" -p "${_SSH_PORT}" -o ConnectTimeout="${_SSH_TIMEOUT}" \
+    if ssh -n -i "${ssh_key}" -p "${_SSH_PORT}" -o ConnectTimeout="${_SSH_TIMEOUT}" \
         -o StrictHostKeyChecking=no \
         "${_SSH_USER}@${target}" "${command}"; then
         log_success "命令执行成功: ${target}"

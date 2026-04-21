@@ -27,22 +27,6 @@ fi
 log_info "NFS配置: 服务器=${NFS_SERVER}, 路径=${NFS_PATH}, 挂载点=${NFS_MOUNT_POINT:-/data/nfs_root}"
 
 
-# 3. 启动nfs-server
-systemctl enable nfs-server >/dev/null 2>&1
-systemctl start nfs-server >/dev/null 2>&1
-log_success "nfs-server 已启动"
-
-# 4. 配置NFS挂载（仅非NFS服务器节点）
-local_ip=$(hostname -I | awk '{print $1}')
-if [ "$local_ip" != "$NFS_SERVER" ] && [ -n "$NFS_MOUNT_POINT" ]; then
-    mkdir -p "$NFS_MOUNT_POINT"
-    # 添加fstab自动挂载（避免重复添加）
-    if ! grep -q "$NFS_PATH" /etc/fstab 2>/dev/null; then
-        echo "${NFS_SERVER}:${NFS_PATH} ${NFS_MOUNT_POINT} nfs defaults 0 0" >> /etc/fstab
-    fi
-    mount -t nfs "${NFS_SERVER}:${NFS_PATH}" "$NFS_MOUNT_POINT" 2>/dev/null
-    log_success "NFS挂载配置完成: ${NFS_MOUNT_POINT}"
-fi
 
 
 # 6. 使用helm安装NFS provisioner
