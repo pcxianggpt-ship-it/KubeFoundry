@@ -143,12 +143,12 @@ log_success "端口号验证通过"
 
 # 6. 验证文件路径可访问性
 log_info "验证文件路径..."
-repo_source=$(config_get '.paths.repo_source')
+repo_source=$(config_resolve '.paths.repo_source')
 if [ -n "$repo_source" ] && [ ! -f "$repo_source" ]; then
     log_warn "YUM 源文件不存在: $repo_source"
 fi
 
-k8s_install_path=$(config_get '.paths.k8s_install')
+k8s_install_path=$(config_resolve '.paths.k8s_home')
 if [ ! -d "$k8s_install_path" ]; then
     log_warn "K8S 安装目录不存在: $k8s_install_path"
 fi
