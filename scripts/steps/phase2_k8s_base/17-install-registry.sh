@@ -39,7 +39,7 @@ else
 fi
 
 log_info "使用容器运行时: ${CONTAINER_CMD}"
-log_info "镜像仓库IP: ${REGISTRY_IP}, 架构: ${ARCH}, 安装目录: ${INSTALL_MEDIA}"
+log_info "镜像仓库IP: ${REGISTRY_IP}, 架构: ${ARCH}, 安装目录: ${K8S_HOME}"
 
 # 进入 registry 安装目录（由 2.9 步骤分发到此）
 REGISTRY_DIR="${K8S_HOME}/04.registry"
