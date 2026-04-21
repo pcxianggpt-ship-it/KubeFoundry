@@ -40,7 +40,7 @@ affinity:
             - kube-dns
         topologyKey: kubernetes.io/hostname
 
-echo "【INFO】: CoreDNS配置更新完成"
+log_info "CoreDNS配置更新完成"
 
 # 验证安装结果
 # 在k8sc1控制节点上执行

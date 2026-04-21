@@ -8,7 +8,7 @@
 # 版本：1.0.0
 #===============================================================================
 
-echo "【INFO】: 开始环境配置..."
+log_info "开始环境配置..."
 
 # 所有控制节点执行
 
@@ -71,5 +71,5 @@ cat >> /etc/security/limits.conf << EOF
 * hard nofile 65535
 EOF
 
-echo "【INFO】: 环境配置完成"
-echo "【INFO】: 已配置: swap关闭, 防火墙关闭, DNS配置, IPv4/IPv6转发, open files参数"
+log_info "环境配置完成"
+log_info "已配置: swap关闭, 防火墙关闭, DNS配置, IPv4/IPv6转发, open files参数"

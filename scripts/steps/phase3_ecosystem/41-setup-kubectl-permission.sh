@@ -8,12 +8,12 @@
 # 版本：1.0.0
 #===============================================================================
 
-echo "【INFO】: 开始配置普通用户kubectl权限..."
+log_info "开始配置普通用户kubectl权限..."
 
 cp -r .kube /home/appusr/
 chown -R appusr:appusr /home/appusr/.kube/
 
-echo "【INFO】: 普通用户kubectl权限配置完成"
+log_info "普通用户kubectl权限配置完成"
 
 # 验证安装结果
 # 切换到普通用户验证

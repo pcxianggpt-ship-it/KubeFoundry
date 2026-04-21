@@ -8,7 +8,7 @@
 # 版本：1.0.0
 #===============================================================================
 
-echo "【INFO】: 开始安装containerd..."
+log_info "开始安装containerd..."
 
 # 所有控制节点执行
 cd /tmp/k8s/02.container_runtime
@@ -65,5 +65,5 @@ EOF
 systemctl daemon-reload
 systemctl enable --now containerd
 
-echo "【INFO】: containerd安装完成"
-echo "【INFO】: 已安装: containerd 1.7.18, runc 1.3.3, cni-plugins 1.8.0, buildkit 0.25.2, nerdctl 2.2.0"
+log_info "containerd安装完成"
+log_info "已安装: containerd 1.7.18, runc 1.3.3, cni-plugins 1.8.0, buildkit 0.25.2, nerdctl 2.2.0"

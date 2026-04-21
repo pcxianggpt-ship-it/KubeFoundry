@@ -19,4 +19,4 @@ EOF
 yum -q clean all
 yum -q makecache
 
-echo "【INFO】: k8s HTTP repo源配置完成"
+log_info "k8s HTTP repo源配置完成"
