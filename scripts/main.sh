@@ -635,11 +635,11 @@ run_ecosystem() {
         step_done "3.4"
     fi
 
-    # 3.6 安装loki（主控制节点）
+    # 3.5 安装loki（主控制节点）
     if ! ecosystem_enabled "loki"; then
-        log_info "[跳过] 3.6 安装loki（配置中已禁用）"
-    elif step_is_done "3.6"; then
-        log_info "[跳过] 3.6 安装loki（已完成）"
+        log_info "[跳过] 3.5 安装loki（配置中已禁用）"
+    elif step_is_done "3.5"; then
+        log_info "[跳过] 3.5 安装loki（已完成）"
     else
         log_info "安装loki..."
         exec_script_on_control_plane "${P3}/35-install-loki.sh"
@@ -653,14 +653,14 @@ run_ecosystem() {
             log_error "loki验证失败"
             return 1
         fi
-        step_done "3.6"
+        step_done "3.5"
     fi
 
-    # 3.7 安装traefik（主控制节点）
+    # 3.6 安装Traefik + Traefik Mesh（主控制节点）
     if ! ecosystem_enabled "traefik"; then
-        log_info "[跳过] 3.7 安装traefik（配置中已禁用）"
-    elif step_is_done "3.7"; then
-        log_info "[跳过] 3.7 安装traefik（已完成）"
+        log_info "[跳过] 3.6 安装Traefik + Traefik Mesh（配置中已禁用）"
+    elif step_is_done "3.6"; then
+        log_info "[跳过] 3.6 安装Traefik + Traefik Mesh（已完成）"
     else
         log_info "安装traefik..."
         exec_script_on_control_plane "${P3}/36-install-traefik.sh"
@@ -674,15 +674,7 @@ run_ecosystem() {
             log_error "traefik验证失败"
             return 1
         fi
-        step_done "3.7"
-    fi
 
-    # 3.8 安装traefik-mesh（主控制节点，与 Traefik 同组）
-    if ! ecosystem_enabled "traefik"; then
-        log_info "[跳过] 3.8 安装traefik-mesh（配置中已禁用）"
-    elif step_is_done "3.8"; then
-        log_info "[跳过] 3.8 安装traefik-mesh（已完成）"
-    else
         log_info "安装traefik-mesh..."
         exec_script_on_control_plane "${P3}/37-install-traefik-mesh.sh"
         if [ $? -ne 0 ]; then
@@ -695,14 +687,14 @@ run_ecosystem() {
             log_error "traefik-mesh验证失败"
             return 1
         fi
-        step_done "3.8"
+        step_done "3.6"
     fi
 
-    # 3.9 安装prometheus（主控制节点）
+    # 3.7 安装prometheus（主控制节点）
     if ! ecosystem_enabled "prometheus"; then
-        log_info "[跳过] 3.9 安装prometheus（配置中已禁用）"
-    elif step_is_done "3.9"; then
-        log_info "[跳过] 3.9 安装prometheus（已完成）"
+        log_info "[跳过] 3.7 安装prometheus（配置中已禁用）"
+    elif step_is_done "3.7"; then
+        log_info "[跳过] 3.7 安装prometheus（已完成）"
     else
         log_info "安装prometheus..."
         exec_script_on_control_plane "${P3}/38-install-prometheus.sh"
@@ -716,14 +708,14 @@ run_ecosystem() {
             log_error "prometheus验证失败"
             return 1
         fi
-        step_done "3.9"
+        step_done "3.7"
     fi
 
-    # 3.10 更新coredns配置（主控制节点，依赖 Traefik）
+    # 3.8 更新coredns配置（主控制节点，依赖 Traefik）
     if ! ecosystem_enabled "traefik" || ! ecosystem_enabled "coredns_update"; then
-        log_info "[跳过] 3.10 更新coredns配置（配置中已禁用）"
-    elif step_is_done "3.10"; then
-        log_info "[跳过] 3.10 更新coredns配置（已完成）"
+        log_info "[跳过] 3.8 更新coredns配置（配置中已禁用）"
+    elif step_is_done "3.8"; then
+        log_info "[跳过] 3.8 更新coredns配置（已完成）"
     else
         log_info "更新coredns配置..."
         exec_script_on_control_plane "${P3}/39-update-coredns.sh"
@@ -737,14 +729,14 @@ run_ecosystem() {
             log_error "coredns验证失败"
             return 1
         fi
-        step_done "3.10"
+        step_done "3.8"
     fi
 
-    # 3.11 安装metrics-server（主控制节点）
+    # 3.9 安装metrics-server（主控制节点）
     if ! ecosystem_enabled "metrics_server"; then
-        log_info "[跳过] 3.11 安装metrics-server（配置中已禁用）"
-    elif step_is_done "3.11"; then
-        log_info "[跳过] 3.11 安装metrics-server（已完成）"
+        log_info "[跳过] 3.9 安装metrics-server（配置中已禁用）"
+    elif step_is_done "3.9"; then
+        log_info "[跳过] 3.9 安装metrics-server（已完成）"
     else
         log_info "安装metrics-server..."
         exec_script_on_control_plane "${P3}/40-install-metrics-server.sh"
@@ -758,14 +750,14 @@ run_ecosystem() {
             log_error "metrics-server验证失败"
             return 1
         fi
-        step_done "3.11"
+        step_done "3.9"
     fi
 
-    # 3.12 配置普通用户kubectl权限（主控制节点）
+    # 3.10 配置普通用户kubectl权限（主控制节点）
     if ! ecosystem_enabled "kubectl_permission"; then
-        log_info "[跳过] 3.12 配置kubectl权限（配置中已禁用）"
-    elif step_is_done "3.12"; then
-        log_info "[跳过] 3.12 配置kubectl权限（已完成）"
+        log_info "[跳过] 3.10 配置kubectl权限（配置中已禁用）"
+    elif step_is_done "3.10"; then
+        log_info "[跳过] 3.10 配置kubectl权限（已完成）"
     else
         log_info "配置kubectl权限..."
         exec_script_on_control_plane "${P3}/41-setup-kubectl-permission.sh"
@@ -779,14 +771,14 @@ run_ecosystem() {
             log_error "kubectl权限验证失败"
             return 1
         fi
-        step_done "3.12"
+        step_done "3.10"
     fi
 
-    # 3.13 配置F5高可用（所有控制节点）
+    # 3.11 配置F5高可用（所有控制节点）
     if ! ecosystem_enabled "f5_ha"; then
-        log_info "[跳过] 3.13 配置F5高可用（配置中已禁用）"
-    elif step_is_done "3.13"; then
-        log_info "[跳过] 3.13 配置F5高可用（已完成）"
+        log_info "[跳过] 3.11 配置F5高可用（配置中已禁用）"
+    elif step_is_done "3.11"; then
+        log_info "[跳过] 3.11 配置F5高可用（已完成）"
     else
         log_info "配置F5高可用..."
         exec_script_on_control_plane "${P3}/42-setup-f5-ha.sh"
@@ -800,14 +792,14 @@ run_ecosystem() {
             log_error "F5高可用验证失败"
             return 1
         fi
-        step_done "3.13"
+        step_done "3.11"
     fi
 
-    # 3.14 安装redis哨兵模式（主控制节点，可选）
+    # 3.12 安装redis哨兵模式（主控制节点，可选）
     if ! ecosystem_enabled "redis_sentinel" false; then
-        log_info "[跳过] 3.14 安装redis哨兵模式（配置中已禁用）"
-    elif step_is_done "3.14"; then
-        log_info "[跳过] 3.14 安装redis哨兵模式（已完成）"
+        log_info "[跳过] 3.12 安装redis哨兵模式（配置中已禁用）"
+    elif step_is_done "3.12"; then
+        log_info "[跳过] 3.12 安装redis哨兵模式（已完成）"
     else
         log_info "安装redis哨兵模式..."
         exec_script_on_control_plane "${P3}/43-install-redis-sentinel.sh"
@@ -820,14 +812,14 @@ run_ecosystem() {
                 log_warn "redis哨兵验证失败（可选组件，不影响主流程）"
             fi
         fi
-        step_done "3.14"
+        step_done "3.12"
     fi
 
-    # 3.15 配置定时任务
+    # 3.13 配置定时任务
     if ! ecosystem_enabled "etcd_backup"; then
-        log_info "[跳过] 3.15 配置ETCD备份定时任务（配置中已禁用）"
-    elif step_is_done "3.15a"; then
-        log_info "[跳过] 3.15 配置ETCD备份定时任务（已完成）"
+        log_info "[跳过] 3.13 配置ETCD备份定时任务（配置中已禁用）"
+    elif step_is_done "3.13a"; then
+        log_info "[跳过] 3.13 配置ETCD备份定时任务（已完成）"
     else
         log_info "配置ETCD备份定时任务..."
         exec_script_on_control_plane "${P3}/44-setup-etcd-backup.sh"
@@ -841,13 +833,13 @@ run_ecosystem() {
             log_error "ETCD备份定时任务验证失败"
             return 1
         fi
-        step_done "3.15a"
+        step_done "3.13a"
     fi
 
     if ! ecosystem_enabled "traefik" || ! ecosystem_enabled "traefik_cleanup"; then
-        log_info "[跳过] 3.15 配置Traefik清理定时任务（配置中已禁用）"
-    elif step_is_done "3.15b"; then
-        log_info "[跳过] 3.15 配置Traefik清理定时任务（已完成）"
+        log_info "[跳过] 3.13 配置Traefik清理定时任务（配置中已禁用）"
+    elif step_is_done "3.13b"; then
+        log_info "[跳过] 3.13 配置Traefik清理定时任务（已完成）"
     else
         log_info "配置Traefik清理定时任务..."
         exec_script_on_control_plane "${P3}/45-setup-traefik-cleanup.sh"
@@ -861,13 +853,13 @@ run_ecosystem() {
             log_error "Traefik清理定时任务验证失败"
             return 1
         fi
-        step_done "3.15b"
+        step_done "3.13b"
     fi
 
     if ! ecosystem_enabled "log_cleanup"; then
-        log_info "[跳过] 3.15 配置日志清理定时任务（配置中已禁用）"
-    elif step_is_done "3.15c"; then
-        log_info "[跳过] 3.15 配置日志清理定时任务（已完成）"
+        log_info "[跳过] 3.13 配置日志清理定时任务（配置中已禁用）"
+    elif step_is_done "3.13c"; then
+        log_info "[跳过] 3.13 配置日志清理定时任务（已完成）"
     else
         log_info "配置日志清理定时任务..."
         exec_script_on_workers "${P3}/46-setup-log-cleanup.sh"
@@ -881,7 +873,7 @@ run_ecosystem() {
             log_error "日志清理定时任务验证失败"
             return 1
         fi
-        step_done "3.15c"
+        step_done "3.13c"
     fi
 
     log_success "生态系统组件安装完成"
