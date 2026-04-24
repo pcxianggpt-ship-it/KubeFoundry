@@ -445,6 +445,24 @@ get_k8s_home() {
     config_get '.paths.k8s_home' '/data/k8s_install'
 }
 
+#===============================================================================
+# 函数：ecosystem_enabled()
+# 功能：检查生态系统组件是否启用
+# 参数：
+#   $1 - 组件名称（如 nfs, elasticsearch, traefik 等）
+#   $2 - 默认值（可选，默认 true）
+# 返回值：
+#   0 - 启用
+#   1 - 禁用
+#===============================================================================
+ecosystem_enabled() {
+    local component="$1"
+    local default="${2:-true}"
+    local value
+    value=$(config_get ".ecosystem.${component}" "$default")
+    [ "$value" = "true" ]
+}
+
 # 兼容旧名称
 get_k8s_soft() {
     get_k8s_home

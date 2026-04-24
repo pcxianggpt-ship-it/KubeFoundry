@@ -223,6 +223,60 @@ advanced:
   keep_backup: true
 
 #===============================================================================
+# 生态系统组件配置
+# 说明：控制 Phase3 各组件是否安装，设为 false 可跳过对应组件
+# 注意：组件间存在依赖关系，禁用被依赖组件时依赖组件将自动跳过
+#===============================================================================
+ecosystem:
+  # Kubemate 管理界面
+  kubemate_ui: true
+
+  # NFS 存储
+  nfs: true
+
+  # Elasticsearch（Skywalking 依赖此组件）
+  elasticsearch: true
+
+  # Skywalking APM（依赖 Elasticsearch）
+  skywalking: true
+
+  # Loki 日志聚合
+  loki: true
+
+  # Traefik Ingress 网关（Traefik Mesh / CoreDNS更新 / Traefik清理 依赖此组件）
+  traefik: true
+
+  # Traefik Mesh 服务网格（依赖 Traefik）
+  traefik_mesh: true
+
+  # Prometheus 监控套件
+  prometheus: true
+
+  # CoreDNS 反亲和性更新（依赖 Traefik Mesh）
+  coredns_update: true
+
+  # Metrics Server（启用 kubectl top）
+  metrics_server: true
+
+  # kubectl 普通用户权限配置
+  kubectl_permission: true
+
+  # F5 负载均衡高可用
+  f5_ha: true
+
+  # Redis 哨兵模式（默认关闭，可选组件）
+  redis_sentinel: false
+
+  # ETCD 备份定时任务
+  etcd_backup: true
+
+  # Traefik 清理定时任务（依赖 Traefik）
+  traefik_cleanup: true
+
+  # 日志清理定时任务
+  log_cleanup: true
+
+#===============================================================================
 # 环境变量配置（可选）
 #===============================================================================
 env:

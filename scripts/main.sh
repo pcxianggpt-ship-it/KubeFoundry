@@ -560,7 +560,9 @@ run_ecosystem() {
     fi
 
     # 3.2 安装kubemate管理界面（本地执行）
-    if step_is_done "3.2"; then
+    if ! ecosystem_enabled "kubemate_ui"; then
+        log_info "[跳过] 3.2 安装kubemate管理界面（配置中已禁用）"
+    elif step_is_done "3.2"; then
         log_info "[跳过] 3.2 安装kubemate管理界面（已完成）"
     else
         log_info "安装kubemate管理界面..."
@@ -579,7 +581,9 @@ run_ecosystem() {
     fi
 
     # 3.3 安装NFS插件（主控制节点）
-    if step_is_done "3.3"; then
+    if ! ecosystem_enabled "nfs"; then
+        log_info "[跳过] 3.3 安装NFS插件（配置中已禁用）"
+    elif step_is_done "3.3"; then
         log_info "[跳过] 3.3 安装NFS插件（已完成）"
     else
         log_info "安装NFS插件..."
@@ -598,7 +602,9 @@ run_ecosystem() {
     fi
 
     # 3.4 安装elasticsearch（主控制节点）
-    if step_is_done "3.4"; then
+    if ! ecosystem_enabled "elasticsearch"; then
+        log_info "[跳过] 3.4 安装elasticsearch（配置中已禁用）"
+    elif step_is_done "3.4"; then
         log_info "[跳过] 3.4 安装elasticsearch（已完成）"
     else
         log_info "安装elasticsearch..."
@@ -616,8 +622,10 @@ run_ecosystem() {
         step_done "3.4"
     fi
 
-    # 3.5 安装skywalking（主控制节点）
-    if step_is_done "3.5"; then
+    # 3.5 安装skywalking（主控制节点，依赖 Elasticsearch）
+    if ! ecosystem_enabled "elasticsearch" || ! ecosystem_enabled "skywalking"; then
+        log_info "[跳过] 3.5 安装skywalking（配置中已禁用）"
+    elif step_is_done "3.5"; then
         log_info "[跳过] 3.5 安装skywalking（已完成）"
     else
         log_info "安装skywalking..."
@@ -636,7 +644,9 @@ run_ecosystem() {
     fi
 
     # 3.6 安装loki（主控制节点）
-    if step_is_done "3.6"; then
+    if ! ecosystem_enabled "loki"; then
+        log_info "[跳过] 3.6 安装loki（配置中已禁用）"
+    elif step_is_done "3.6"; then
         log_info "[跳过] 3.6 安装loki（已完成）"
     else
         log_info "安装loki..."
@@ -655,7 +665,9 @@ run_ecosystem() {
     fi
 
     # 3.7 安装traefik（主控制节点）
-    if step_is_done "3.7"; then
+    if ! ecosystem_enabled "traefik"; then
+        log_info "[跳过] 3.7 安装traefik（配置中已禁用）"
+    elif step_is_done "3.7"; then
         log_info "[跳过] 3.7 安装traefik（已完成）"
     else
         log_info "安装traefik..."
@@ -673,8 +685,10 @@ run_ecosystem() {
         step_done "3.7"
     fi
 
-    # 3.8 安装traefik-mesh（主控制节点）
-    if step_is_done "3.8"; then
+    # 3.8 安装traefik-mesh（主控制节点，依赖 Traefik）
+    if ! ecosystem_enabled "traefik" || ! ecosystem_enabled "traefik_mesh"; then
+        log_info "[跳过] 3.8 安装traefik-mesh（配置中已禁用）"
+    elif step_is_done "3.8"; then
         log_info "[跳过] 3.8 安装traefik-mesh（已完成）"
     else
         log_info "安装traefik-mesh..."
@@ -693,7 +707,9 @@ run_ecosystem() {
     fi
 
     # 3.9 安装prometheus（主控制节点）
-    if step_is_done "3.9"; then
+    if ! ecosystem_enabled "prometheus"; then
+        log_info "[跳过] 3.9 安装prometheus（配置中已禁用）"
+    elif step_is_done "3.9"; then
         log_info "[跳过] 3.9 安装prometheus（已完成）"
     else
         log_info "安装prometheus..."
@@ -711,8 +727,10 @@ run_ecosystem() {
         step_done "3.9"
     fi
 
-    # 3.10 更新coredns配置（主控制节点）
-    if step_is_done "3.10"; then
+    # 3.10 更新coredns配置（主控制节点，依赖 Traefik Mesh）
+    if ! ecosystem_enabled "traefik_mesh" || ! ecosystem_enabled "coredns_update"; then
+        log_info "[跳过] 3.10 更新coredns配置（配置中已禁用）"
+    elif step_is_done "3.10"; then
         log_info "[跳过] 3.10 更新coredns配置（已完成）"
     else
         log_info "更新coredns配置..."
@@ -731,7 +749,9 @@ run_ecosystem() {
     fi
 
     # 3.11 安装metrics-server（主控制节点）
-    if step_is_done "3.11"; then
+    if ! ecosystem_enabled "metrics_server"; then
+        log_info "[跳过] 3.11 安装metrics-server（配置中已禁用）"
+    elif step_is_done "3.11"; then
         log_info "[跳过] 3.11 安装metrics-server（已完成）"
     else
         log_info "安装metrics-server..."
@@ -750,7 +770,9 @@ run_ecosystem() {
     fi
 
     # 3.12 配置普通用户kubectl权限（主控制节点）
-    if step_is_done "3.12"; then
+    if ! ecosystem_enabled "kubectl_permission"; then
+        log_info "[跳过] 3.12 配置kubectl权限（配置中已禁用）"
+    elif step_is_done "3.12"; then
         log_info "[跳过] 3.12 配置kubectl权限（已完成）"
     else
         log_info "配置kubectl权限..."
@@ -769,7 +791,9 @@ run_ecosystem() {
     fi
 
     # 3.13 配置F5高可用（所有控制节点）
-    if step_is_done "3.13"; then
+    if ! ecosystem_enabled "f5_ha"; then
+        log_info "[跳过] 3.13 配置F5高可用（配置中已禁用）"
+    elif step_is_done "3.13"; then
         log_info "[跳过] 3.13 配置F5高可用（已完成）"
     else
         log_info "配置F5高可用..."
@@ -788,7 +812,9 @@ run_ecosystem() {
     fi
 
     # 3.14 安装redis哨兵模式（主控制节点，可选）
-    if step_is_done "3.14"; then
+    if ! ecosystem_enabled "redis_sentinel" false; then
+        log_info "[跳过] 3.14 安装redis哨兵模式（配置中已禁用）"
+    elif step_is_done "3.14"; then
         log_info "[跳过] 3.14 安装redis哨兵模式（已完成）"
     else
         log_info "安装redis哨兵模式..."
@@ -806,7 +832,9 @@ run_ecosystem() {
     fi
 
     # 3.15 配置定时任务
-    if step_is_done "3.15a"; then
+    if ! ecosystem_enabled "etcd_backup"; then
+        log_info "[跳过] 3.15 配置ETCD备份定时任务（配置中已禁用）"
+    elif step_is_done "3.15a"; then
         log_info "[跳过] 3.15 配置ETCD备份定时任务（已完成）"
     else
         log_info "配置ETCD备份定时任务..."
@@ -824,7 +852,9 @@ run_ecosystem() {
         step_done "3.15a"
     fi
 
-    if step_is_done "3.15b"; then
+    if ! ecosystem_enabled "traefik" || ! ecosystem_enabled "traefik_cleanup"; then
+        log_info "[跳过] 3.15 配置Traefik清理定时任务（配置中已禁用）"
+    elif step_is_done "3.15b"; then
         log_info "[跳过] 3.15 配置Traefik清理定时任务（已完成）"
     else
         log_info "配置Traefik清理定时任务..."
@@ -842,7 +872,9 @@ run_ecosystem() {
         step_done "3.15b"
     fi
 
-    if step_is_done "3.15c"; then
+    if ! ecosystem_enabled "log_cleanup"; then
+        log_info "[跳过] 3.15 配置日志清理定时任务（配置中已禁用）"
+    elif step_is_done "3.15c"; then
         log_info "[跳过] 3.15 配置日志清理定时任务（已完成）"
     else
         log_info "配置日志清理定时任务..."
