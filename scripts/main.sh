@@ -601,11 +601,11 @@ run_ecosystem() {
         step_done "3.3"
     fi
 
-    # 3.4 安装elasticsearch（主控制节点）
+    # 3.4 安装Elasticsearch + Skywalking（主控制节点）
     if ! ecosystem_enabled "elasticsearch"; then
-        log_info "[跳过] 3.4 安装elasticsearch（配置中已禁用）"
+        log_info "[跳过] 3.4 安装Elasticsearch + Skywalking（配置中已禁用）"
     elif step_is_done "3.4"; then
-        log_info "[跳过] 3.4 安装elasticsearch（已完成）"
+        log_info "[跳过] 3.4 安装Elasticsearch + Skywalking（已完成）"
     else
         log_info "安装elasticsearch..."
         exec_script_on_control_plane "${P3}/33-install-elasticsearch.sh"
@@ -619,15 +619,7 @@ run_ecosystem() {
             log_error "elasticsearch验证失败"
             return 1
         fi
-        step_done "3.4"
-    fi
 
-    # 3.5 安装skywalking（主控制节点，依赖 Elasticsearch）
-    if ! ecosystem_enabled "elasticsearch" || ! ecosystem_enabled "skywalking"; then
-        log_info "[跳过] 3.5 安装skywalking（配置中已禁用）"
-    elif step_is_done "3.5"; then
-        log_info "[跳过] 3.5 安装skywalking（已完成）"
-    else
         log_info "安装skywalking..."
         exec_script_on_control_plane "${P3}/34-install-skywalking.sh"
         if [ $? -ne 0 ]; then
@@ -640,7 +632,7 @@ run_ecosystem() {
             log_error "skywalking验证失败"
             return 1
         fi
-        step_done "3.5"
+        step_done "3.4"
     fi
 
     # 3.6 安装loki（主控制节点）
@@ -685,8 +677,8 @@ run_ecosystem() {
         step_done "3.7"
     fi
 
-    # 3.8 安装traefik-mesh（主控制节点，依赖 Traefik）
-    if ! ecosystem_enabled "traefik" || ! ecosystem_enabled "traefik_mesh"; then
+    # 3.8 安装traefik-mesh（主控制节点，与 Traefik 同组）
+    if ! ecosystem_enabled "traefik"; then
         log_info "[跳过] 3.8 安装traefik-mesh（配置中已禁用）"
     elif step_is_done "3.8"; then
         log_info "[跳过] 3.8 安装traefik-mesh（已完成）"
@@ -727,8 +719,8 @@ run_ecosystem() {
         step_done "3.9"
     fi
 
-    # 3.10 更新coredns配置（主控制节点，依赖 Traefik Mesh）
-    if ! ecosystem_enabled "traefik_mesh" || ! ecosystem_enabled "coredns_update"; then
+    # 3.10 更新coredns配置（主控制节点，依赖 Traefik）
+    if ! ecosystem_enabled "traefik" || ! ecosystem_enabled "coredns_update"; then
         log_info "[跳过] 3.10 更新coredns配置（配置中已禁用）"
     elif step_is_done "3.10"; then
         log_info "[跳过] 3.10 更新coredns配置（已完成）"
