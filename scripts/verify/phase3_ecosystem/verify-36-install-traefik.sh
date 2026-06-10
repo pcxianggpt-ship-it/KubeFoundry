@@ -2,10 +2,10 @@
 
 #===============================================================================
 # 脚本名称：verify-36-install-traefik.sh
-# 功能：验证Traefik网关安装
+# 功能：验证Traefik网关安装（3.3版本）
 # 执行机器：管理节点（远程验证主控制节点）
 # 作者：KubeFoundry Team
-# 版本：1.0.0
+# 版本：1.1.0
 #===============================================================================
 
 source "${PROJECT_ROOT}/scripts/lib/logger.sh"
@@ -18,7 +18,7 @@ FAIL=0
 check_pass() { PASS=$((PASS + 1)); log_success "[PASS] $1"; }
 check_fail() { FAIL=$((FAIL + 1)); log_error  "[FAIL] $1"; }
 
-log_info "===== 验证：Traefik网关安装 ====="
+log_info "===== 验证：Traefik网关安装（3.3版本） ====="
 
 primary_cp=$(get_all_control_plane_ips | head -1)
 
@@ -55,13 +55,13 @@ else
     check_fail "traefik Pod 未运行"
 fi
 
-# 3. logfmt-manage 资源已部署
+# 3. traefik Service 存在
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get middleware -n kubemate-system --no-headers 2>/dev/null | wc -l")
+    "kubectl get svc -n kubemate-system --no-headers 2>/dev/null | grep -c 'traefik' || true" | tr -d '[:space:]")
 if [ "$result" -ge 1 ]; then
-    check_pass "Traefik Middleware 已配置"
+    check_pass "traefik Service 已部署"
 else
-    check_fail "Traefik Middleware 未找到"
+    check_fail "traefik Service 未找到"
 fi
 
 # 结果汇总

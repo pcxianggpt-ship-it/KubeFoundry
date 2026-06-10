@@ -39,18 +39,21 @@
    - 4.4 安装elasticsearch
    - 4.5 安装skywalking
    - 4.6 安装loki
-   - 4.7 安装traefik
-   - 4.8 安装traefik-mesh
-   - 4.9 安装prometheus
-   - 4.10 更新coredns配置
-   - 4.11 安装metrics-server
-   - 4.12 配置普通用户kubectl权限
-   - 4.13 配置F5 master高可用（所有控节点）
-   - 4.14 安装redis哨兵模式（可选）
-   - 4.15 定时任务
-     - 4.15.1 ETCD备份
-     - 4.15.2 Traefik清理
-     - 4.15.3 应用日志清理（所有工作节点）
+   - 4.7 安装openebs
+   - 4.8 安装alloy
+   - 4.9 安装minio
+   - 4.10 安装traefik
+   - 4.11 安装traefik-mesh
+   - 4.12 安装prometheus
+   - 4.13 更新coredns配置
+   - 4.14 安装metrics-server
+   - 4.15 配置普通用户kubectl权限
+   - 4.16 配置F5 master高可用（所有控节点）
+   - 4.17 安装redis哨兵模式（可选）
+   - 4.18 定时任务
+     - 4.18.1 ETCD备份
+     - 4.18.2 Traefik清理
+     - 4.18.3 应用日志清理（所有工作节点）
 
 ---
 
@@ -1088,6 +1091,47 @@ kubectl apply -f 2.es-operator.yml
 kubectl apply -f 2.es-skywalking.yml
 ```
 
+---
+
+## 4.7  安装openebs
+
+#### 1. 控制节点执行命令
+
+```bash
+# 仅在k8sc1控制节点上执行
+
+cd /data/k8s_install/03.setup_file/v1.30.14/helmapp/openebs
+
+# 1. 创建存储目录
+mkdir -p /data/openebs-root
+
+# 2. 应用 StorageClass
+kubectl apply -f openebssc.yaml
+
+# 3. 安装 OpenEBS
+helm install openebs -n kubemate-system -f openebs-values.yaml ./openebs-4.2.0.tgz
+```
+
+#### 2. 工作节点执行命令
+
+无需执行。
+
+#### 3. 镜像仓库执行命令
+
+无需执行。
+
+#### 4. 验证安装结果
+
+```bash
+# 在k8sc1控制节点上执行
+
+kubectl get pod -n kubemate-system | grep openebs
+# openebs相关Pod状态应为Running
+
+kubectl get sc
+# 应该能看到 openebs-hostpath 和其他 StorageClass
+```
+
 #### 2. 工作节点执行命令
 
 无需执行。
@@ -1103,6 +1147,83 @@ kubectl apply -f 2.es-skywalking.yml
 
 kubectl get po -A | grep es-skywalking
 # es-skywalking相关Pod状态应为Running
+```
+
+---
+
+## 4.8  安装alloy
+
+#### 1. 控制节点执行命令
+
+```bash
+# 仅在k8sc1控制节点上执行
+
+cd /data/k8s_install/03.setup_file/v1.30.14/helmapp/alloy
+
+# 1. 创建 ConfigMap（从配置文件）
+kubectl create cm -n kubemate-system --from-file=congfig.alloy=alloy.config
+
+# 2. 安装 Alloy
+helm install alloy -n kubemate-system -f alloy-values.yaml ./alloy-1.4.0.tgz
+```
+
+#### 2. 工作节点执行命令
+
+无需执行。
+
+#### 3. 镜像仓库执行命令
+
+无需执行。
+
+#### 4. 验证安装结果
+
+```bash
+# 在k8sc1控制节点上执行
+
+kubectl get pod -n kubemate-system | grep alloy
+# alloy相关Pod状态应为Running
+```
+
+---
+
+## 4.9  安装minio
+
+#### 1. 控制节点执行命令
+
+```bash
+# 仅在k8sc1控制节点上执行
+
+cd /data/k8s_install/03.setup_file/v1.30.14/helmapp/minio
+
+# 1. 安装 MinIO Operator（需先修改 image 字段为实际镜像地址）
+kubectl apply -f minio-operator.yaml
+
+# 2. 等待 Operator 就绪后，获取 token
+kubectl get secret -n kubemate-system console-sa-secret -o jsonpath='{.data.token}' | base64 -d
+
+# 3. 使用浏览器访问 MinIO Console 进行实例创建
+# 地址：http://<k8sc1_ip>:<minio_console_port>
+# 使用步骤2获取的 token 登录
+```
+
+#### 2. 工作节点执行命令
+
+无需执行。
+
+#### 3. 镜像仓库执行命令
+
+无需执行。
+
+#### 4. 验证安装结果
+
+```bash
+# 在k8sc1控制节点上执行
+
+kubectl get pod -n kubemate-system | grep minio
+# minio-operator相关Pod状态应为Running
+
+kubectl get deployment -n kubemate-system
+# 应该能看到 minio-operator 相关 Deployment
 ```
 
 ---
@@ -1153,9 +1274,85 @@ kubectl get pod -n kubemate-system | grep skywalking
 ```bash
 # 仅在k8sc1控制节点上执行
 
-cd /data/k8s_install/03.setup_file/allyaml
-kubectl apply -f 4.loki.yml
-kubectl apply -f 4.loki-sec.yml
+cd /data/k8s_install/03.setup_file/v1.30.14/helmapp/loki
+helm install loki -n kubemate-system -f values.yaml ./loki-5.45.0.tgz
+```
+
+---
+
+## 4.6.1  安装alloy
+
+#### 1. 控制节点执行命令
+
+```bash
+# 仅在k8sc1控制节点上执行
+
+cd /data/k8s_install/03.setup_file/v1.30.14/helmapp/alloy
+
+# 1. 创建 ConfigMap（从配置文件）
+kubectl create cm -n kubemate-system --from-file=congfig.alloy=alloy.config
+
+# 2. 安装 Alloy
+helm install alloy -n kubemate-system -f alloy-values.yaml ./alloy-1.4.0.tgz
+```
+
+#### 2. 工作节点执行命令
+
+无需执行。
+
+#### 3. 镜像仓库执行命令
+
+无需执行。
+
+#### 4. 验证安装结果
+
+```bash
+# 在k8sc1控制节点上执行
+
+kubectl get pod -n kubemate-system | grep alloy
+# alloy相关Pod状态应为Running
+```
+
+---
+
+## 4.6.2  安装minio
+
+#### 1. 控制节点执行命令
+
+```bash
+# 仅在k8sc1控制节点上执行
+
+cd /data/k8s_install/03.setup_file/v1.30.14/helmapp/minio
+
+# 1. 安装 MinIO Operator（需先修改 image 字段为实际镜像地址）
+kubectl apply -f minio-operator.yaml
+
+# 2. 等待 Operator 就绪后，获取 token
+kubectl get secret -n kubemate-system console-sa-secret -o jsonpath='{.data.token}' | base64 -d
+
+# 3. 使用浏览器访问 MinIO Console 进行实例创建
+# 地址：http://<k8sc1_ip>:<minio_console_port>
+# 使用步骤2获取的 token 登录
+```
+
+#### 2. 工作节点执行命令
+
+无需执行。
+
+#### 3. 镜像仓库执行命令
+
+无需执行。
+
+#### 4. 验证安装结果
+
+```bash
+# 在k8sc1控制节点上执行
+
+kubectl get pod -n kubemate-system | grep minio
+# minio-operator相关Pod状态应为Running
+
+kubectl get deployment -n kubemate-system
+# 应该能看到 minio-operator 相关 Deployment
 ```
 
 #### 2. 工作节点执行命令
@@ -1181,17 +1378,15 @@ kubectl get pod -n kubemate-system | grep loki
 
 ---
 
-## 4.7  安装traefik
+## 4.11  安装traefik（3.3版本）
 
 #### 1. 控制节点执行命令
 
 ```bash
 # 仅在k8sc1控制节点上执行
 
-cd /data/k8s_install/03.setup_file/allyaml
-kubectl apply -f 5.traefki-ds.yaml
-kubectl apply -f 5.traefki-ds.yaml
-kubectl apply -f 6.logfmt-manage.yml
+cd /data/k8s_install/03.setup_file/v1.30.14/traefik
+kubectl apply -f 3.3
 ```
 
 #### 2. 工作节点执行命令
@@ -1213,7 +1408,7 @@ kubectl get pod -n kubemate-system | grep traefik
 
 ---
 
-## 4.8  安装traefik-mesh
+## 4.12  安装traefik-mesh
 
 #### 1. 控制节点执行命令
 
@@ -1243,24 +1438,31 @@ kubectl get pod -n kubemate-system | grep traefik-mesh
 
 ---
 
-## 4.9  安装prometheus
+## 4.13  安装prometheus
 
 #### 1. 控制节点执行命令
 
 ```bash
 # 仅在k8sc1控制节点上执行
 
-cd /data/k8s_install/03.setup_file/allyaml/prometheus
-kubectl create -f 1-crd.yml
-kubectl apply -f 2-namespace.yml
-kubectl apply -f 3-rbac.yml
-kubectl apply -f 4-prometheus-operator.yml
-kubectl apply -f 5-additional-scrape-configs.yml
-kubectl apply -f 6-prometheus.yml
-kubectl apply -f 7-alertmanager.yml
-kubectl apply -f 8-prometheus-rule.yml
-kubectl apply -f node-exporter.yml
-kubectl apply -f kube-state-metrics.yml
+cd /data/k8s_install/03.setup_file/v1.30.14/prometheus
+
+# 1. 给工作节点打标签（用于监控组件调度）
+kubectl label node k8sw1 k8sw2 prom=true
+
+# 2. 应用本地持久化存储
+kubectl apply -f promlocal-pv.yaml
+
+# 3. 按顺序安装组件
+kubectl apply -f 1-crd
+kubectl apply -f 2-prometheusOperator
+kubectl apply -f 3-prometheus
+kubectl apply -f 4-nodeExporter
+kubectl apply -f 5-kubeStateMetrics
+kubectl apply -f 6-alertmanager
+kubectl apply -f 8-metrics-server-ha.yaml
+kubectl apply -f kubernetesControlPlaneRule
+kubectl apply -f process-exporter.yaml
 ```
 
 #### 2. 工作节点执行命令
@@ -1282,7 +1484,7 @@ kubectl get pod -n kubemate-monitoring-system
 
 ---
 
-## 4.10  更新coredns配置
+## 4.14  更新coredns配置
 
 #### 1. 控制节点执行命令
 
@@ -1335,7 +1537,7 @@ kubectl get pod -n kube-system | grep coredns
 
 ---
 
-## 4.11  安装metrics-server
+## 4.15  安装metrics-server
 
 #### 1. 控制节点执行命令
 
@@ -1367,7 +1569,7 @@ kubectl top nodes
 
 ---
 
-## 4.12  配置普通用户kubectl权限
+## 4.16  配置普通用户kubectl权限
 
 #### 1. 控制节点执行命令
 
@@ -1397,7 +1599,7 @@ kubectl get nodes
 
 ---
 
-## 4.13  配置F5 master高可用
+## 4.17  配置F5 master高可用
 
 #### 1. 控制节点执行命令
 
@@ -1426,7 +1628,7 @@ cat /etc/hosts | grep k8sc1
 
 ---
 
-## 4.14  安装redis哨兵模式
+## 4.18  安装redis哨兵模式
 
 #### 1. 控制节点执行命令
 
@@ -1459,9 +1661,9 @@ kubectl get pod -n redis-sentinel
 
 ---
 
-## 4.15  定时任务
+## 4.19  定时任务
 
-### 4.15.1 ETCD备份
+### 4.19.1 ETCD备份
 
 #### 1. 控制节点执行命令
 
@@ -1497,7 +1699,7 @@ ls -lh /data/crontab_task/etcdbak/
 
 ---
 
-### 4.15.2 Traefik清理
+### 4.19.2 Traefik清理
 
 #### 1. 控制节点执行命令
 
@@ -1531,7 +1733,7 @@ cat /data/k8s_install/05.crontab/traefikClear.log
 
 ---
 
-### 4.15.3 应用日志清理
+### 4.19.3 应用日志清理
 
 #### 1. 控制节点执行命令
 

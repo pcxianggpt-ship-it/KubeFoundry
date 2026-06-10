@@ -235,10 +235,19 @@ ecosystem:
   nfs: true
 
   # Elasticsearch + Skywalking APM（一组，同时安装或同时跳过）
-  elasticsearch: true
+  elasticsearch: false
 
   # Loki 日志聚合
-  loki: true
+  loki: false
+
+  # OpenEBS 存储系统
+  openebs: false
+
+  # Grafana Alloy 可观测性代理
+  alloy: false
+
+  # MinIO 对象存储
+  minio: false
 
   # Traefik Ingress 网关 + Traefik Mesh 服务网格（一组，同时安装或同时跳过）
   traefik: true
@@ -250,13 +259,13 @@ ecosystem:
   coredns_update: true
 
   # Metrics Server（启用 kubectl top）
-  metrics_server: true
+  metrics_server: false
 
   # kubectl 普通用户权限配置
   kubectl_permission: true
 
   # F5 负载均衡高可用
-  f5_ha: true
+  f5_ha: false
 
   # Redis 哨兵模式（默认关闭，可选组件）
   redis_sentinel: false
@@ -265,23 +274,23 @@ ecosystem:
   etcd_backup: true
 
   # Traefik 清理定时任务（依赖 Traefik 组）
-  traefik_cleanup: true
+  traefik_cleanup: false
 
   # 日志清理定时任务
-  log_cleanup: true
+  log_cleanup: false
 
 #===============================================================================
 # 环境变量配置（可选）
 #===============================================================================
 env:
   # Kubelet 数据目录
-  kubelet_root: "/data/kubelet_root"
+  kubelet_root: "${k8s_home}/kubelet_root"
 
   # Containerd 数据目录
-  containerd_root: "/data/containerd-data"
+  containerd_root: "${k8s_home}/containerd-data"
 
   # ETCD 数据目录
-  etcd_data_dir: "/data/kubelet_root"
+  etcd_data_dir: "${k8s_home}/etcd_backup"
 
 #===============================================================================
 # 注意事项

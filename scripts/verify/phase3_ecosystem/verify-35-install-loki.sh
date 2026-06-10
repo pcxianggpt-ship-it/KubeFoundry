@@ -5,7 +5,7 @@
 # 功能：验证Loki日志系统安装
 # 执行机器：管理节点（远程验证主控制节点）
 # 作者：KubeFoundry Team
-# 版本：1.0.0
+# 版本：1.1.0
 #===============================================================================
 
 source "${PROJECT_ROOT}/scripts/lib/logger.sh"
@@ -55,13 +55,13 @@ else
     check_fail "loki Pod 未运行"
 fi
 
-# 3. loki Secret 存在
+# 3. loki Helm Release 存在
 result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get secret -n kubemate-system --no-headers 2>/dev/null | grep -c 'loki' || true" | tr -d '[:space:]')
+    "helm list -n kubemate-system --no-headers 2>/dev/null | grep -c 'loki' || true" | tr -d '[:space:]")
 if [ "$result" -ge 1 ]; then
-    check_pass "loki Secret 存在"
+    check_pass "loki Helm Release 已安装"
 else
-    check_fail "loki Secret 不存在"
+    check_fail "loki Helm Release 未找到"
 fi
 
 # 结果汇总
