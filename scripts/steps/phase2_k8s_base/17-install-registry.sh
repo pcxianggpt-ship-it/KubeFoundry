@@ -104,7 +104,7 @@ EOF
 
 # 启动 registry 服务端
 log_info "正在启动镜像服务端..."
-mkdir -p registry-data
+
 $CONTAINER_CMD run -d --name registry --restart always \
     -p 5000:5000 \
     -v $(pwd)/registry-data:/var/lib/registry \

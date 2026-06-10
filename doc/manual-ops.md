@@ -401,7 +401,7 @@ health:
 EOF
 
 # 启动 registry
-mkdir -p registry-data
+
 nerdctl run -d --name registry --restart always \
     -p 5000:5000 \
     -v $(pwd)/registry-data:/var/lib/registry \
