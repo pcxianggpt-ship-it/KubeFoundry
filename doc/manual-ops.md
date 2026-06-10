@@ -810,7 +810,23 @@ kubectl get pod -n kubemate-system | grep traefik-mesh
 
 ---
 
-### 3.7 安装 Prometheus
+### 3.5 安装 Traefik 网关（3.3版本）
+
+**登录 k8sc1 执行：**
+
+```bash
+cd /root/kube-media/03.setup_file/v1.30.14/traefik
+kubectl apply -f 3.3
+```
+
+**验证：**
+```bash
+kubectl get pod -n kubemate-system | grep traefik
+```
+
+---
+
+### 3.6 安装 Prometheus 监控系统
 
 **登录 k8sc1 执行：**
 
@@ -842,7 +858,7 @@ kubectl get pod -n kubemate-monitoring-system
 
 ---
 
-### 3.8 安装 OpenEBS 存储系统（可选，默认禁用）
+### 3.7 安装 OpenEBS 存储系统（可选，默认禁用）
 
 > OpenEBS 是 Kubernetes 原生存储系统，提供动态存储分配功能。
 
@@ -854,7 +870,7 @@ kubectl get pod -n kubemate-monitoring-system
 mkdir -p /data/openebs-root
 ```
 
-#### 3.8.2 安装 OpenEBS
+#### 3.7.2 安装 OpenEBS
 
 **登录 k8sc1 执行：**
 
@@ -876,7 +892,7 @@ kubectl get sc | grep openebs
 
 ---
 
-### 3.9 安装 Grafana Alloy 可观测性代理（可选，默认禁用）
+### 3.8 安装 Grafana Alloy 可观测性代理（可选，默认禁用）
 
 > Grafana Alloy 是新一代可观测性数据采集代理，替代 Grafana Agent。
 
@@ -895,6 +911,28 @@ helm install alloy -n kubemate-system -f alloy-values.yaml ./alloy-1.4.0.tgz
 **验证：**
 ```bash
 kubectl get pod -n kubemate-system | grep alloy
+```
+
+---
+
+### 3.9 安装 Loki 日志系统（可选，默认禁用）
+
+**登录 k8sc1 执行：**
+
+```bash
+cd /root/kube-media/03.setup_file/v1.30.14/helmapp/loki
+helm install loki -n kubemate-system -f values.yaml ./loki-5.45.0.tgz
+```
+
+> 如使用本地磁盘存储 Loki 数据，**登录所有工作节点执行：**
+> ```bash
+> mkdir -p /data/loki_root
+> chown -R 10001:10001 /data/loki_root
+> ```
+
+**验证：**
+```bash
+kubectl get pod -n kubemate-system | grep loki
 ```
 
 ---
@@ -927,7 +965,22 @@ kubectl get deployment -n kubemate-system | grep minio-operator
 
 ---
 
-### 3.11 更新 CoreDNS 配置
+### 3.11 安装 Traefik Mesh 服务网格（可选）
+
+**登录 k8sc1 执行：**
+
+```bash
+kubectl apply -f /root/kube-media/03.setup_file/allyaml/5-1.traefik-mesh.yml
+```
+
+**验证：**
+```bash
+kubectl get pod -n kubemate-system | grep traefik-mesh
+```
+
+---
+
+### 3.12 更新 CoreDNS 配置
 
 > 依赖 Traefik 已安装。
 
@@ -969,7 +1022,7 @@ kubectl get pod -n kube-system | grep coredns
 
 ---
 
-### 3.12 安装 Metrics Server（可选，默认禁用）
+### 3.13 安装 Metrics Server（可选，默认禁用）
 
 **登录 k8sc1 执行：**
 
@@ -985,7 +1038,7 @@ kubectl top nodes
 
 ---
 
-### 3.13 配置普通用户 kubectl 权限
+### 3.14 配置普通用户 kubectl 权限
 
 **登录 k8sc1 执行：**
 
@@ -1002,7 +1055,7 @@ su - appusr -c "kubectl get nodes"
 
 ---
 
-### 3.14 配置 F5 高可用（可选，默认禁用）
+### 3.15 配置 F5 高可用（可选，默认禁用）
 
 **登录所有控制节点执行：**
 
@@ -1019,7 +1072,7 @@ cat /etc/hosts | grep k8sc1
 
 ---
 
-### 3.15 安装 Redis 哨兵模式（可选，默认禁用）
+### 3.16 安装 Redis 哨兵模式（可选，默认禁用）
 
 **登录 k8sc1 执行：**
 
@@ -1039,9 +1092,9 @@ kubectl get pod -n redis-sentinel
 
 ---
 
-### 3.16 配置定时任务
+### 3.17 配置定时任务
 
-#### 3.16a ETCD 备份定时任务
+#### 3.17a ETCD 备份定时任务
 
 **登录所有控制节点执行：**
 
@@ -1058,7 +1111,7 @@ mkdir -p /data/crontab_task/etcdbak
 crontab -l
 ```
 
-#### 3.16b Traefik 清理定时任务（可选，默认禁用）
+#### 3.17b Traefik 清理定时任务（可选，默认禁用）
 
 **登录所有控制节点执行：**
 
@@ -1071,7 +1124,7 @@ crontab -l
 crontab -l
 ```
 
-#### 3.16c 日志清理定时任务（可选，默认禁用）
+#### 3.17c 日志清理定时任务（可选，默认禁用）
 
 **登录所有工作节点执行：**
 

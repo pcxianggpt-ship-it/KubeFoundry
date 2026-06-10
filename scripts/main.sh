@@ -643,32 +643,11 @@ run_ecosystem() {
         step_done "3.4"
     fi
 
-    # 3.5 安装loki（主控制节点）
-    if ! ecosystem_enabled "loki"; then
-        log_info "[跳过] 3.5 安装loki（配置中已禁用）"
-    elif step_is_done "3.5"; then
-        log_info "[跳过] 3.5 安装loki（已完成）"
-    else
-        log_info "安装loki..."
-        exec_script_on_control_plane "${P3}/35-install-loki.sh"
-        if [ $? -ne 0 ]; then
-            log_error "loki安装失败"
-            return 1
-        fi
-        log_success "loki安装完成"
-        verify_step "${V3}/verify-35-install-loki.sh" "loki"
-        if [ $? -ne 0 ]; then
-            log_error "loki验证失败"
-            return 1
-        fi
-        step_done "3.5"
-    fi
-
-    # 3.6 安装Traefik + Traefik Mesh（主控制节点）
+    # 3.5 安装Traefik（主控制节点）
     if ! ecosystem_enabled "traefik"; then
-        log_info "[跳过] 3.6 安装Traefik + Traefik Mesh（配置中已禁用）"
-    elif step_is_done "3.6"; then
-        log_info "[跳过] 3.6 安装Traefik + Traefik Mesh（已完成）"
+        log_info "[跳过] 3.5 安装Traefik（配置中已禁用）"
+    elif step_is_done "3.5"; then
+        log_info "[跳过] 3.5 安装Traefik（已完成）"
     else
         log_info "安装traefik..."
         exec_script_on_control_plane "${P3}/36-install-traefik.sh"
@@ -682,27 +661,14 @@ run_ecosystem() {
             log_error "traefik验证失败"
             return 1
         fi
-
-        log_info "安装traefik-mesh..."
-        exec_script_on_control_plane "${P3}/37-install-traefik-mesh.sh"
-        if [ $? -ne 0 ]; then
-            log_error "traefik-mesh安装失败"
-            return 1
-        fi
-        log_success "traefik-mesh安装完成"
-        verify_step "${V3}/verify-37-install-traefik-mesh.sh" "traefik-mesh"
-        if [ $? -ne 0 ]; then
-            log_error "traefik-mesh验证失败"
-            return 1
-        fi
-        step_done "3.6"
+        step_done "3.5"
     fi
 
-    # 3.7 安装prometheus（主控制节点）
+    # 3.6 安装Prometheus（主控制节点）
     if ! ecosystem_enabled "prometheus"; then
-        log_info "[跳过] 3.7 安装prometheus（配置中已禁用）"
-    elif step_is_done "3.7"; then
-        log_info "[跳过] 3.7 安装prometheus（已完成）"
+        log_info "[跳过] 3.6 安装Prometheus（配置中已禁用）"
+    elif step_is_done "3.6"; then
+        log_info "[跳过] 3.6 安装Prometheus（已完成）"
     else
         log_info "安装prometheus..."
         exec_script_on_control_plane "${P3}/38-install-prometheus.sh"
@@ -716,14 +682,14 @@ run_ecosystem() {
             log_error "prometheus验证失败"
             return 1
         fi
-        step_done "3.7"
+        step_done "3.6"
     fi
 
-    # 3.8 安装openebs（主控制节点）
+    # 3.7 安装OpenEBS（主控制节点）
     if ! ecosystem_enabled "openebs"; then
-        log_info "[跳过] 3.8 安装openebs（配置中已禁用）"
-    elif step_is_done "3.8"; then
-        log_info "[跳过] 3.8 安装openebs（已完成）"
+        log_info "[跳过] 3.7 安装OpenEBS（配置中已禁用）"
+    elif step_is_done "3.7"; then
+        log_info "[跳过] 3.7 安装OpenEBS（已完成）"
     else
         log_info "安装openebs..."
         exec_script_on_control_plane "${P3}/47-install-openebs.sh"
@@ -737,14 +703,14 @@ run_ecosystem() {
             log_error "openebs验证失败"
             return 1
         fi
-        step_done "3.8"
+        step_done "3.7"
     fi
 
-    # 3.9 安装alloy（主控制节点）
+    # 3.8 安装Grafana Alloy（主控制节点）
     if ! ecosystem_enabled "alloy"; then
-        log_info "[跳过] 3.9 安装alloy（配置中已禁用）"
-    elif step_is_done "3.9"; then
-        log_info "[跳过] 3.9 安装alloy（已完成）"
+        log_info "[跳过] 3.8 安装Grafana Alloy（配置中已禁用）"
+    elif step_is_done "3.8"; then
+        log_info "[跳过] 3.8 安装Grafana Alloy（已完成）"
     else
         log_info "安装alloy..."
         exec_script_on_control_plane "${P3}/48-install-alloy.sh"
@@ -758,14 +724,35 @@ run_ecosystem() {
             log_error "alloy验证失败"
             return 1
         fi
+        step_done "3.8"
+    fi
+
+    # 3.9 安装Loki（主控制节点）
+    if ! ecosystem_enabled "loki"; then
+        log_info "[跳过] 3.9 安装Loki（配置中已禁用）"
+    elif step_is_done "3.9"; then
+        log_info "[跳过] 3.9 安装Loki（已完成）"
+    else
+        log_info "安装loki..."
+        exec_script_on_control_plane "${P3}/35-install-loki.sh"
+        if [ $? -ne 0 ]; then
+            log_error "loki安装失败"
+            return 1
+        fi
+        log_success "loki安装完成"
+        verify_step "${V3}/verify-35-install-loki.sh" "loki"
+        if [ $? -ne 0 ]; then
+            log_error "loki验证失败"
+            return 1
+        fi
         step_done "3.9"
     fi
 
-    # 3.10 安装minio（主控制节点）
+    # 3.10 安装MinIO（主控制节点）
     if ! ecosystem_enabled "minio"; then
-        log_info "[跳过] 3.10 安装minio（配置中已禁用）"
+        log_info "[跳过] 3.10 安装MinIO（配置中已禁用）"
     elif step_is_done "3.10"; then
-        log_info "[跳过] 3.10 安装minio（已完成）"
+        log_info "[跳过] 3.10 安装MinIO（已完成）"
     else
         log_info "安装minio..."
         exec_script_on_control_plane "${P3}/49-install-minio.sh"
@@ -782,11 +769,32 @@ run_ecosystem() {
         step_done "3.10"
     fi
 
-    # 3.11 更新coredns配置（主控制节点，依赖 Traefik）
+    # 3.11 安装Traefik Mesh（主控制节点，依赖 Traefik）
+    if ! ecosystem_enabled "traefik"; then
+        log_info "[跳过] 3.11 安装Traefik Mesh（配置中已禁用）"
+    elif step_is_done "3.11"; then
+        log_info "[跳过] 3.11 安装Traefik Mesh（已完成）"
+    else
+        log_info "安装traefik-mesh..."
+        exec_script_on_control_plane "${P3}/37-install-traefik-mesh.sh"
+        if [ $? -ne 0 ]; then
+            log_error "traefik-mesh安装失败"
+            return 1
+        fi
+        log_success "traefik-mesh安装完成"
+        verify_step "${V3}/verify-37-install-traefik-mesh.sh" "traefik-mesh"
+        if [ $? -ne 0 ]; then
+            log_error "traefik-mesh验证失败"
+            return 1
+        fi
+        step_done "3.11"
+    fi
+
+    # 3.12 更新CoreDNS配置（主控制节点，依赖 Traefik）
     if ! ecosystem_enabled "traefik" || ! ecosystem_enabled "coredns_update"; then
-        log_info "[跳过] 3.11 更新coredns配置（配置中已禁用）"
-    elif step_is_done "3.8"; then
-        log_info "[跳过] 3.8 更新coredns配置（已完成）"
+        log_info "[跳过] 3.12 更新CoreDNS配置（配置中已禁用）"
+    elif step_is_done "3.12"; then
+        log_info "[跳过] 3.12 更新CoreDNS配置（已完成）"
     else
         log_info "更新coredns配置..."
         exec_script_on_control_plane "${P3}/39-update-coredns.sh"
@@ -800,14 +808,14 @@ run_ecosystem() {
             log_error "coredns验证失败"
             return 1
         fi
-        step_done "3.8"
+        step_done "3.12"
     fi
 
-    # 3.12 安装metrics-server（主控制节点）
+    # 3.13 安装Metrics Server（主控制节点）
     if ! ecosystem_enabled "metrics_server"; then
-        log_info "[跳过] 3.12 安装metrics-server（配置中已禁用）"
-    elif step_is_done "3.12"; then
-        log_info "[跳过] 3.12 安装metrics-server（已完成）"
+        log_info "[跳过] 3.13 安装Metrics Server（配置中已禁用）"
+    elif step_is_done "3.13"; then
+        log_info "[跳过] 3.13 安装Metrics Server（已完成）"
     else
         log_info "安装metrics-server..."
         exec_script_on_control_plane "${P3}/40-install-metrics-server.sh"
@@ -821,14 +829,14 @@ run_ecosystem() {
             log_error "metrics-server验证失败"
             return 1
         fi
-        step_done "3.12"
+        step_done "3.13"
     fi
 
-    # 3.13 配置普通用户kubectl权限（主控制节点）
+    # 3.14 配置普通用户kubectl权限（主控制节点）
     if ! ecosystem_enabled "kubectl_permission"; then
-        log_info "[跳过] 3.13 配置kubectl权限（配置中已禁用）"
-    elif step_is_done "3.13"; then
-        log_info "[跳过] 3.13 配置kubectl权限（已完成）"
+        log_info "[跳过] 3.14 配置kubectl权限（配置中已禁用）"
+    elif step_is_done "3.14"; then
+        log_info "[跳过] 3.14 配置kubectl权限（已完成）"
     else
         log_info "配置kubectl权限..."
         exec_script_on_control_plane "${P3}/41-setup-kubectl-permission.sh"
@@ -842,14 +850,14 @@ run_ecosystem() {
             log_error "kubectl权限验证失败"
             return 1
         fi
-        step_done "3.13"
+        step_done "3.14"
     fi
 
-    # 3.14 配置F5高可用（所有控制节点）
+    # 3.15 配置F5高可用（所有控制节点）
     if ! ecosystem_enabled "f5_ha"; then
-        log_info "[跳过] 3.14 配置F5高可用（配置中已禁用）"
-    elif step_is_done "3.14"; then
-        log_info "[跳过] 3.14 配置F5高可用（已完成）"
+        log_info "[跳过] 3.15 配置F5高可用（配置中已禁用）"
+    elif step_is_done "3.15"; then
+        log_info "[跳过] 3.15 配置F5高可用（已完成）"
     else
         log_info "配置F5高可用..."
         exec_script_on_control_plane "${P3}/42-setup-f5-ha.sh"
@@ -863,14 +871,14 @@ run_ecosystem() {
             log_error "F5高可用验证失败"
             return 1
         fi
-        step_done "3.14"
+        step_done "3.15"
     fi
 
-    # 3.15 安装redis哨兵模式（主控制节点，可选）
+    # 3.16 安装Redis哨兵模式（主控制节点，可选）
     if ! ecosystem_enabled "redis_sentinel" false; then
-        log_info "[跳过] 3.15 安装redis哨兵模式（配置中已禁用）"
-    elif step_is_done "3.15"; then
-        log_info "[跳过] 3.15 安装redis哨兵模式（已完成）"
+        log_info "[跳过] 3.16 安装Redis哨兵模式（配置中已禁用）"
+    elif step_is_done "3.16"; then
+        log_info "[跳过] 3.16 安装Redis哨兵模式（已完成）"
     else
         log_info "安装redis哨兵模式..."
         exec_script_on_control_plane "${P3}/43-install-redis-sentinel.sh"
@@ -883,14 +891,14 @@ run_ecosystem() {
                 log_warn "redis哨兵验证失败（可选组件，不影响主流程）"
             fi
         fi
-        step_done "3.15"
+        step_done "3.16"
     fi
 
-    # 3.16 配置定时任务
+    # 3.17 配置定时任务
     if ! ecosystem_enabled "etcd_backup"; then
-        log_info "[跳过] 3.16 配置ETCD备份定时任务（配置中已禁用）"
-    elif step_is_done "3.16a"; then
-        log_info "[跳过] 3.16 配置ETCD备份定时任务（已完成）"
+        log_info "[跳过] 3.17 配置ETCD备份定时任务（配置中已禁用）"
+    elif step_is_done "3.17a"; then
+        log_info "[跳过] 3.17 配置ETCD备份定时任务（已完成）"
     else
         log_info "配置ETCD备份定时任务..."
         exec_script_on_control_plane "${P3}/44-setup-etcd-backup.sh"
@@ -904,13 +912,13 @@ run_ecosystem() {
             log_error "ETCD备份定时任务验证失败"
             return 1
         fi
-        step_done "3.16a"
+        step_done "3.17a"
     fi
 
     if ! ecosystem_enabled "traefik" || ! ecosystem_enabled "traefik_cleanup"; then
-        log_info "[跳过] 3.16 配置Traefik清理定时任务（配置中已禁用）"
-    elif step_is_done "3.16b"; then
-        log_info "[跳过] 3.16 配置Traefik清理定时任务（已完成）"
+        log_info "[跳过] 3.17 配置Traefik清理定时任务（配置中已禁用）"
+    elif step_is_done "3.17b"; then
+        log_info "[跳过] 3.17 配置Traefik清理定时任务（已完成）"
     else
         log_info "配置Traefik清理定时任务..."
         exec_script_on_control_plane "${P3}/45-setup-traefik-cleanup.sh"
@@ -924,13 +932,13 @@ run_ecosystem() {
             log_error "Traefik清理定时任务验证失败"
             return 1
         fi
-        step_done "3.16b"
+        step_done "3.17b"
     fi
 
     if ! ecosystem_enabled "log_cleanup"; then
-        log_info "[跳过] 3.16 配置日志清理定时任务（配置中已禁用）"
-    elif step_is_done "3.16c"; then
-        log_info "[跳过] 3.13 配置日志清理定时任务（已完成）"
+        log_info "[跳过] 3.17 配置日志清理定时任务（配置中已禁用）"
+    elif step_is_done "3.17c"; then
+        log_info "[跳过] 3.17 配置日志清理定时任务（已完成）"
     else
         log_info "配置日志清理定时任务..."
         exec_script_on_workers "${P3}/46-setup-log-cleanup.sh"
@@ -944,7 +952,7 @@ run_ecosystem() {
             log_error "日志清理定时任务验证失败"
             return 1
         fi
-        step_done "3.13c"
+        step_done "3.17c"
     fi
 
     log_success "生态系统组件安装完成"

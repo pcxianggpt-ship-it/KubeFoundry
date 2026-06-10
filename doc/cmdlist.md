@@ -38,13 +38,13 @@
    - 4.3 安装NFS插件
    - 4.4 安装elasticsearch
    - 4.5 安装skywalking
-   - 4.6 安装loki
-   - 4.7 安装openebs
-   - 4.8 安装alloy
-   - 4.9 安装minio
-   - 4.10 安装traefik
-   - 4.11 安装traefik-mesh
-   - 4.12 安装prometheus
+   - 4.6 安装traefik
+   - 4.7 安装prometheus
+   - 4.8 安装openebs
+   - 4.9 安装alloy
+   - 4.10 安装loki
+   - 4.11 安装minio
+   - 4.12 安装traefik-mesh
    - 4.13 更新coredns配置
    - 4.14 安装metrics-server
    - 4.15 配置普通用户kubectl权限
@@ -1093,7 +1093,7 @@ kubectl apply -f 2.es-skywalking.yml
 
 ---
 
-## 4.7  安装openebs
+## 4.8  安装openebs
 
 #### 1. 控制节点执行命令
 
@@ -1151,7 +1151,7 @@ kubectl get po -A | grep es-skywalking
 
 ---
 
-## 4.8  安装alloy
+## 4.9  安装alloy
 
 #### 1. 控制节点执行命令
 
@@ -1186,7 +1186,7 @@ kubectl get pod -n kubemate-system | grep alloy
 
 ---
 
-## 4.9  安装minio
+## 4.11  安装minio
 
 #### 1. 控制节点执行命令
 
@@ -1267,7 +1267,7 @@ kubectl get pod -n kubemate-system | grep skywalking
 
 ---
 
-## 4.6  安装loki
+## 4.10  安装loki
 
 #### 1. 控制节点执行命令
 
@@ -1280,82 +1280,7 @@ helm install loki -n kubemate-system -f values.yaml ./loki-5.45.0.tgz
 
 ---
 
-## 4.6.1  安装alloy
-
-#### 1. 控制节点执行命令
-
-```bash
-# 仅在k8sc1控制节点上执行
-
-cd /data/k8s_install/03.setup_file/v1.30.14/helmapp/alloy
-
-# 1. 创建 ConfigMap（从配置文件）
-kubectl create cm -n kubemate-system --from-file=congfig.alloy=alloy.config
-
-# 2. 安装 Alloy
-helm install alloy -n kubemate-system -f alloy-values.yaml ./alloy-1.4.0.tgz
-```
-
-#### 2. 工作节点执行命令
-
-无需执行。
-
-#### 3. 镜像仓库执行命令
-
-无需执行。
-
-#### 4. 验证安装结果
-
-```bash
-# 在k8sc1控制节点上执行
-
-kubectl get pod -n kubemate-system | grep alloy
-# alloy相关Pod状态应为Running
-```
-
----
-
-## 4.6.2  安装minio
-
-#### 1. 控制节点执行命令
-
-```bash
-# 仅在k8sc1控制节点上执行
-
-cd /data/k8s_install/03.setup_file/v1.30.14/helmapp/minio
-
-# 1. 安装 MinIO Operator（需先修改 image 字段为实际镜像地址）
-kubectl apply -f minio-operator.yaml
-
-# 2. 等待 Operator 就绪后，获取 token
-kubectl get secret -n kubemate-system console-sa-secret -o jsonpath='{.data.token}' | base64 -d
-
-# 3. 使用浏览器访问 MinIO Console 进行实例创建
-# 地址：http://<k8sc1_ip>:<minio_console_port>
-# 使用步骤2获取的 token 登录
-```
-
-#### 2. 工作节点执行命令
-
-无需执行。
-
-#### 3. 镜像仓库执行命令
-
-无需执行。
-
-#### 4. 验证安装结果
-
-```bash
-# 在k8sc1控制节点上执行
-
-kubectl get pod -n kubemate-system | grep minio
-# minio-operator相关Pod状态应为Running
-
-kubectl get deployment -n kubemate-system
-# 应该能看到 minio-operator 相关 Deployment
-```
-
-#### 2. 工作节点执行命令
+## 4.6  安装traefik（3.3版本）
 
 ```bash
 # 如果使用本地磁盘存储loki数据，所有工作节点执行
@@ -1378,7 +1303,7 @@ kubectl get pod -n kubemate-system | grep loki
 
 ---
 
-## 4.11  安装traefik（3.3版本）
+## 4.6  安装traefik（3.3版本）
 
 #### 1. 控制节点执行命令
 
@@ -1438,7 +1363,7 @@ kubectl get pod -n kubemate-system | grep traefik-mesh
 
 ---
 
-## 4.13  安装prometheus
+## 4.7  安装prometheus
 
 #### 1. 控制节点执行命令
 

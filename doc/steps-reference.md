@@ -614,21 +614,19 @@
     ↓
 32-install-nfs.sh (所有节点)
     ↓
-33-install-elasticsearch.sh
-    ↓
-34-install-skywalking.sh
-    ↓
-35-install-loki.sh (工作节点需创建本地存储目录)
-    ↓
 36-install-traefik.sh
-    ↓
-37-install-traefik-mesh.sh
     ↓
 38-install-prometheus.sh
     ↓
-39-update-coredns.sh
+47-install-openebs.sh
     ↓
-40-install-metrics-server.sh
+48-install-alloy.sh
+    ↓
+35-install-loki.sh
+    ↓
+49-install-minio.sh
+    ↓
+39-update-coredns.sh
     ↓
 41-setup-kubectl-permission.sh
     ↓
