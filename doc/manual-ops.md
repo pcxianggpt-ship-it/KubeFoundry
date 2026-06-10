@@ -612,7 +612,7 @@ kubectl get nodes
 >
 > 默认启用：kubemate\_ui、nfs、traefik、prometheus、coredns\_update、kubectl\_permission、etcd\_backup
 >
-> 默认禁用：elasticsearch、loki、metrics\_server、f5\_ha、redis\_sentinel、traefik\_cleanup、log\_cleanup
+> 默认禁用：elasticsearch、loki、openebs、alloy、minio、metrics\_server、f5\_ha、redis\_sentinel、traefik\_cleanup、log\_cleanup
 >
 > 禁用的组件标注为"可选"，按需执行即可。
 
@@ -815,17 +815,24 @@ kubectl get pod -n kubemate-system | grep traefik-mesh
 **登录 k8sc1 执行：**
 
 ```bash
-cd /root/kube-media/03.setup_file/allyaml/prometheus
-kubectl create -f 1-crd.yml
-kubectl apply -f 2-namespace.yml
-kubectl apply -f 3-rbac.yml
-kubectl apply -f 4-prometheus-operator.yml
-kubectl apply -f 5-additional-scrape-configs.yml
-kubectl apply -f 6-prometheus.yml
-kubectl apply -f 7-alertmanager.yml
-kubectl apply -f 8-prometheus-rule.yml
-kubectl apply -f node-exporter.yml
-kubectl apply -f kube-state-metrics.yml
+cd /root/kube-media/03.setup_file/v1.30.14/prometheus
+
+# 给工作节点打标签（用于监控组件调度）
+kubectl label node k8sw1 k8sw2 prom=true --overwrite=true
+
+# 应用本地持久化存储
+kubectl apply -f promlocal-pv.yaml
+
+# 按顺序安装组件
+kubectl apply -f 1-crd
+kubectl apply -f 2-prometheusOperator
+kubectl apply -f 3-prometheus
+kubectl apply -f 4-nodeExporter
+kubectl apply -f 5-kubeStateMetrics
+kubectl apply -f 6-alertmanager
+kubectl apply -f 8-metrics-server-ha.yaml
+kubectl apply -f kubernetesControlPlaneRule
+kubectl apply -f process-exporter.yaml
 ```
 
 **验证：**
@@ -835,7 +842,92 @@ kubectl get pod -n kubemate-monitoring-system
 
 ---
 
-### 3.8 更新 CoreDNS 配置
+### 3.8 安装 OpenEBS 存储系统（可选，默认禁用）
+
+> OpenEBS 是 Kubernetes 原生存储系统，提供动态存储分配功能。
+
+#### 3.8.1 控制节点创建存储目录
+
+**登录所有控制节点执行：**
+
+```bash
+mkdir -p /data/openebs-root
+```
+
+#### 3.8.2 安装 OpenEBS
+
+**登录 k8sc1 执行：**
+
+```bash
+cd /root/kube-media/03.setup_file/v1.30.14/helmapp/openebs
+
+# 1. 应用 StorageClass
+kubectl apply -f openebssc.yaml
+
+# 2. 安装 OpenEBS
+helm install openebs -n kubemate-system -f openebs-values.yaml ./openebs-4.2.0.tgz
+```
+
+**验证：**
+```bash
+kubectl get pod -n kubemate-system | grep openebs
+kubectl get sc | grep openebs
+```
+
+---
+
+### 3.9 安装 Grafana Alloy 可观测性代理（可选，默认禁用）
+
+> Grafana Alloy 是新一代可观测性数据采集代理，替代 Grafana Agent。
+
+**登录 k8sc1 执行：**
+
+```bash
+cd /root/kube-media/03.setup_file/v1.30.14/helmapp/alloy
+
+# 1. 创建 ConfigMap（从配置文件）
+kubectl create cm -n kubemate-system --from-file=congfig.alloy=alloy.config
+
+# 2. 安装 Alloy
+helm install alloy -n kubemate-system -f alloy-values.yaml ./alloy-1.4.0.tgz
+```
+
+**验证：**
+```bash
+kubectl get pod -n kubemate-system | grep alloy
+```
+
+---
+
+### 3.10 安装 MinIO 对象存储（可选，默认禁用）
+
+> MinIO 是高性能对象存储系统，兼容 S3 API。
+
+**登录 k8sc1 执行：**
+
+```bash
+cd /root/kube-media/03.setup_file/v1.30.14/helmapp/minio
+
+# 1. 安装 MinIO Operator（需先修改 image 字段为实际镜像地址）
+kubectl apply -f minio-operator.yaml
+
+# 2. 等待 Operator 就绪后，获取 token
+kubectl get secret -n kubemate-system console-sa-secret -o jsonpath='{.data.token}' | base64 -d
+
+# 3. 使用浏览器访问 MinIO Console 进行实例创建
+# 地址：http://<k8sc1_ip>:<minio_console_port>
+# 使用步骤 2 获取的 token 登录
+```
+
+**验证：**
+```bash
+kubectl get pod -n kubemate-system | grep minio
+kubectl get deployment -n kubemate-system | grep minio-operator
+```
+
+---
+
+### 3.11 更新 CoreDNS 配置
 
 > 依赖 Traefik 已安装。
 
@@ -877,7 +969,7 @@ kubectl get pod -n kube-system | grep coredns
 
 ---
 
-### 3.9 安装 Metrics Server（可选，默认禁用）
+### 3.12 安装 Metrics Server（可选，默认禁用）
 
 **登录 k8sc1 执行：**
 
@@ -893,7 +985,7 @@ kubectl top nodes
 
 ---
 
-### 3.10 配置普通用户 kubectl 权限
+### 3.13 配置普通用户 kubectl 权限
 
 **登录 k8sc1 执行：**
 
@@ -910,7 +1002,7 @@ su - appusr -c "kubectl get nodes"
 
 ---
 
-### 3.11 配置 F5 高可用（可选，默认禁用）
+### 3.14 配置 F5 高可用（可选，默认禁用）
 
 **登录所有控制节点执行：**
 
@@ -927,7 +1019,7 @@ cat /etc/hosts | grep k8sc1
 
 ---
 
-### 3.12 安装 Redis 哨兵模式（可选，默认禁用）
+### 3.15 安装 Redis 哨兵模式（可选，默认禁用）
 
 **登录 k8sc1 执行：**
 
@@ -947,9 +1039,9 @@ kubectl get pod -n redis-sentinel
 
 ---
 
-### 3.13 配置定时任务
+### 3.16 配置定时任务
 
-#### 3.13a ETCD 备份定时任务
+#### 3.16a ETCD 备份定时任务
 
 **登录所有控制节点执行：**
 
@@ -966,7 +1058,7 @@ mkdir -p /data/crontab_task/etcdbak
 crontab -l
 ```
 
-#### 3.13b Traefik 清理定时任务（可选，默认禁用）
+#### 3.16b Traefik 清理定时任务（可选，默认禁用）
 
 **登录所有控制节点执行：**
 
@@ -979,7 +1071,7 @@ crontab -l
 crontab -l
 ```
 
-#### 3.13c 日志清理定时任务（可选，默认禁用）
+#### 3.16c 日志清理定时任务（可选，默认禁用）
 
 **登录所有工作节点执行：**
 
