@@ -59,17 +59,31 @@ echo net.ipv6.conf.lo.disable_ipv6=0 >> /etc/sysctl.conf
 echo net.ipv6.conf.all.forwarding=1 >> /etc/sysctl.conf
 echo net.ipv6.conf.default.forwarding=1 >> /etc/sysctl.conf
 
-# 9. 应用sysctl配置
+# 9. 配置inotify参数到/etc/sysctl.d/99-sysctl.conf
+sed -i '/fs.inotify.max_queued_events/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/fs.inotify.max_user_instances/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/fs.inotify.max_user_watches/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/user.max_inotify_instances/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/user.max_inotify_watches/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+cat >> /etc/sysctl.d/99-sysctl.conf << EOF
+fs.inotify.max_queued_events = 16384
+fs.inotify.max_user_instances = 51200
+fs.inotify.max_user_watches = 2621440
+user.max_inotify_instances = 51200
+user.max_inotify_watches = 2621440
+EOF
+
+# 10. 应用sysctl配置
 sysctl --system > /dev/null
 
-# 10. 启用systemd-resolved
+# 11. 启用systemd-resolved
 systemctl enable systemd-resolved > /dev/null 2>&1
 
-# 11. 修改open files参数
+# 12. 修改open files参数
 cat >> /etc/security/limits.conf << EOF
 * soft nofile 65535
 * hard nofile 65535
 EOF
 
 log_info "环境配置完成"
-log_info "已配置: swap关闭, 防火墙关闭, DNS配置, IPv4/IPv6转发, open files参数"
+log_info "已配置: swap关闭, 防火墙关闭, DNS配置, IPv4/IPv6转发, inotify参数, open files参数"
