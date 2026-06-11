@@ -34,6 +34,12 @@ for worker_ip in $worker_nodes; do
     ssh_exec "$worker_ip" "kubectl label node k8sw1 k8sw2 prom=true --overwrite=true 2>/dev/null || true"
 done
 
+# 在 prom=true 节点创建数据目录
+log_info "在监控节点创建 Prometheus 数据目录..."
+for worker_ip in $worker_nodes; do
+    ssh_exec "$worker_ip" "mkdir -p /data/prom_data"
+done
+
 # 应用本地持久化存储
 if [ -f "promlocal-pv.yaml" ]; then
     log_info "应用 Prometheus 本地持久化存储..."
@@ -51,6 +57,11 @@ kubectl apply -f 2-prometheusOperator
 
 log_info "安装 Prometheus..."
 kubectl apply -f 3-prometheus
+
+if [ -f "additional-scrape-configs.Secret.yaml" ]; then
+    log_info "应用 Prometheus 额外抓取配置..."
+    kubectl apply -f additional-scrape-configs.Secret.yaml
+fi
 
 log_info "安装 Node Exporter..."
 kubectl apply -f 4-nodeExporter
