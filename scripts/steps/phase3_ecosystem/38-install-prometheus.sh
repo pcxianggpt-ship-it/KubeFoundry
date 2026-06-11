@@ -25,6 +25,9 @@ if [ ! -d "${INSTALL_MEDIA}/03.setup_file/v1.30.14/prometheus" ]; then
     exit 1
 fi
 
+# 获取数据目录路径（从配置文件读取）
+PROM_DATA_DIR="${K8S_HOME}/prom_data"
+
 # 获取需要打标签的工作节点（前两个工作节点）
 worker_nodes=$(get_all_worker_ips | head -2)
 
@@ -35,14 +38,17 @@ for worker_ip in $worker_nodes; do
 done
 
 # 在 prom=true 节点创建数据目录
-log_info "在监控节点创建 Prometheus 数据目录..."
+log_info "在监控节点创建 Prometheus 数据目录: ${PROM_DATA_DIR}"
 for worker_ip in $worker_nodes; do
-    ssh_exec "$worker_ip" "mkdir -p /data/prom_data"
+    ssh_exec "$worker_ip" "mkdir -p ${PROM_DATA_DIR}"
 done
 
 # 应用本地持久化存储
+# 说明：promlocal-pv.yaml 中的 hostPath 路径应使用 ${PROM_DATA_DIR}
 if [ -f "promlocal-pv.yaml" ]; then
-    log_info "应用 Prometheus 本地持久化存储..."
+    log_info "应用 Prometheus 本地持久化存储（路径: ${PROM_DATA_DIR}）..."
+    # 临时替换文件中的路径为配置文件中的路径
+    sed -i "s|/data/prom_data|${PROM_DATA_DIR}|g" promlocal-pv.yaml
     kubectl apply -f promlocal-pv.yaml
 else
     log_warn "promlocal-pv.yaml 不存在，跳过"
@@ -50,7 +56,7 @@ fi
 
 # 按顺序安装组件
 log_info "安装 Prometheus CRD..."
-kubectl apply -f 1-crd
+kubectl create -f 1-crd
 
 log_info "安装 Prometheus Operator..."
 kubectl apply -f 2-prometheusOperator
