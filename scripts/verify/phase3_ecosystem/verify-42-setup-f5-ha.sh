@@ -10,7 +10,6 @@
 
 source "${PROJECT_ROOT}/scripts/lib/logger.sh"
 source "${PROJECT_ROOT}/scripts/lib/config.sh"
-source "${PROJECT_ROOT}/scripts/lib/ssh.sh"
 
 PASS=0
 FAIL=0
@@ -20,7 +19,6 @@ check_fail() { FAIL=$((FAIL + 1)); log_error  "[FAIL] $1"; }
 
 log_info "===== 验证：F5高可用配置 ====="
 
-primary_cp=$(get_all_control_plane_ips | head -1)
 control_count=$(config_get_length '.control_plane')
 
 # 1. 所有控制节点的 /etc/hosts 包含 k8sc1 解析

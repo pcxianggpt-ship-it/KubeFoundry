@@ -10,7 +10,6 @@
 
 source "${PROJECT_ROOT}/scripts/lib/logger.sh"
 source "${PROJECT_ROOT}/scripts/lib/config.sh"
-source "${PROJECT_ROOT}/scripts/lib/ssh.sh"
 
 PASS=0
 FAIL=0

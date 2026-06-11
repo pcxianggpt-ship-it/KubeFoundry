@@ -10,7 +10,6 @@
 
 source "${PROJECT_ROOT}/scripts/lib/logger.sh"
 source "${PROJECT_ROOT}/scripts/lib/config.sh"
-source "${PROJECT_ROOT}/scripts/lib/ssh.sh"
 
 PASS=0
 FAIL=0
@@ -20,7 +19,6 @@ check_fail() { FAIL=$((FAIL + 1)); log_error  "[FAIL] $1"; }
 
 log_info "===== 验证：Skywalking安装 ====="
 
-primary_cp=$(get_all_control_plane_ips | head -1)
 
 # 等待skywalking Pod就绪（最多300秒，OAP启动较慢）
 log_info "等待skywalking Pod启动（最多300秒）..."

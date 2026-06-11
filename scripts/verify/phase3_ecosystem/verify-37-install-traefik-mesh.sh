@@ -10,7 +10,6 @@
 
 source "${PROJECT_ROOT}/scripts/lib/logger.sh"
 source "${PROJECT_ROOT}/scripts/lib/config.sh"
-source "${PROJECT_ROOT}/scripts/lib/ssh.sh"
 
 PASS=0
 FAIL=0
@@ -20,7 +19,6 @@ check_fail() { FAIL=$((FAIL + 1)); log_error  "[FAIL] $1"; }
 
 log_info "===== 验证：Traefik Mesh服务网格安装 ====="
 
-primary_cp=$(get_all_control_plane_ips | head -1)
 
 # 等待traefik-mesh Pod就绪（最多120秒）
 log_info "等待traefik-mesh Pod启动（最多120秒）..."
