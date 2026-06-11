@@ -26,8 +26,7 @@ primary_cp=$(get_all_control_plane_ips | head -1)
 log_info "等待alloy Pod启动（最多120秒）..."
 wait_count=0
 while [ $wait_count -lt 12 ]; do
-    running=$(ssh_exec_capture "$primary_cp" \
-        "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'alloy' | grep -c 'Running' || true" | tr -d '[:space:]')
+    running=$(ssh_exec_capture "$primary_cp" "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'alloy' | grep -c 'Running' || true" | tr -d '[:space:]')
     if [ "$running" -ge 1 ]; then
         log_success "alloy Pod已就绪 (${running} 个)"
         break
@@ -38,8 +37,7 @@ while [ $wait_count -lt 12 ]; do
 done
 
 # 1. alloy 相关 Pod 存在
-result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'alloy' | wc -l")
+result=$(ssh_exec_capture "$primary_cp" "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'alloy' | wc -l")
 if [ "$result" -ge 1 ]; then
     check_pass "alloy Pod 存在 (共 ${result} 个)"
 else
@@ -47,8 +45,7 @@ else
 fi
 
 # 2. alloy Pod 运行状态
-result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'alloy' | grep -c 'Running' || true" | tr -d '[:space:]')
+result=$(ssh_exec_capture "$primary_cp" "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'alloy' | grep -c 'Running' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "alloy Pod 运行中 (${result} 个)"
 else
@@ -56,8 +53,7 @@ else
 fi
 
 # 3. alloy ConfigMap 存在
-result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get cm -n kubemate-system --no-headers 2>/dev/null | grep -c 'alloy' || true" | tr -d '[:space:]")
+result=$(ssh_exec_capture "$primary_cp" "kubectl get cm -n kubemate-system --no-headers 2>/dev/null | grep -c 'alloy' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "alloy ConfigMap 存在"
 else
@@ -65,8 +61,7 @@ else
 fi
 
 # 4. alloy Helm Release 存在
-result=$(ssh_exec_capture "$primary_cp" \
-    "helm list -n kubemate-system --no-headers 2>/dev/null | grep -c 'alloy' || true" | tr -d '[:space:]")
+result=$(ssh_exec_capture "$primary_cp" "helm list -n kubemate-system --no-headers 2>/dev/null | grep -c 'alloy' || true" | tr -d '[:space:]')
 if [ "$result" -ge 1 ]; then
     check_pass "alloy Helm Release 已安装"
 else
