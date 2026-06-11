@@ -23,17 +23,15 @@ if ! command -v helm &> /dev/null; then
     exit 1
 fi
 
-# 获取所有控制节点
-control_nodes=$(get_all_control_plane_ips)
-
-# 1. 在所有控制节点创建存储目录
-log_info "在所有控制节点创建 OpenEBS 存储目录..."
-for cp_ip in $control_nodes; do
-    ssh_exec "$cp_ip" "mkdir -p /data/openebs-root"
+# 1. 在所有工作节点创建存储目录
+log_info "在所有工作节点创建 OpenEBS 存储目录..."
+worker_nodes=$(get_all_worker_ips)
+for worker_ip in $worker_nodes; do
+    ssh_exec "$worker_ip" "mkdir -p /data/openebs-root"
     if [ $? -eq 0 ]; then
-        log_success "节点 $cp_ip 目录创建成功"
+        log_success "节点 $worker_ip 目录创建成功"
     else
-        log_error "节点 $cp_ip 目录创建失败"
+        log_error "节点 $worker_ip 目录创建失败"
         exit 1
     fi
 done
