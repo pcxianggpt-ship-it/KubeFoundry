@@ -3,9 +3,9 @@
 #===============================================================================
 # 脚本名称：verify-32-install-nfs.sh
 # 功能：验证NFS插件安装
-# 执行机器：管理节点（远程验证）
+# 执行机器：管理节点（本地执行）
 # 作者：KubeFoundry Team
-# 版本：1.0.0
+# 版本：1.1.0
 #===============================================================================
 
 source "${PROJECT_ROOT}/scripts/lib/logger.sh"
@@ -20,8 +20,6 @@ check_fail() { FAIL=$((FAIL + 1)); log_error  "[FAIL] $1"; }
 
 log_info "===== 验证：NFS插件安装 ====="
 
-primary_cp=$(get_all_control_plane_ips | head -1)
-
 # 1. nfs-server 服务运行（控制节点）
 control_count=$(config_get_length '.control_plane')
 for ((i = 0; i < control_count; i++)); do
@@ -35,7 +33,7 @@ for ((i = 0; i < control_count; i++)); do
 done
 
 # 2. helm 已安装
-result=$(ssh_exec_capture "$primary_cp" "command -v helm 2>/dev/null")
+result=$(command -v helm 2>/dev/null)
 if [ -n "$result" ]; then
     check_pass "helm 已安装"
 else
@@ -43,8 +41,7 @@ else
 fi
 
 # 3. nfs-subdir-external-provisioner helm release
-result=$(ssh_exec_capture "$primary_cp" \
-    "helm list 2>/dev/null | grep -c 'nfs-subdir-external-provisioner' || true" | tr -d '[:space:]')
+result=$(helm list 2>/dev/null | grep -c 'nfs-subdir-external-provisioner' || true)
 if [ "$result" -ge 1 ]; then
     check_pass "nfs-subdir-external-provisioner helm release 存在"
 else
@@ -55,8 +52,7 @@ fi
 log_info "等待nfs provisioner Pod启动（最多120秒）..."
 wait_count=0
 while [ $wait_count -lt 12 ]; do
-    running=$(ssh_exec_capture "$primary_cp" \
-        "kubectl get pods --all-namespaces --no-headers 2>/dev/null | grep 'nfs' | grep -c 'Running' || true" | tr -d '[:space:]')
+    running=$(kubectl get pods --all-namespaces --no-headers 2>/dev/null | grep 'nfs' | grep -c 'Running' || true)
     if [ "$running" -ge 1 ]; then
         log_success "nfs provisioner Pod已就绪 (${running} 个)"
         break
@@ -67,8 +63,7 @@ while [ $wait_count -lt 12 ]; do
 done
 
 # 4. nfs provisioner Pod 运行
-result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pods --all-namespaces --no-headers 2>/dev/null | grep 'nfs' | grep -c 'Running' || true" | tr -d '[:space:]')
+result=$(kubectl get pods --all-namespaces --no-headers 2>/dev/null | grep 'nfs' | grep -c 'Running' || true)
 if [ "$result" -ge 1 ]; then
     check_pass "nfs provisioner Pod 运行中 (${result} 个)"
 else
