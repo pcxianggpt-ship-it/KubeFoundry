@@ -10,7 +10,6 @@
 
 source "${PROJECT_ROOT}/scripts/lib/logger.sh"
 source "${PROJECT_ROOT}/scripts/lib/config.sh"
-source "${PROJECT_ROOT}/scripts/lib/ssh.sh"
 
 PASS=0
 FAIL=0
@@ -20,13 +19,12 @@ check_fail() { FAIL=$((FAIL + 1)); log_error  "[FAIL] $1"; }
 
 log_info "===== 验证：Traefik网关安装（3.3版本） ====="
 
-primary_cp=$(get_all_control_plane_ips | head -1)
 
 # 等待traefik Pod就绪（最多120秒）
 log_info "等待traefik Pod启动（最多120秒）..."
 wait_count=0
 while [ $wait_count -lt 12 ]; do
-    running=$(ssh_exec_capture "$primary_cp" "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'traefik' | grep -v 'mesh' | grep -c 'Running' || true" | tr -d '[:space:]')
+    running=$(kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'traefik' | grep -v 'mesh' | grep -c 'Running' || true)
     if [ "$running" -ge 1 ]; then
         log_success "traefik Pod已就绪 (${running} 个)"
         break
@@ -37,7 +35,7 @@ while [ $wait_count -lt 12 ]; do
 done
 
 # 1. traefik 相关 Pod 存在
-result=$(ssh_exec_capture "$primary_cp" "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'traefik' | wc -l")
+result=$(kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'traefik' | wc -l)
 if [ "$result" -ge 1 ]; then
     check_pass "traefik Pod 存在 (共 ${result} 个)"
 else
@@ -45,7 +43,7 @@ else
 fi
 
 # 2. traefik Pod 运行状态（排除 traefik-mesh 的 Pod）
-result=$(ssh_exec_capture "$primary_cp" "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'traefik' | grep -v 'mesh' | grep -c 'Running' || true" | tr -d '[:space:]')
+result=$(kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'traefik' | grep -v 'mesh' | grep -c 'Running' || true)
 if [ "$result" -ge 1 ]; then
     check_pass "traefik Pod 运行中 (${result} 个)"
 else
@@ -53,7 +51,7 @@ else
 fi
 
 # 3. traefik Service 存在
-result=$(ssh_exec_capture "$primary_cp" "kubectl get svc -n kubemate-system --no-headers 2>/dev/null | grep -c 'traefik' || true" | tr -d '[:space:]')
+result=$(kubectl get svc -n kubemate-system --no-headers 2>/dev/null | grep -c 'traefik' || true)
 if [ "$result" -ge 1 ]; then
     check_pass "traefik Service 已部署"
 else

@@ -10,7 +10,6 @@
 
 source "${PROJECT_ROOT}/scripts/lib/logger.sh"
 source "${PROJECT_ROOT}/scripts/lib/config.sh"
-source "${PROJECT_ROOT}/scripts/lib/ssh.sh"
 
 PASS=0
 FAIL=0
@@ -20,13 +19,12 @@ check_fail() { FAIL=$((FAIL + 1)); log_error  "[FAIL] $1"; }
 
 log_info "===== 验证：MinIO对象存储系统安装 ====="
 
-primary_cp=$(get_all_control_plane_ips | head -1)
 
 # 等待minio-operator Pod就绪（最多120秒）
 log_info "等待minio-operator Pod启动（最多120秒）..."
 wait_count=0
 while [ $wait_count -lt 12 ]; do
-    running=$(ssh_exec_capture "$primary_cp" "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'minio-operator' | grep -c 'Running' || true" | tr -d '[:space:]')
+    running=$(kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'minio-operator' | grep -c 'Running' || true)
     if [ "$running" -ge 1 ]; then
         log_success "minio-operator Pod已就绪 (${running} 个)"
         break
@@ -37,7 +35,7 @@ while [ $wait_count -lt 12 ]; do
 done
 
 # 1. minio-operator 相关 Pod 存在
-result=$(ssh_exec_capture "$primary_cp" "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'minio-operator' | wc -l")
+result=$(kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'minio-operator' | wc -l)
 if [ "$result" -ge 1 ]; then
     check_pass "minio-operator Pod 存在 (共 ${result} 个)"
 else
@@ -45,7 +43,7 @@ else
 fi
 
 # 2. minio-operator Pod 运行状态
-result=$(ssh_exec_capture "$primary_cp" "kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'minio-operator' | grep -c 'Running' || true" | tr -d '[:space:]')
+result=$(kubectl get pods -n kubemate-system --no-headers 2>/dev/null | grep 'minio-operator' | grep -c 'Running' || true)
 if [ "$result" -ge 1 ]; then
     check_pass "minio-operator Pod 运行中 (${result} 个)"
 else
@@ -53,7 +51,7 @@ else
 fi
 
 # 3. console Deployment 存在
-result=$(ssh_exec_capture "$primary_cp" "kubectl get deployment -n kubemate-system --no-headers 2>/dev/null | grep -c 'console' || true" | tr -d '[:space:]')
+result=$(kubectl get deployment -n kubemate-system --no-headers 2>/dev/null | grep -c 'console' || true)
 if [ "$result" -ge 1 ]; then
     check_pass "minio-console Deployment 存在"
 else
@@ -61,7 +59,7 @@ else
 fi
 
 # 4. minio-console Secret 存在
-result=$(ssh_exec_capture "$primary_cp" "kubectl get secret -n kubemate-system --no-headers 2>/dev/null | grep -c 'console-sa-secret' || true" | tr -d '[:space:]')
+result=$(kubectl get secret -n kubemate-system --no-headers 2>/dev/null | grep -c 'console-sa-secret' || true)
 if [ "$result" -ge 1 ]; then
     check_pass "minio-console Secret 已安装"
 else
