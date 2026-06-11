@@ -16,7 +16,10 @@ source "${PROJECT_ROOT}/scripts/lib/config.sh"
 
 log_info "开始安装Metrics Server..."
 
-sh "${INSTALL_MEDIA}/03.setup_file/mertics-server/mertics-server-install.sh" amd64
+# 获取系统架构
+ARCH=$(config_get '.paths.arch' 'amd64')
+
+sh "${INSTALL_MEDIA}/03.setup_file/mertics-server/mertics-server-install.sh" "${ARCH}"
 
 log_info "Metrics Server安装完成"
 

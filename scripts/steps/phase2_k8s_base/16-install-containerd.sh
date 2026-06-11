@@ -5,33 +5,42 @@
 # 功能：安装containerd
 # 执行机器：所有节点执行
 # 作者：KubeFoundry Team
-# 版本：1.0.0
+# 版本：1.1.0
+# 环境变量依赖（由 exec_script_on_single_node 注入）：
+#   ARCH        - 系统架构（amd64/arm64）
+#   REGISTRY_IP - 镜像仓库IP地址
 #===============================================================================
 
-log_info "开始安装containerd..."
+# 参数校验
+if [[ -z "$ARCH" ]]; then
+    log_error "缺少环境变量 ARCH（系统架构）"
+    exit 1
+fi
+
+log_info "开始安装containerd（架构: ${ARCH}）..."
 
 # 所有控制节点执行
 cd /tmp/k8s/02.container_runtime
 
-# 解压containerd-1.7.18-linux-amd64.tar.gz
-tar Cxzvf /usr/local containerd-1.7.18-linux-amd64.tar.gz
+# 解压containerd
+tar Cxzvf /usr/local containerd-1.7.18-linux-${ARCH}.tar.gz
 
 # 创建containerd自启service
 cp containerd.service /etc/systemd/system/containerd.service
 
 # 安装runc
-install -m 755 runcv1.3.3.amd64 /usr/local/sbin/runc
+install -m 755 runcv1.3.3.${ARCH} /usr/local/sbin/runc
 
 # 安装cni-plugins
 mkdir -p /opt/cni/bin
-tar Cxzvf /opt/cni/bin cni-plugins-linux-amd64-v1.8.0.tgz
+tar Cxzvf /opt/cni/bin cni-plugins-linux-${ARCH}-v1.8.0.tgz
 
 # 生成默认配置文件
 mkdir -p /etc/containerd
 cp config-1.7.18.toml /etc/containerd/config.toml
 
 # 安装buildkit
-tar Cxzvf /usr/local buildkit-v0.25.2.linux-amd64.tar.gz
+tar Cxzvf /usr/local buildkit-v0.25.2.linux-${ARCH}.tar.gz
 
 # 创建buildkit自启服务并启动
 cp buildkit.s* /etc/systemd/system/
@@ -39,7 +48,7 @@ systemctl daemon-reload
 systemctl enable buildkit.service --now
 
 # 安装nerdctl
-tar -zxf nerdctl-2.2.0-linux-amd64.tar.gz
+tar -zxf nerdctl-2.2.0-linux-${ARCH}.tar.gz
 chmod +x nerdctl
 mv nerdctl /usr/local/bin/
 
