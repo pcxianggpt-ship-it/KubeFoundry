@@ -389,38 +389,52 @@ run_k8s_base() {
     if step_is_done "2.9"; then
         log_info "[跳过] 2.9 安装镜像仓库（已完成）"
     else
-        # 分发 registry 安装包到镜像仓库节点
-        log_info "分发registry安装包到镜像仓库节点..."
-        local registry_install_dir
-        registry_install_dir=$(config_resolve '.paths.registry_install')
-        if [ ! -d "$registry_install_dir" ]; then
-            log_error "registry安装包目录不存在: ${registry_install_dir}"
-            return 1
-        fi
+        # 验证 registry 镜像仓库是否已部署
+        log_info "检查 registry 镜像仓库部署状态..."
         local registry_ip_val
         registry_ip_val=$(get_registry_ip)
-        local k8s_home_val
-        k8s_home_val=$(get_k8s_home)
-        scp_dir_to_node "$registry_install_dir" "$k8s_home_val" "$registry_ip_val"
-        if [ $? -ne 0 ]; then
-            log_error "registry安装包分发失败"
-            return 1
-        fi
-        log_success "registry安装包分发完成"
+        local registry_check_result
+        registry_check_result=$(ssh_exec_capture "$registry_ip_val" "nerdctl images | grep -c 'registry:2.8.3' || true" 2>/dev/null | tr -d '[:space:]')
 
-        log_info "安装镜像仓库..."
-        exec_script_on_registry "${P2}/17-install-registry.sh"
-        if [ $? -ne 0 ]; then
-            log_error "镜像仓库安装失败"
-            return 1
+        # 检查 registry 容器是否运行
+        local registry_running
+        registry_running=$(ssh_exec_capture "$registry_ip_val" "nerdctl ps -a | grep 'registry:2.8.3' | grep -c 'Up' || true" 2>/dev/null | tr -d '[:space:]')
+
+        if [ "$registry_check_result" -ge 1 ] && [ "$registry_running" -ge 1 ]; then
+            log_info "检测到 registry 镜像仓库已部署（镜像: ${registry_check_result}, 运行: ${registry_running}），跳过安装"
+            step_done "2.9"
+        else
+            # 分发 registry 安装包到镜像仓库节点
+            log_info "分发registry安装包到镜像仓库节点..."
+            local registry_install_dir
+            registry_install_dir=$(config_resolve '.paths.registry_install')
+            if [ ! -d "$registry_install_dir" ]; then
+                log_error "registry安装包目录不存在: ${registry_install_dir}"
+                return 1
+            fi
+            local k8s_home_val
+            k8s_home_val=$(get_k8s_home)
+            scp_dir_to_node "$registry_install_dir" "$k8s_home_val" "$registry_ip_val"
+            if [ $? -ne 0 ]; then
+                log_error "registry安装包分发失败"
+                return 1
+            fi
+            log_success "registry安装包分发完成"
+
+            log_info "安装镜像仓库..."
+            exec_script_on_registry "${P2}/17-install-registry.sh"
+            if [ $? -ne 0 ]; then
+                log_error "镜像仓库安装失败"
+                return 1
+            fi
+            log_success "镜像仓库安装完成"
+            verify_step "${V2}/verify-17-install-registry.sh" "镜像仓库"
+            if [ $? -ne 0 ]; then
+                log_error "镜像仓库验证失败"
+                return 1
+            fi
+            step_done "2.9"
         fi
-        log_success "镜像仓库安装完成"
-        verify_step "${V2}/verify-17-install-registry.sh" "镜像仓库"
-        if [ $? -ne 0 ]; then
-            log_error "镜像仓库验证失败"
-            return 1
-        fi
-        step_done "2.9"
     fi
 
     # 2.10 初始化K8S集群（仅主控制节点）
