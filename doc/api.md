@@ -257,7 +257,36 @@ scp_exec "./packages/containerd.tar.gz" "/tmp/" "10.3.66.18"
 
 ---
 
-### 3.3 check_ssh_connection()
+### 3.3 ssh_exec_capture()
+
+**功能：** 在远程节点执行命令并捕获标准输出
+
+**参数：**
+- `$1` - 节点 IP 地址或 hostname
+- `$2` - 要执行的命令
+
+**返回值：**
+- 标准输出
+- 函数退出码为远程命令退出码
+
+**说明：**
+- 使用配置文件中的 SSH 参数（用户、端口、密钥、超时）
+- 支持 SSH 连接复用，同一节点连续执行短命令时会复用已有连接
+- 连接复用保持时间由 `.ssh.control_persist` 配置，默认 300 秒
+- 标准错误会被丢弃，适合验证脚本中只关心输出值的场景
+
+**示例：**
+```bash
+# 获取节点主机名
+hostname=$(ssh_exec_capture "10.3.66.18" "hostname")
+
+# 获取 kubelet 状态
+status=$(ssh_exec_capture "10.3.66.18" "systemctl is-active kubelet 2>/dev/null")
+```
+
+---
+
+### 3.4 check_ssh_connection()
 
 **功能：** 检查 SSH 连接是否可用
 

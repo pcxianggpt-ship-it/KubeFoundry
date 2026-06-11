@@ -16,6 +16,19 @@ _SSH_USER=$(config_get '.ssh.user' 'root' 2>/dev/null)
 _SSH_PORT=$(config_get '.ssh.port' '22' 2>/dev/null)
 _SSH_KEY=$(config_get '.ssh.key_path' '~/.ssh/id_rsa' 2>/dev/null)
 _SSH_TIMEOUT=$(config_get '.ssh.timeout' '30' 2>/dev/null)
+_SSH_CONTROL_PERSIST=$(config_get '.ssh.control_persist' '300' 2>/dev/null)
+_SSH_CONTROL_DIR="${TMPDIR:-/tmp}/kubefoundry-ssh-${USER:-$(id -u 2>/dev/null || echo user)}"
+
+#===============================================================================
+# 函数：_ensure_ssh_control_dir()
+# 功能：创建 SSH 连接复用 socket 目录
+# 返回值：
+#   0 - 创建成功
+#   非 0 - 创建失败
+#===============================================================================
+_ensure_ssh_control_dir() {
+    mkdir -p "$_SSH_CONTROL_DIR" 2>/dev/null && chmod 700 "$_SSH_CONTROL_DIR" 2>/dev/null
+}
 
 #===============================================================================
 # 函数：_get_ssh_target()
@@ -70,9 +83,22 @@ check_ssh_connection() {
     ssh_key="${ssh_key/#\~/$HOME}"
 
     # 使用 ssh 测试连接
-    if ssh -i "${ssh_key}" -p "${ssh_port}" -o ConnectTimeout="${ssh_timeout}" \
-        -o StrictHostKeyChecking=no -o BatchMode=yes \
-        "${ssh_user}@${target}" "echo 'SSH connection successful'" >/dev/null 2>&1; then
+    local ssh_status
+    if _ensure_ssh_control_dir; then
+        ssh -i "${ssh_key}" -p "${ssh_port}" -o ConnectTimeout="${ssh_timeout}" \
+            -o StrictHostKeyChecking=no -o BatchMode=yes \
+            -o ControlMaster=auto -o ControlPersist="${_SSH_CONTROL_PERSIST}" \
+            -o ControlPath="${_SSH_CONTROL_DIR}/kf-%C" \
+            "${ssh_user}@${target}" "echo 'SSH connection successful'" >/dev/null 2>&1
+        ssh_status=$?
+    else
+        ssh -i "${ssh_key}" -p "${ssh_port}" -o ConnectTimeout="${ssh_timeout}" \
+            -o StrictHostKeyChecking=no -o BatchMode=yes \
+            "${ssh_user}@${target}" "echo 'SSH connection successful'" >/dev/null 2>&1
+        ssh_status=$?
+    fi
+
+    if [ "$ssh_status" -eq 0 ]; then
         log_success "SSH 连接成功: ${target}"
         return 0
     else
@@ -290,7 +316,16 @@ ssh_exec_capture() {
     local ssh_key="${_SSH_KEY/#\~/$HOME}"
 
     # 执行 SSH 命令并捕获输出
+    if _ensure_ssh_control_dir; then
+        ssh -i "${ssh_key}" -p "${_SSH_PORT}" -o ConnectTimeout="${_SSH_TIMEOUT}" \
+            -o StrictHostKeyChecking=no -o BatchMode=yes \
+            -o ControlMaster=auto -o ControlPersist="${_SSH_CONTROL_PERSIST}" \
+            -o ControlPath="${_SSH_CONTROL_DIR}/kf-%C" \
+            "${_SSH_USER}@${target}" "${command}" 2>/dev/null
+        return $?
+    fi
+
     ssh -i "${ssh_key}" -p "${_SSH_PORT}" -o ConnectTimeout="${_SSH_TIMEOUT}" \
-        -o StrictHostKeyChecking=no \
+        -o StrictHostKeyChecking=no -o BatchMode=yes \
         "${_SSH_USER}@${target}" "${command}" 2>/dev/null
 }

@@ -30,7 +30,7 @@ log_info "NFS配置: 服务器=${NFS_SERVER}, 路径=${NFS_PATH}, 挂载点=${NF
 
 
 # 6. 使用helm安装NFS provisioner
-HELM_CHART_DIR="${INSTALL_MEDIA}/03.setup_file/allyaml/nfs-subdir-external-provisioner"
+HELM_CHART_DIR="${INSTALL_MEDIA}/03.setup_file/v1.30.14/helmapp/nfs/nfs-subdir-external-provisioner"
 if [ ! -d "$HELM_CHART_DIR" ]; then
     log_error "helm chart目录不存在: ${HELM_CHART_DIR}"
     exit 1

@@ -17,7 +17,7 @@ all_node_ips=$(get_all_node_ips)
 if echo "$all_node_ips" | grep -qF "$nfs_server"; then
     log_info "NFS服务器(${nfs_server})在集群内，远程配置/etc/exports..."
     export_entry="${nfs_path} *(rw,sync,no_subtree_check,no_root_squash)"
-    ssh_exec "$nfs_server" "mkdir -p ${nfs_path} && grep -qF '${nfs_path}' /etc/exports 2>/dev/null || (echo '${export_entry}' >> /etc/exports && exportfs -ra)"
+    ssh_exec "$nfs_server" "mkdir -p ${nfs_path} && systemctl enable nfs-server --now && grep -qF '${nfs_path}' /etc/exports 2>/dev/null || (echo '${export_entry}' >> /etc/exports && exportfs -ra)"
     if [ $? -ne 0 ]; then
         log_error "远程配置NFS服务器/etc/exports失败"
         return 1

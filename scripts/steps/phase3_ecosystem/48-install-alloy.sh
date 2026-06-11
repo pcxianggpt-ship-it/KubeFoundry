@@ -42,7 +42,7 @@ fi
 
 # 1. 创建 ConfigMap（从配置文件）
 log_info "创建 Alloy ConfigMap..."
-kubectl create cm -n kubemate-system --from-file=congfig.alloy=alloy.config --dry-run=client -o yaml | kubectl apply -f -
+kubectl create cm alloy -n kubemate-system --from-file=config.alloy=alloy.config
 
 if [ $? -ne 0 ]; then
     log_warn "ConfigMap 创建可能失败，继续安装..."

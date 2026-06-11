@@ -16,7 +16,7 @@ source "${PROJECT_ROOT}/scripts/lib/config.sh"
 
 log_info "创建kubemate-system命名空间..."
 
-kubectl apply -f "${INSTALL_MEDIA}/03.setup_file/allyaml/0.kubemate-namespace.yaml"
+kubectl create ns kubemate-system
 
 log_info "命名空间创建完成"
 

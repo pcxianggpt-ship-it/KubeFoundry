@@ -26,6 +26,7 @@ fi
 
 # 应用 traefik 3.3 配置
 kubectl apply -f 3.3/
+kubectl apply -f 3.3/
 
 if [ $? -eq 0 ]; then
     log_success "Traefik网关（3.3版本）安装完成"

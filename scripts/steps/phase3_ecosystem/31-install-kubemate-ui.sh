@@ -10,8 +10,10 @@
 
 log_info "开始安装kubemate管理界面..."
 
+kubectl create cm kubemate-etc -n kubemate-system --from-file=k8s_config.yml=/root/.kube/config
+
 install_media=$(config_resolve '.paths.install_media')
-KUBEMATE_FILE="${install_media}/03.setup_file/allyaml/1.kubemate.yml"
+KUBEMATE_FILE="${install_media}/03.setup_file/v1.30.14/kubemate.yml"
 
 # 1. 检查配置文件
 if [ ! -f "$KUBEMATE_FILE" ]; then
