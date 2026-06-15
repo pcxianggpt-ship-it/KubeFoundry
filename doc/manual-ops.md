@@ -203,7 +203,7 @@ systemctl stop firewalld
 systemctl disable firewalld
 
 # 卸载 podman 等冲突容器
-yum remove -y podman containerd
+yum remove -y podman containerd dockerd
 
 # 配置 DNS
 sed -i '/nameserver/d' /etc/resolv.conf

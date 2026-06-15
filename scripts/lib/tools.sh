@@ -86,7 +86,7 @@ if ! validate_command "helm"; then
     log_warn "helm 未安装，尝试从 tools 目录安装..."
     case "$ARCH" in
         amd64) install_tool_from_dir "helm" "/usr/local/bin/helm" "helm-amd" ;;
-        arm64) log_error "tools 目录中未提供 arm64 版本的 helm，请手动安装"; exit 1 ;;
+        arm64) install_tool_from_dir "helm" "/usr/local/bin/helm" "helm-arm" ;;
         *)     log_error "不支持的架构: ${ARCH}，请手动安装 helm"; exit 1 ;;
     esac
     if ! validate_command "helm"; then

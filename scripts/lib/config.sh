@@ -11,8 +11,8 @@
 [ -n "$_CONFIG_LOADED" ] && return 0
 _CONFIG_LOADED=1
 
-# 配置文件路径（相对于项目根目录）
-CONFIG_FILE="${CONFIG_FILE:-config/cluster.yaml}"
+# 配置文件路径（使用 PROJECT_ROOT 构建绝对路径）
+CONFIG_FILE="${CONFIG_FILE:-${PROJECT_ROOT}/config/cluster.yaml}"
 
 #===============================================================================
 # 函数：config_get()
