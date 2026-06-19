@@ -1,1 +1,9 @@
 .kubefoundry_progress
+__pycache__/
+*.py[cod]
+data/kubefoundry.db
+data/jobs/
+data/clusters/
+logs/
+web/frontend/node_modules/
+web/frontend/dist/
