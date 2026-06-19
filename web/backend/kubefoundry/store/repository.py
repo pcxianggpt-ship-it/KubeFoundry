@@ -25,10 +25,19 @@ class Repository(object):
         self.conn = connect()
 
     def __del__(self):
+        self.close()
+
+    def close(self):
         try:
             self.conn.close()
         except Exception:
             pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
 
     def list_clusters(self):
         return _rows(self.conn.execute("SELECT * FROM clusters ORDER BY id DESC").fetchall())
@@ -271,6 +280,17 @@ class Repository(object):
                 "UPDATE job_step_nodes SET %s WHERE id=?" % ",".join(["%s=?" % k for k in keys]),
                 [kwargs[k] for k in keys] + [item_id],
             )
+
+    def get_job_step_node(self, item_id):
+        return _row(
+            self.conn.execute(
+                "SELECT jsn.*, js.job_id, js.step_key, n.hostname, n.ip, n.role "
+                "FROM job_step_nodes jsn "
+                "JOIN job_steps js ON js.id=jsn.job_step_id "
+                "JOIN nodes n ON n.id=jsn.node_id WHERE jsn.id=?",
+                (item_id,),
+            ).fetchone()
+        )
 
     def add_precheck_result(self, cluster_id, job_id, node_id, check_key, check_name, severity, status, message, detail):
         with self.conn:

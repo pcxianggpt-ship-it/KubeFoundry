@@ -6,7 +6,14 @@ import unittest
 
 from kubefoundry.api.routes import create_app
 from kubefoundry.installer.context import build_cluster_context, context_to_yaml_data
+from kubefoundry.installer.plan import (
+    STEP_PLAN,
+    resolve_targets,
+    validate_selected_plan,
+    validate_step_resources,
+)
 from kubefoundry.installer.runtime import render_runtime_env
+from kubefoundry.installer.validator import validate_cluster_context
 from kubefoundry.store.db import init_db
 from kubefoundry.store.repository import Repository
 
@@ -74,6 +81,8 @@ class ApiTestCase(unittest.TestCase):
         self.assertIn("export KF_CLUSTER_NAME=demo", runtime_env)
         self.assertIn("export KF_NODE_IP=10.0.0.10", runtime_env)
         self.assertIn('export K8S_HOME="${KF_K8S_HOME}"', runtime_env)
+        self.assertIn("log_info()", runtime_env)
+        self.assertIn("export -f log_info", runtime_env)
 
     def test_jobs_require_nodes(self):
         cluster = self.client.post("/api/clusters", json={"name": "empty"}).get_json()
@@ -83,6 +92,96 @@ class ApiTestCase(unittest.TestCase):
 
         response = self.client.post("/api/clusters/%s/install" % cluster["id"])
         self.assertEqual(response.status_code, 400)
+
+    def test_cluster_validation_and_step_validation(self):
+        repo = Repository()
+        cluster = repo.create_cluster(
+            {
+                "name": "invalid",
+                "pod_subnet": "10.96.0.0/16",
+                "service_subnet": "10.96.0.0/24",
+            }
+        )
+        repo.create_node(
+            cluster["id"],
+            {"hostname": "master-1", "ip": "10.0.0.10", "role": "control_plane"},
+        )
+        context = build_cluster_context(cluster["id"])
+        repo.close()
+        with self.assertRaisesRegex(ValueError, "must not overlap"):
+            validate_cluster_context(context)
+        with self.assertRaisesRegex(ValueError, "unknown installation steps"):
+            validate_selected_plan(["does-not-exist"])
+        with self.assertRaisesRegex(ValueError, "requires output"):
+            validate_selected_plan(["20-add-control-nodes"])
+
+    def test_containerd_resource_validation(self):
+        repo = Repository()
+        cluster = repo.create_cluster({"name": "resources", "registry_ip": "10.0.0.10"})
+        master = repo.create_node(
+            cluster["id"],
+            {"hostname": "master-1", "ip": "10.0.0.10", "role": "control_plane"},
+        )
+        worker = repo.create_node(
+            cluster["id"],
+            {"hostname": "worker-1", "ip": "10.0.0.11", "role": "worker"},
+        )
+        media_dir = os.path.join(self.temp_dir, "media")
+        container_dir = os.path.join(media_dir, "02.container_runtime")
+        os.makedirs(container_dir)
+        repo.upsert_cluster_settings(
+            cluster["id"],
+            {"paths": {"install_media": media_dir, "container_runtime": container_dir}},
+        )
+        context = build_cluster_context(cluster["id"])
+        plan = validate_selected_plan(["16-install-containerd"])
+        self.assertTrue(validate_step_resources(plan, context))
+        targets = resolve_targets(plan[0], context)
+        self.assertEqual([master["id"], worker["id"]], [item["id"] for item in targets])
+
+    def test_full_phase2_plan_and_resources(self):
+        repo = Repository()
+        cluster = repo.create_cluster({"name": "full-plan", "registry_ip": "10.0.0.10"})
+        repo.create_node(
+            cluster["id"],
+            {"hostname": "master-1", "ip": "10.0.0.10", "role": "control_plane"},
+        )
+        repo.create_node(
+            cluster["id"],
+            {"hostname": "worker-1", "ip": "10.0.0.11", "role": "worker"},
+        )
+        media_dir = os.path.join(self.temp_dir, "media")
+        rpm_dir = os.path.join(media_dir, "01.rpm_package")
+        runtime_dir = os.path.join(media_dir, "02.container_runtime")
+        setup_dir = os.path.join(media_dir, "03.setup_file")
+        registry_dir = os.path.join(media_dir, "04.registry")
+        for path in [rpm_dir, runtime_dir, setup_dir, registry_dir]:
+            os.makedirs(path)
+        repo_source = os.path.join(rpm_dir, "repo.tar.gz")
+        kubeadm_file = os.path.join(rpm_dir, "kubeadm")
+        flannel_file = os.path.join(setup_dir, "kube-flannel.yml")
+        for path in [repo_source, kubeadm_file, flannel_file]:
+            with open(path, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write("test\n")
+        repo.upsert_cluster_settings(
+            cluster["id"],
+            {
+                "paths": {
+                    "install_media": media_dir,
+                    "repo_source": repo_source,
+                    "kubeadm_100y": kubeadm_file,
+                    "container_runtime": runtime_dir,
+                    "registry_install": registry_dir,
+                    "flannel_config": flannel_file,
+                }
+            },
+        )
+        context = build_cluster_context(cluster["id"])
+        plan = validate_selected_plan()
+        self.assertEqual("10-setup-yum-source", plan[0]["key"])
+        self.assertEqual("22-install-cni-flannel", plan[-1]["key"])
+        self.assertEqual(13, len(STEP_PLAN))
+        self.assertTrue(validate_step_resources(plan, context))
 
     def test_ssh_credentials_are_key_only_and_sanitized(self):
         cluster = self.client.post("/api/clusters", json={"name": "ssh"}).get_json()
@@ -122,6 +221,33 @@ class ApiTestCase(unittest.TestCase):
         job = repo.create_job(cluster["id"], "precheck", {}, "", self.temp_dir)
         response = self.client.get("/api/jobs/%s/events?last_id=bad" % job["id"])
         self.assertEqual(response.status_code, 400)
+
+    def test_job_step_node_log_endpoint(self):
+        repo = Repository()
+        cluster = repo.create_cluster({"name": "logs"})
+        node = repo.create_node(
+            cluster["id"],
+            {"hostname": "worker-1", "ip": "10.0.0.11", "role": "worker"},
+        )
+        job = repo.create_job(cluster["id"], "install", {}, "", self.temp_dir)
+        step = repo.create_job_step(
+            job["id"],
+            {
+                "key": "test-step",
+                "name": "Test Step",
+                "phase": "test",
+                "target_scope": "workers",
+            },
+        )
+        log_path = os.path.join(self.temp_dir, "worker-1.log")
+        with open(log_path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write("hello node log\n")
+        item = repo.create_job_step_node(step["id"], node["id"], log_path)
+        repo.close()
+
+        response = self.client.get("/api/job-step-nodes/%s/log" % item["id"])
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("hello node log", response.get_json()["content"])
 
 
 if __name__ == "__main__":

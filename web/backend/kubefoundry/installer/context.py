@@ -46,10 +46,16 @@ def build_cluster_context(cluster_id):
     }
     path_settings = cluster_settings.get("paths") or settings.get("paths") or {}
     ecosystem = cluster_settings.get("ecosystem") or settings.get("ecosystem") or {}
+    advanced = cluster_settings.get("advanced") or settings.get("advanced") or {}
     paths = {
         "k8s_home": "/data/k8s_install",
         "install_media": "/root/kube-media",
         "arch": "amd64",
+        "repo_source": "${install_media}/01.rpm_package/k8srepo_kylinos_sp3_${arch}.tar.gz",
+        "kubeadm_100y": "${install_media}/01.rpm_package/kubeadm-${k8s_version}-100y-${arch}",
+        "container_runtime": "${install_media}/02.container_runtime",
+        "registry_install": "${install_media}/04.registry",
+        "flannel_config": "${install_media}/03.setup_file/kube-flannel.yml",
     }
     paths.update(dict((k, v) for k, v in path_settings.items() if v not in (None, "")))
     env = {
@@ -62,6 +68,10 @@ def build_cluster_context(cluster_id):
     if path_settings.get("etcd_data_dir"):
         env["etcd_data_dir"] = path_settings.get("etcd_data_dir")
     variables = dict(paths)
+    variables["k8s_version"] = cluster.get("k8s_version")
+    for key in list(paths.keys()):
+        paths[key] = _expand_vars(paths[key], variables)
+        variables[key] = paths[key]
     env = dict((k, _expand_vars(v, variables)) for k, v in env.items())
     return {
         "cluster": cluster,
@@ -77,7 +87,7 @@ def build_cluster_context(cluster_id):
         "paths": paths,
         "env": env,
         "storage": {},
-        "advanced": {},
+        "advanced": advanced,
         "ecosystem": ecosystem,
     }
 

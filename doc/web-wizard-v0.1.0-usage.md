@@ -87,6 +87,40 @@ v0.1.0 前端提供基础向导能力：
 8. 安装任务
 9. 任务状态和 SSE 日志
 
+安装执行页会展示步骤状态、节点状态和节点级完整日志。预检查页会按节点展示 CPU、内存、磁盘、Swap、端口等检查结果。
+
+## Phase 2 安装范围
+
+当前 Python 编排器已接入以下 Kubernetes 底座步骤：
+
+```text
+10-setup-yum-source
+11b-setup-hostname
+12-setup-k8s-repo
+13-install-k8s-deps
+14-replace-kubeadm
+15-environment-config
+16-install-containerd
+17-install-registry
+18-init-k8s-cluster
+19-modify-cert-expiry
+20-add-control-nodes
+21-add-worker-nodes
+22-install-cni-flannel
+```
+
+执行安装前，管理节点的安装介质目录至少需要包含：
+
+```text
+${install_media}/01.rpm_package/k8srepo_kylinos_sp3_${arch}.tar.gz
+${install_media}/01.rpm_package/kubeadm-${k8s_version}-100y-${arch}
+${install_media}/02.container_runtime/
+${install_media}/03.setup_file/kube-flannel.yml
+${install_media}/04.registry/
+```
+
+Python 会在任务启动前验证这些路径，并按步骤分发到目标节点。`18-init-k8s-cluster` 使用 `kubeadm token create --print-join-command` 和 `kubeadm init phase upload-certs` 生成控制节点及工作节点 join 命令，保存为任务产物后自动分发给步骤 20 和 21。
+
 ## API 依赖
 
 前端按设计文档调用以下接口：
@@ -107,6 +141,8 @@ GET    /api/jobs/{job_id}
 GET    /api/jobs/{job_id}/steps
 GET    /api/jobs/{job_id}/events
 GET    /api/jobs/{job_id}/config-yaml
+GET    /api/jobs/{job_id}/precheck-results
+GET    /api/job-step-nodes/{item_id}/log
 ```
 
 后端接口未启动时，页面会显示请求错误，但前端工程仍可启动和构建。

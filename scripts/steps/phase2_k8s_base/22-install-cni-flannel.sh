@@ -14,7 +14,7 @@
 
 log_info "开始安装Flannel CNI插件..."
 
-FLANNEL_FILE="${INSTALL_MEDIA}/03.setup_file/kube-flannel.yml"
+FLANNEL_FILE="${FLANNEL_FILE:-/tmp/k8s/kube-flannel.yml}"
 
 # 1. 检查Flannel配置文件是否存在
 if [ ! -f "$FLANNEL_FILE" ]; then

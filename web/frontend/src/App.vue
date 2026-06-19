@@ -163,7 +163,17 @@
                   开始预检查
                 </el-button>
               </div>
-              <job-status-panel :job="currentJob" :steps="jobSteps" />
+              <job-status-panel :job="currentJob" :steps="jobSteps" @open-node-log="loadNodeLog" />
+              <el-table v-if="precheckResults.length" :data="precheckResults" class="precheck-table" border>
+                <el-table-column prop="hostname" label="节点" min-width="120" />
+                <el-table-column prop="check_name" label="检查项" min-width="130" />
+                <el-table-column label="结果" width="100">
+                  <template #default="{ row }">
+                    <el-tag :type="precheckStatusType(row.status)">{{ row.status }}</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="message" label="说明" min-width="220" />
+              </el-table>
             </section>
 
             <section v-show="activeStep === 6" class="pane">
@@ -181,7 +191,7 @@
                   创建安装任务
                 </el-button>
               </div>
-              <job-status-panel :job="currentJob" :steps="jobSteps" />
+              <job-status-panel :job="currentJob" :steps="jobSteps" @open-node-log="loadNodeLog" />
             </section>
 
             <section v-show="activeStep === 8" class="pane">
@@ -189,7 +199,7 @@
                 <h3>安装结果</h3>
                 <el-button :icon="Refresh" :disabled="!currentJobId" @click="refreshJob">刷新任务</el-button>
               </div>
-              <job-status-panel :job="currentJob" :steps="jobSteps" />
+              <job-status-panel :job="currentJob" :steps="jobSteps" @open-node-log="loadNodeLog" />
             </section>
           </div>
 
@@ -262,6 +272,10 @@
           <el-button type="primary" :loading="actionLoading" @click="saveNode">保存</el-button>
         </template>
       </el-dialog>
+
+      <el-dialog v-model="nodeLogDialogVisible" :title="nodeLogTitle" width="min(900px, 92vw)">
+        <pre class="node-log-view">{{ nodeLogContent }}</pre>
+      </el-dialog>
     </main>
   </el-config-provider>
 </template>
@@ -289,7 +303,9 @@ import {
   getSettings,
   getJob,
   getJobConfigYaml,
+  getJobStepNodeLog,
   getJobSteps,
+  getPrecheckResults,
   listClusters,
   listNodes,
   startInstall,
@@ -311,7 +327,8 @@ const JobStatusPanel = defineComponent({
       default: () => []
     }
   },
-  setup(props) {
+  emits: ['open-node-log'],
+  setup(props, { emit }) {
     return () =>
       h('div', { class: 'job-panel' }, [
         h('div', { class: 'job-meta' }, [
@@ -324,11 +341,31 @@ const JobStatusPanel = defineComponent({
           { class: 'step-list' },
           props.steps.length
             ? props.steps.map((step) =>
-                h('div', { class: 'step-row', key: step.id || step.step_key }, [
-                  h('span', { class: 'step-key' }, step.step_key),
-                  h('span', step.step_name || step.phase || '-'),
-                  h(ElTag, { type: statusType(step.status), size: 'small' }, () => step.status || 'pending'),
-                  h('small', step.message || '')
+                h('div', { class: 'step-block', key: step.id || step.step_key }, [
+                  h('div', { class: 'step-row' }, [
+                    h('span', { class: 'step-key' }, step.step_key),
+                    h('span', step.step_name || step.phase || '-'),
+                    h(ElTag, { type: statusType(step.status), size: 'small' }, () => step.status || 'pending'),
+                    h('small', step.message || '')
+                  ]),
+                  h(
+                    'div',
+                    { class: 'step-node-list' },
+                    (step.nodes || []).map((node) =>
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          class: 'step-node',
+                          onClick: () => emit('open-node-log', node)
+                        },
+                        [
+                          h('span', node.hostname),
+                          h(ElTag, { type: statusType(node.status), size: 'small' }, () => node.status)
+                        ]
+                      )
+                    )
+                  )
                 ])
               )
             : h('p', { class: 'muted' }, '暂无步骤数据')
@@ -365,6 +402,7 @@ const selectedClusterId = ref(null);
 const nodes = ref([]);
 const currentJob = ref(null);
 const jobSteps = ref([]);
+const precheckResults = ref([]);
 const currentJobId = computed(() => currentJob.value?.id || manualJobId.value || '');
 const manualJobId = ref('');
 const yamlPreview = ref('');
@@ -376,6 +414,9 @@ const apiError = ref('');
 const clusterFormRef = ref(null);
 const nodeFormRef = ref(null);
 const nodeDialogVisible = ref(false);
+const nodeLogDialogVisible = ref(false);
+const nodeLogTitle = ref('节点日志');
+const nodeLogContent = ref('');
 const editingNodeId = ref(null);
 
 const clusterForm = reactive({
@@ -614,6 +655,22 @@ async function refreshJob() {
   try {
     currentJob.value = normalizeItem(await getJob(currentJobId.value));
     jobSteps.value = normalizeList(await getJobSteps(currentJobId.value));
+    if (currentJob.value?.job_type === 'precheck') {
+      precheckResults.value = normalizeList(await getPrecheckResults(currentJobId.value));
+    } else {
+      precheckResults.value = [];
+    }
+  } catch (error) {
+    apiError.value = error.message || String(error);
+  }
+}
+
+async function loadNodeLog(node) {
+  try {
+    const payload = await getJobStepNodeLog(node.id);
+    nodeLogTitle.value = `${payload.item?.step_key || '步骤'} / ${payload.item?.hostname || node.hostname}`;
+    nodeLogContent.value = payload.content || '暂无日志';
+    nodeLogDialogVisible.value = true;
   } catch (error) {
     apiError.value = error.message || String(error);
   }
@@ -709,5 +766,13 @@ function statusType(status) {
 
 function jobStatusType(status) {
   return statusType(status);
+}
+
+function precheckStatusType(status) {
+  return {
+    pass: 'success',
+    warning: 'warning',
+    fail: 'danger'
+  }[status] || 'info';
 }
 </script>

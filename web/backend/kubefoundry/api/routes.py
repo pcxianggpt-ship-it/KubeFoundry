@@ -159,7 +159,10 @@ def create_app():
             return jsonify({"error": "cluster not found"}), 404
         if not repo().list_nodes(cluster_id):
             return jsonify({"error": "cluster has no nodes"}), 400
-        job = start_precheck_job(cluster_id)
+        try:
+            job = start_precheck_job(cluster_id)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         return jsonify(job), 202
 
     @app.route("/api/clusters/<int:cluster_id>/install", methods=["POST"])
@@ -169,7 +172,10 @@ def create_app():
         if not repo().list_nodes(cluster_id):
             return jsonify({"error": "cluster has no nodes"}), 400
         data = payload()
-        job = start_install_job(cluster_id, selected_steps=data.get("steps"))
+        try:
+            job = start_install_job(cluster_id, selected_steps=data.get("steps"))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         return jsonify(job), 202
 
     @app.route("/api/jobs", methods=["GET"])
@@ -207,6 +213,17 @@ def create_app():
             return jsonify({"content": ""})
         with open(log_path, "r", encoding="utf-8", errors="replace") as fh:
             return jsonify({"content": fh.read()})
+
+    @app.route("/api/job-step-nodes/<int:item_id>/log", methods=["GET"])
+    def get_job_step_node_log(item_id):
+        item = repo().get_job_step_node(item_id)
+        if not item:
+            return jsonify({"error": "job step node not found"}), 404
+        log_path = item.get("log_path")
+        if not log_path or not os.path.exists(log_path):
+            return jsonify({"content": "", "item": item})
+        with open(log_path, "r", encoding="utf-8", errors="replace") as fh:
+            return jsonify({"content": fh.read(), "item": item})
 
     @app.route("/api/jobs/<int:job_id>/config-yaml", methods=["GET"])
     def get_job_config_yaml(job_id):

@@ -11,6 +11,9 @@ def render_runtime_env(context, node):
     registry = context["registry"]
     paths = context["paths"]
     env = context["env"]
+    control_planes = context.get("control_plane") or []
+    primary_control = control_planes[0] if control_planes else {}
+    advanced = context.get("advanced") or {}
     values = {
         "KF_CLUSTER_NAME": cluster.get("name"),
         "KF_K8S_VERSION": cluster.get("k8s_version"),
@@ -29,6 +32,9 @@ def render_runtime_env(context, node):
         "KF_KUBELET_ROOT": env.get("kubelet_root"),
         "KF_CONTAINERD_ROOT": env.get("containerd_root"),
         "KF_ETCD_DATA_DIR": env.get("etcd_data_dir"),
+        "KF_DUAL_STACK": "Y" if advanced.get("enable_ipv6_dual_stack") else "N",
+        "KF_PRIMARY_CONTROL_HOSTNAME": primary_control.get("hostname"),
+        "KF_PRIMARY_CONTROL_IP": primary_control.get("ip"),
     }
     compat = {
         "K8S_VERSION": "${KF_K8S_VERSION}",
@@ -45,8 +51,22 @@ def render_runtime_env(context, node):
         "KUBELET_ROOT": "${KF_KUBELET_ROOT}",
         "CONTAINERD_ROOT": "${KF_CONTAINERD_ROOT}",
         "ETCD_DATA_DIR": "${KF_ETCD_DATA_DIR}",
+        "DUAL_STACK": "${KF_DUAL_STACK}",
+        "PRIMARY_CONTROL_HOSTNAME": "${KF_PRIMARY_CONTROL_HOSTNAME}",
+        "PRIMARY_CONTROL_IP": "${KF_PRIMARY_CONTROL_IP}",
     }
-    lines = ["#!/bin/bash", ""]
+    lines = [
+        "#!/bin/bash",
+        "",
+        "log_info() { printf '\\033[0;34m[INFO]\\033[0m %s\\n' \"$*\"; }",
+        "log_success() { printf '\\033[0;32m[SUCCESS]\\033[0m %s\\n' \"$*\"; }",
+        "log_warn() { printf '\\033[0;33m[WARN]\\033[0m %s\\n' \"$*\"; }",
+        "log_error() { printf '\\033[0;31m[ERROR]\\033[0m %s\\n' \"$*\" >&2; }",
+        "log_substep() { printf '\\n\\033[0;36m==> %s\\033[0m\\n' \"$*\"; }",
+        "log_separator() { printf '%s\\n' '============================================================'; }",
+        "export -f log_info log_success log_warn log_error log_substep log_separator",
+        "",
+    ]
     for key in sorted(values.keys()):
         lines.append("export %s=%s" % (key, _q(values[key])))
     for key in sorted(compat.keys()):

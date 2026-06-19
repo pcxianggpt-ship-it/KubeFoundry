@@ -256,6 +256,48 @@ textarea {
   background: #fbfcfe;
 }
 
+.step-block {
+  border-bottom: 1px solid #e6e8ec;
+  padding: 10px 0;
+}
+
+.step-block .step-row {
+  border-bottom: 0;
+  padding: 0;
+}
+
+.step-node-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.step-node {
+  align-items: center;
+  background: #f7f8fa;
+  border: 1px solid #dcdfe6;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 8px;
+  padding: 5px 8px;
+}
+
+.precheck-table {
+  margin-top: 18px;
+}
+
+.node-log-view {
+  background: #101820;
+  color: #d8e1e8;
+  margin: 0;
+  max-height: 60vh;
+  min-height: 260px;
+  overflow: auto;
+  padding: 14px;
+  white-space: pre-wrap;
+}
+
 .step-key {
   color: #1e6b72;
   font-family: "Cascadia Code", Consolas, monospace;

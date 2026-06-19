@@ -56,13 +56,15 @@ def run_local_command(command, timeout=3600):
         return 127, str(exc)
 
 
-def scp_to_node(local_path, remote_path, node, context, timeout=300):
+def scp_to_node(local_path, remote_path, node, context, timeout=300, recursive=False):
     ssh = context.get("ssh") or {}
     user = node.get("ssh_user") or ssh.get("username") or "root"
     port = str(node.get("ssh_port") or 22)
     key_path = expand_user(ssh.get("private_key_path") or "~/.ssh/id_rsa")
     target = "%s@%s:%s" % (user, node.get("ip"), remote_path)
     cmd = ["scp", "-P", port, "-o", "StrictHostKeyChecking=no", "-o", "BatchMode=yes"]
+    if recursive:
+        cmd.append("-r")
     if key_path:
         cmd.extend(["-i", key_path])
     cmd.extend([local_path, target])
@@ -76,3 +78,34 @@ def scp_to_node(local_path, remote_path, node, context, timeout=300):
         return 124, out, (err or "") + "\nscp timeout"
     except OSError as exc:
         return 127, "", str(exc)
+
+
+def copy_path_to_node(local_path, remote_path, node, context, timeout=1800):
+    if os.path.isdir(local_path):
+        code, out, err = run_ssh(
+            node,
+            context,
+            "mkdir -p %s" % shell_quote(remote_path),
+            timeout=60,
+        )
+        if code != 0:
+            return code, out, err
+        source = os.path.join(local_path, ".")
+        return scp_to_node(source, remote_path, node, context, timeout=timeout, recursive=True)
+
+    remote_parent = os.path.dirname(remote_path)
+    if remote_parent:
+        code, out, err = run_ssh(
+            node,
+            context,
+            "mkdir -p %s" % shell_quote(remote_parent),
+            timeout=60,
+        )
+        if code != 0:
+            return code, out, err
+    return scp_to_node(local_path, remote_path, node, context, timeout=timeout)
+
+
+def shell_quote(value):
+    import shlex
+    return shlex.quote(str(value))

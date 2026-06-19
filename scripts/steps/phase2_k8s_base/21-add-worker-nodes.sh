@@ -11,6 +11,9 @@
 log_info "开始添加工作节点..."
 
 JOIN_CMD="$1"
+if [ -z "$JOIN_CMD" ] && [ -f /tmp/k8s/kube_join_nodes ]; then
+    JOIN_CMD=$(cat /tmp/k8s/kube_join_nodes)
+fi
 
 if [ -z "$JOIN_CMD" ]; then
     log_error "join命令为空"

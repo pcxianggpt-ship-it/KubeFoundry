@@ -11,7 +11,7 @@
 cat <<EOF | tee /etc/yum.repos.d/k8s-http.repo > /dev/null
 [k8s-repo]
 name=http
-baseurl=http://k8sc1/repo
+baseurl=http://${PRIMARY_CONTROL_HOSTNAME:-k8sc1}/repo
 enabled=1
 gpgcheck=0
 EOF

@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from kubefoundry.installer.context import build_cluster_context, write_job_snapshot
 from kubefoundry.installer.events import append_log, emit
 from kubefoundry.installer.ssh import run_ssh
+from kubefoundry.installer.validator import validate_cluster_context
 from kubefoundry.store.db import data_dir
 from kubefoundry.store.repository import Repository
 
@@ -30,6 +31,7 @@ done
 
 def start_precheck_job(cluster_id):
     context = build_cluster_context(cluster_id)
+    validate_cluster_context(context)
     job_dir = os.path.join(data_dir(), "jobs", "pending")
     repo = Repository()
     job = repo.create_job(cluster_id, "precheck", context, "", job_dir)
@@ -37,21 +39,21 @@ def start_precheck_job(cluster_id):
     job_dir = os.path.join(data_dir(), "jobs", str(job["id"]))
     log_dir = os.path.join(job_dir, "logs")
     repo.update_job(job["id"], log_dir=log_dir, config_snapshot=_read(snapshot_path), config_yaml_path=yaml_path)
-    thread = threading.Thread(target=run_precheck_job, args=(job["id"], cluster_id), daemon=True)
+    thread = threading.Thread(target=run_precheck_job, args=(job["id"], context), daemon=True)
     thread.start()
     return repo.get_job(job["id"])
 
 
-def run_precheck_job(job_id, cluster_id):
+def run_precheck_job(job_id, context):
     try:
-        _run_precheck_job(job_id, cluster_id)
+        _run_precheck_job(job_id, context)
     except Exception as exc:
         _fail_job(job_id, exc)
 
 
-def _run_precheck_job(job_id, cluster_id):
+def _run_precheck_job(job_id, context):
     repo = Repository()
-    context = build_cluster_context(cluster_id)
+    cluster_id = context["cluster"]["id"]
     log_dir = os.path.join(data_dir(), "jobs", str(job_id), "logs")
     repo.update_job(job_id, status="running", started_at=_now())
     emit(job_id, "job.status", {"status": "running"})

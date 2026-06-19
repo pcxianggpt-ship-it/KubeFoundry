@@ -12,7 +12,7 @@
 #   ARCH          - 系统架构
 #===============================================================================
 
-kubeadm_100y_file="${INSTALL_MEDIA}/01.rpm_package/kubeadm-v${K8S_VERSION}-100y-${ARCH}"
+kubeadm_100y_file="${KUBEADM_100Y_FILE:-/tmp/k8s/kubeadm-100y}"
 
 # 1. 检查100年版本kubeadm文件是否存在
 if [ ! -f "$kubeadm_100y_file" ]; then
@@ -26,7 +26,7 @@ cp /usr/bin/kubeadm /tmp/k8s/kubeadm_bak
 log_info "原始kubeadm已备份到: /tmp/k8s/kubeadm_bak"
 
 # 3. 替换kubeadm
-scp "$kubeadm_100y_file" /usr/bin/kubeadm
+cp "$kubeadm_100y_file" /usr/bin/kubeadm
 chmod +x /usr/bin/kubeadm
 
 log_success "kubeadm已替换为支持100年证书版本"

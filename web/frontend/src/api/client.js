@@ -22,7 +22,10 @@ async function request(path, options = {}) {
   }
 
   if (!response.ok) {
-    const message = payload && payload.message ? payload.message : `请求失败：${response.status}`;
+    const message =
+      payload && (payload.error || payload.message)
+        ? payload.error || payload.message
+        : `请求失败：${response.status}`;
     throw new Error(message);
   }
 
@@ -126,6 +129,14 @@ export function getJobSteps(jobId) {
 
 export function getJobLogs(jobId) {
   return request(`/api/jobs/${jobId}/logs`);
+}
+
+export function getPrecheckResults(jobId) {
+  return request(`/api/jobs/${jobId}/precheck-results`);
+}
+
+export function getJobStepNodeLog(itemId) {
+  return request(`/api/job-step-nodes/${itemId}/log`);
 }
 
 export function getJobConfigYaml(jobId) {

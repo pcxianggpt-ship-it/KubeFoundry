@@ -174,9 +174,21 @@ chown $(id -u):$(id -g) $HOME/.kube/config
 export KUBECONFIG=/etc/kubernetes/admin.conf
 log_success "kubectl 已配置"
 
-# 9. 提取kubeadm join命令
-cat /tmp/k8s/k8s-init-cluster.log | grep "kubeadm join" -A2 | sed -n '1,3p' > /tmp/k8s/kube_join_master
-cat /tmp/k8s/k8s-init-cluster.log | grep "kubeadm join" -A2 | sed -n '5,6p' > /tmp/k8s/kube_join_nodes
+# 9. 生成 kubeadm join 命令
+worker_join_cmd=$(kubeadm token create --print-join-command)
+if [ -z "$worker_join_cmd" ]; then
+    log_error "工作节点 join 命令生成失败"
+    exit 1
+fi
+
+certificate_key=$(kubeadm init phase upload-certs --upload-certs 2>/dev/null | tail -1 | tr -d '[:space:]')
+if [ -z "$certificate_key" ]; then
+    log_error "控制节点 certificate key 生成失败"
+    exit 1
+fi
+
+printf '%s\n' "$worker_join_cmd" > /tmp/k8s/kube_join_nodes
+printf '%s --control-plane --certificate-key %s\n' "$worker_join_cmd" "$certificate_key" > /tmp/k8s/kube_join_master
 
 log_success "kubeadm join 命令已保存"
 log_info "  控制节点: /tmp/k8s/kube_join_master"
