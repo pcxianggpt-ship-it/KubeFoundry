@@ -238,6 +238,48 @@ echo "net.ipv6.conf.lo.disable_ipv6=0" >> /etc/sysctl.conf
 echo "net.ipv6.conf.all.forwarding=1" >> /etc/sysctl.conf
 echo "net.ipv6.conf.default.forwarding=1" >> /etc/sysctl.conf
 
+# 配置内核与网络优化参数（写入 /etc/sysctl.d/99-sysctl.conf，便于集中管理）
+# 先清理旧条目，确保重复执行不产生重复行
+for key in net.ipv4.ip_local_port_range net.ipv4.tcp_tw_reuse net.ipv4.tcp_fin_timeout \
+           net.netfilter.nf_conntrack_max net.netfilter.nf_conntrack_tcp_timeout_established \
+           net.netfilter.nf_conntrack_tcp_timeout_time_wait net.core.somaxconn \
+           net.ipv4.tcp_max_syn_backlog net.core.rmem_max net.core.wmem_max \
+           net.ipv4.tcp_rmem net.ipv4.tcp_wmem net.core.default_qdisc \
+           net.ipv4.tcp_congestion_control net.ipv4.tcp_slow_start_after_idle \
+           net.ipv4.tcp_max_tw_buckets net.ipv4.tcp_keepalive_time \
+           net.ipv4.tcp_keepalive_intvl net.ipv4.tcp_keepalive_probes \
+           net.ipv4.tcp_timestamps vm.swappiness vm.min_free_kbytes \
+           fs.file-max vm.max_map_count; do
+    sed -i "/^${key} /d" /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+done
+
+cat >> /etc/sysctl.d/99-sysctl.conf << 'EOF'
+net.ipv4.ip_local_port_range = 1024 65535
+net.ipv4.tcp_tw_reuse = 1
+net.ipv4.tcp_fin_timeout = 10
+net.netfilter.nf_conntrack_max = 2097152
+net.netfilter.nf_conntrack_tcp_timeout_established = 86400
+net.netfilter.nf_conntrack_tcp_timeout_time_wait = 30
+net.core.somaxconn = 65535
+net.ipv4.tcp_max_syn_backlog = 131072
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.ipv4.tcp_rmem = 4096 8388608 16777216
+net.ipv4.tcp_wmem = 4096 8388608 16777216
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+net.ipv4.tcp_slow_start_after_idle = 0
+net.ipv4.tcp_max_tw_buckets = 262144
+net.ipv4.tcp_keepalive_time = 600
+net.ipv4.tcp_keepalive_intvl = 15
+net.ipv4.tcp_keepalive_probes = 5
+net.ipv4.tcp_timestamps = 1
+vm.swappiness = 10
+vm.min_free_kbytes = 524288
+fs.file-max = 2097152
+vm.max_map_count = 262144
+EOF
+
 # 应用内核参数
 sysctl --system
 
@@ -254,6 +296,8 @@ EOF
 **验证（所有节点）：**
 ```bash
 sysctl net.ipv4.ip_forward net.bridge.bridge-nf-call-iptables
+sysctl net.ipv4.tcp_congestion_control   # 应为 bbr
+sysctl net.netfilter.nf_conntrack_max    # 应为 2097152
 free -h | grep -i swap   # 应无输出
 ```
 

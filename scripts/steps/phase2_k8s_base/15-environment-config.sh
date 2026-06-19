@@ -93,17 +93,70 @@ user.max_inotify_instances = 51200
 user.max_inotify_watches = 2621440
 EOF
 
-# 11. 应用sysctl配置
+# 11. 配置内核与网络优化参数
+sed -i '/net.ipv4.ip_local_port_range/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/net.ipv4.tcp_tw_reuse/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/net.ipv4.tcp_fin_timeout/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/net.netfilter.nf_conntrack_max/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/net.netfilter.nf_conntrack_tcp_timeout_established/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/net.netfilter.nf_conntrack_tcp_timeout_time_wait/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/net.core.somaxconn/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/net.ipv4.tcp_max_syn_backlog/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/net.core.rmem_max/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/net.core.wmem_max/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/net.ipv4.tcp_rmem/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/net.ipv4.tcp_wmem/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/net.core.default_qdisc/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/net.ipv4.tcp_slow_start_after_idle/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/net.ipv4.tcp_max_tw_buckets/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/net.ipv4.tcp_keepalive_time/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/net.ipv4.tcp_keepalive_intvl/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/net.ipv4.tcp_keepalive_probes/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/net.ipv4.tcp_timestamps/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/vm.swappiness/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/vm.min_free_kbytes/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/fs.file-max/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+sed -i '/vm.max_map_count/d' /etc/sysctl.d/99-sysctl.conf 2>/dev/null || true
+cat >> /etc/sysctl.d/99-sysctl.conf << EOF
+net.ipv4.ip_local_port_range = 1024 65535
+net.ipv4.tcp_tw_reuse = 1
+net.ipv4.tcp_fin_timeout = 10
+net.netfilter.nf_conntrack_max = 2097152
+net.netfilter.nf_conntrack_tcp_timeout_established = 86400
+net.netfilter.nf_conntrack_tcp_timeout_time_wait = 30
+net.core.somaxconn = 65535
+net.ipv4.tcp_max_syn_backlog = 131072
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.ipv4.tcp_rmem = 4096 8388608 16777216
+net.ipv4.tcp_wmem = 4096 8388608 16777216
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+net.ipv4.tcp_slow_start_after_idle = 0
+net.ipv4.tcp_max_tw_buckets = 262144
+net.ipv4.tcp_keepalive_time = 600
+net.ipv4.tcp_keepalive_intvl = 15
+net.ipv4.tcp_keepalive_probes = 5
+net.ipv4.tcp_timestamps = 1
+vm.swappiness = 10
+vm.min_free_kbytes = 524288
+fs.file-max = 2097152
+vm.max_map_count = 262144
+EOF
+
+# 12. 应用sysctl配置
 sysctl --system > /dev/null
 
-# 12. 启用systemd-resolved
+# 13. 启用systemd-resolved
 systemctl enable systemd-resolved > /dev/null 2>&1
+systemctl restart systemd-resolved > /dev/null 2>&1
 
-# 13. 修改open files参数
+# 14. 修改open files参数
 cat >> /etc/security/limits.conf << EOF
 * soft nofile 65535
 * hard nofile 65535
 EOF
 
 log_info "环境配置完成"
-log_info "已配置: swap关闭, 防火墙关闭, Docker删除, DNS配置, IPv4/IPv6转发, inotify参数, open files参数"
+log_info "已配置: swap关闭, 防火墙关闭, Docker删除, DNS配置, IPv4/IPv6转发, inotify参数, 内核与网络优化参数, open files参数"
