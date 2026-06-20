@@ -115,7 +115,7 @@ ssh:
   port: 22
 
   # SSH 密码（用于自动配置免密登录）
-  password: "Kylin123123"
+  password: ""
 
   # SSH 密钥路径（默认 ~/.ssh/id_rsa）
   key_path: "~/.ssh/id_rsa"
