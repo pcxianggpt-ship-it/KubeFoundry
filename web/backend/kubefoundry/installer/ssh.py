@@ -82,16 +82,23 @@ def scp_to_node(local_path, remote_path, node, context, timeout=300, recursive=F
 
 def copy_path_to_node(local_path, remote_path, node, context, timeout=1800):
     if os.path.isdir(local_path):
+        remote_parent = os.path.dirname(remote_path)
         code, out, err = run_ssh(
             node,
             context,
-            "mkdir -p %s" % shell_quote(remote_path),
+            "mkdir -p %s" % shell_quote(remote_parent),
             timeout=60,
         )
         if code != 0:
             return code, out, err
-        source = os.path.join(local_path, ".")
-        return scp_to_node(source, remote_path, node, context, timeout=timeout, recursive=True)
+        return scp_to_node(
+            local_path,
+            remote_parent,
+            node,
+            context,
+            timeout=timeout,
+            recursive=True,
+        )
 
     remote_parent = os.path.dirname(remote_path)
     if remote_parent:

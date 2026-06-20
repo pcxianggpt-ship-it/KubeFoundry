@@ -194,6 +194,35 @@ class RunnerTestCase(unittest.TestCase):
             self.context,
         )
 
+    def test_copy_directory_uses_named_source_and_remote_parent(self):
+        source = os.path.join(self.temp_dir, "02.container_runtime")
+        os.makedirs(source)
+        remote_path = "/tmp/k8s/02.container_runtime"
+
+        with patch(
+            "kubefoundry.installer.ssh.run_ssh",
+            return_value=(0, "", ""),
+        ), patch(
+            "kubefoundry.installer.ssh.scp_to_node",
+            return_value=(0, "", ""),
+        ) as scp:
+            result = runner.copy_path_to_node(
+                source,
+                remote_path,
+                self.worker,
+                self.context,
+            )
+
+        self.assertEqual((0, "", ""), result)
+        scp.assert_called_once_with(
+            source,
+            "/tmp/k8s",
+            self.worker,
+            self.context,
+            timeout=1800,
+            recursive=True,
+        )
+
     def test_ssh_exception_marks_node_failed_and_returns_result(self):
         step = self.step("exception", target_scope="workers")
         with Repository() as repo:
