@@ -179,16 +179,17 @@ class ApiTestCase(unittest.TestCase):
         context = build_cluster_context(cluster["id"])
         plan = validate_selected_plan()
         self.assertEqual("10-setup-yum-source", plan[0]["key"])
-        self.assertEqual("22-install-cni-flannel", plan[-1]["key"])
-        self.assertEqual(13, len(STEP_PLAN))
+        self.assertEqual("web-verify-cluster-health", plan[-1]["key"])
+        self.assertEqual(14, len(STEP_PLAN))
         self.assertTrue(validate_step_resources(plan, context))
 
     def test_install_plan_and_yaml_round_trip(self):
         response = self.client.get("/api/install-plan")
         self.assertEqual(response.status_code, 200)
         plan = response.get_json()["items"]
-        self.assertEqual(13, len(plan))
+        self.assertEqual(14, len(plan))
         self.assertEqual("10-setup-yum-source", plan[0]["key"])
+        self.assertEqual("web-verify-cluster-health", plan[-1]["key"])
 
         cluster = self.client.post(
             "/api/clusters",

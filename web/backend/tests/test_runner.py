@@ -211,6 +211,40 @@ class RunnerTestCase(unittest.TestCase):
         with open(node_result["log_path"], "r", encoding="utf-8") as fh:
             self.assertIn("ssh exploded", fh.read())
 
+    def test_cluster_health_builtin_runs_without_distributing_script(self):
+        step = {
+            "key": "web-verify-cluster-health",
+            "name": "验证 Kubernetes 集群健康",
+            "phase": "verify",
+            "target_scope": "primary_control_plane",
+            "builtin": "cluster_health",
+            "mode": "serial",
+            "fail_fast": True,
+            "resources": [],
+        }
+        with Repository() as repo:
+            step_row = repo.create_job_step(self.job["id"], step)
+
+        with patch(
+            "kubefoundry.installer.runner.check_cluster_health",
+            return_value=(0, "cluster health check passed\n", ""),
+        ) as check_health, patch(
+            "kubefoundry.installer.runner.scp_to_node"
+        ) as scp:
+            result = runner._run_step_on_node(
+                self.job["id"],
+                self.context,
+                step,
+                step_row["id"],
+                self.master,
+                self.log_dir,
+                {},
+            )
+
+        self.assertTrue(result["ok"])
+        check_health.assert_called_once_with(self.master, self.context)
+        scp.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

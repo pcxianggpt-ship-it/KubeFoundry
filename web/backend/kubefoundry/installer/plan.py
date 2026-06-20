@@ -205,6 +205,16 @@ STEP_PLAN = [
         ],
         "verify_command": "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -A | grep -q flannel",
     },
+    {
+        "key": "web-verify-cluster-health",
+        "name": "验证 Kubernetes 集群健康",
+        "phase": "verify",
+        "target_scope": "primary_control_plane",
+        "builtin": "cluster_health",
+        "mode": "serial",
+        "fail_fast": True,
+        "resources": [],
+    },
 ]
 
 

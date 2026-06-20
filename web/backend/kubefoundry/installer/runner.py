@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from kubefoundry.installer.context import build_cluster_context, write_job_snapshot
 from kubefoundry.installer.events import append_log, emit
+from kubefoundry.installer.health import check_cluster_health
 from kubefoundry.installer.plan import (
     resolve_targets,
     validate_selected_plan,
@@ -129,35 +130,38 @@ def _run_step_on_node(job_id, context, step, step_id, node, log_dir, artifacts):
     out = ""
     err = ""
     try:
-        work_dir = os.path.join(data_dir(), "jobs", str(job_id), "work", step["key"], node["hostname"])
-        if not os.path.exists(work_dir):
-            os.makedirs(work_dir)
-        runtime_path = write_runtime_env(os.path.join(work_dir, "runtime.env"), context, node)
-        script_copy = os.path.join(work_dir, "step.sh")
-        _write_step_script(script_copy, step, context, node)
+        if step.get("builtin") == "cluster_health":
+            code, out, err = check_cluster_health(node, context)
+        else:
+            work_dir = os.path.join(data_dir(), "jobs", str(job_id), "work", step["key"], node["hostname"])
+            if not os.path.exists(work_dir):
+                os.makedirs(work_dir)
+            runtime_path = write_runtime_env(os.path.join(work_dir, "runtime.env"), context, node)
+            script_copy = os.path.join(work_dir, "step.sh")
+            _write_step_script(script_copy, step, context, node)
 
-        remote_dir = "/tmp/kubefoundry/%s/%s/%s" % (job_id, step["key"], node["hostname"])
-        code, out, err = run_ssh(node, context, "mkdir -p %s" % shell_quote(remote_dir), timeout=60)
-        if code == 0:
-            code, out, err = _copy_step_resources(step, context, node, artifacts)
-        if code == 0:
-            for local_name in [runtime_path, script_copy]:
-                code, out, err = scp_to_node(local_name, remote_dir + "/" + os.path.basename(local_name), node, context)
-                if code != 0:
-                    break
-        if code == 0:
-            args = " ".join(shell_quote(item) for item in _resolve_step_args(step, context))
-            inner_command = "source runtime.env && bash step.sh"
-            if args:
-                inner_command += " " + args
-            verify_command = _format_verify_command(step.get("verify_command"), context, node)
-            if verify_command:
-                inner_command += " && { %s; }" % verify_command
-            command = "cd %s && chmod +x step.sh && bash -lc %s" % (
-                shell_quote(remote_dir),
-                shell_quote(inner_command),
-            )
-            code, out, err = run_ssh(node, context, command, timeout=3600)
+            remote_dir = "/tmp/kubefoundry/%s/%s/%s" % (job_id, step["key"], node["hostname"])
+            code, out, err = run_ssh(node, context, "mkdir -p %s" % shell_quote(remote_dir), timeout=60)
+            if code == 0:
+                code, out, err = _copy_step_resources(step, context, node, artifacts)
+            if code == 0:
+                for local_name in [runtime_path, script_copy]:
+                    code, out, err = scp_to_node(local_name, remote_dir + "/" + os.path.basename(local_name), node, context)
+                    if code != 0:
+                        break
+            if code == 0:
+                args = " ".join(shell_quote(item) for item in _resolve_step_args(step, context))
+                inner_command = "source runtime.env && bash step.sh"
+                if args:
+                    inner_command += " " + args
+                verify_command = _format_verify_command(step.get("verify_command"), context, node)
+                if verify_command:
+                    inner_command += " && { %s; }" % verify_command
+                command = "cd %s && chmod +x step.sh && bash -lc %s" % (
+                    shell_quote(remote_dir),
+                    shell_quote(inner_command),
+                )
+                code, out, err = run_ssh(node, context, command, timeout=3600)
     except Exception as exc:
         code = 1
         out = ""
