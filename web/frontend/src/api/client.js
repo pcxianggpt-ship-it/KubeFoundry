@@ -26,7 +26,11 @@ async function request(path, options = {}) {
       payload && (payload.error || payload.message)
         ? payload.error || payload.message
         : `请求失败：${response.status}`;
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    error.payload = payload;
+    error.jobId = payload && payload.job_id;
+    throw error;
   }
 
   return payload;

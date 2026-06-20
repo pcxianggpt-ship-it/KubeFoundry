@@ -31,8 +31,16 @@ describe('API client', () => {
       })
     }));
 
-    await expect(startInstall(1)).rejects.toThrow(
+    const error = await startInstall(1).catch((caught) => caught);
+
+    expect(error.message).toBe(
       'cluster already has an active install job'
     );
+    expect(error.status).toBe(409);
+    expect(error.jobId).toBe(42);
+    expect(error.payload).toEqual({
+      error: 'cluster already has an active install job',
+      job_id: 42
+    });
   });
 });

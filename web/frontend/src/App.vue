@@ -145,14 +145,21 @@
             <section v-show="activeStep === 4" class="pane">
               <div class="pane-header">
                 <h3>生态组件选择</h3>
+                <el-tag type="info">v0.2.0</el-tag>
               </div>
+              <el-alert
+                title="v0.1.0 安装任务仅执行 Kubernetes 底座、Flannel 和最终健康检查；生态组件将在 v0.2.0 接入。"
+                type="info"
+                show-icon
+                :closable="false"
+              />
               <div class="component-list">
                 <label v-for="item in ecosystemOptions" :key="item.key" class="component-row">
                   <span>
                     <strong>{{ item.name }}</strong>
                     <small>{{ item.step }}</small>
                   </span>
-                  <el-switch v-model="ecosystemForm[item.key]" />
+                  <el-switch v-model="ecosystemForm[item.key]" disabled />
                 </label>
               </div>
             </section>
@@ -717,14 +724,27 @@ async function runInstall() {
     }
   ).then(() => true, () => false);
   if (!confirmed) return;
-  await withAction(async () => {
-    const job = normalizeItem(await startInstall(selectedClusterId.value));
-    currentJob.value = job;
-    manualJobId.value = job.id;
-    activeStep.value = 7;
-    await refreshJob();
-    connectEvents();
-  });
+  try {
+    await withAction(async () => {
+      const job = normalizeItem(await startInstall(selectedClusterId.value));
+      currentJob.value = job;
+      manualJobId.value = job.id;
+      activeStep.value = 7;
+      await refreshJob();
+      connectEvents();
+    });
+  } catch (error) {
+    if (error.status === 409 && error.jobId) {
+      apiError.value = '';
+      manualJobId.value = error.jobId;
+      activeStep.value = 8;
+      await refreshJob();
+      connectEvents();
+      ElMessage.warning('该集群已有安装任务，已切换到现有任务');
+      return;
+    }
+    throw error;
+  }
 }
 
 async function refreshJob() {
