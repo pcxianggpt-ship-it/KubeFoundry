@@ -454,6 +454,43 @@ exec_script_on_control_plane "./scripts/steps/env_config.sh" \
     "gateway=10.3.66.1"
 ```
 
+### 5.1.1 exec_script_on_primary_control_plane()
+
+**功能：** 仅在 `control_plane[0]` 主控制节点执行脚本。
+
+**参数：**
+- `$1` - 本地脚本路径
+- `$2...$N` - 传递给脚本的参数（可选）
+
+**返回值：**
+- `0` - 执行成功
+- 非 0 - 主控制节点缺失或脚本执行失败
+
+**示例：**
+```bash
+exec_script_on_primary_control_plane \
+    "./scripts/steps/phase2_k8s_base/18-init-k8s-cluster.sh"
+```
+
+### 5.1.2 exec_script_on_other_control_planes()
+
+**功能：** 排除 `control_plane[0]`，在其余控制节点上顺序执行脚本。
+
+**参数：**
+- `$1` - 本地脚本路径
+- `$2...$N` - 传递给脚本的参数（可选）
+
+**返回值：**
+- `0` - 全部执行成功，或没有其他控制节点
+- 非 0 - 主控制节点缺失或任一节点执行失败
+
+**示例：**
+```bash
+exec_script_on_other_control_planes \
+    "./scripts/steps/phase2_k8s_base/20-add-control-nodes.sh" \
+    "10.3.66.18"
+```
+
 ---
 
 ### 5.2 exec_script_on_workers()

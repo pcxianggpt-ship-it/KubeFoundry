@@ -78,6 +78,28 @@ EOF
 }
 
 #===============================================================================
+# 函数：print_execution_plan()
+# 功能：输出 dry-run 将执行的阶段，不执行任何远程或本地修改
+#===============================================================================
+print_execution_plan() {
+    log_info "Dry-run 执行计划"
+    case "$STEP" in
+        all)
+            log_info "1. precheck"
+            log_info "2. k8s_base"
+            log_info "3. ecosystem"
+            ;;
+        k8s_base)
+            log_info "1. precheck"
+            log_info "2. k8s_base"
+            ;;
+        precheck|ecosystem)
+            log_info "1. ${STEP}"
+            ;;
+    esac
+}
+
+#===============================================================================
 # 函数：parse_arguments()
 # 功能：解析命令行参数
 #===============================================================================
@@ -318,7 +340,7 @@ run_k8s_base() {
         log_info "[跳过] 2.6 替换kubeadm（已完成）"
     else
         log_info "替换kubeadm..."
-        exec_script_on_control_plane "${P2}/14-replace-kubeadm.sh"
+        exec_script_on_primary_control_plane "${P2}/14-replace-kubeadm.sh"
         if [ $? -ne 0 ]; then
             log_error "kubeadm替换失败"
             return 1
@@ -442,7 +464,7 @@ run_k8s_base() {
         log_info "[跳过] 2.10 初始化K8S集群（已完成）"
     else
         log_info "初始化K8S集群..."
-        exec_script_on_control_plane "${P2}/18-init-k8s-cluster.sh"
+        exec_script_on_primary_control_plane "${P2}/18-init-k8s-cluster.sh"
         if [ $? -ne 0 ]; then
             log_error "K8S集群初始化失败"
             return 1
@@ -461,7 +483,7 @@ run_k8s_base() {
         log_info "[跳过] 2.11 修改证书有效期（已完成）"
     else
         log_info "修改证书有效期..."
-        exec_script_on_control_plane "${P2}/19-modify-cert-expiry.sh"
+        exec_script_on_primary_control_plane "${P2}/19-modify-cert-expiry.sh"
         if [ $? -ne 0 ]; then
             log_error "证书有效期修改失败"
             return 1
@@ -487,7 +509,7 @@ run_k8s_base() {
             log_info "添加控制节点..."
             local _primary_cp
             _primary_cp=$(get_all_control_plane_ips | head -1)
-            exec_script_on_control_plane "${P2}/20-add-control-nodes.sh" "$_primary_cp"
+            exec_script_on_other_control_planes "${P2}/20-add-control-nodes.sh" "$_primary_cp"
             if [ $? -ne 0 ]; then
                 log_error "添加控制节点失败"
                 return 1
@@ -529,7 +551,7 @@ run_k8s_base() {
         log_info "[跳过] 2.14 安装CNI插件Flannel（已完成）"
     else
         log_info "安装CNI插件Flannel..."
-        exec_script_on_control_plane "${P2}/22-install-cni-flannel.sh"
+        exec_script_on_primary_control_plane "${P2}/22-install-cni-flannel.sh"
         if [ $? -ne 0 ]; then
             log_error "Flannel安装失败"
             return 1
@@ -995,9 +1017,11 @@ main() {
         log_info "执行步骤: ${STEP}"
     fi
 
-    # 模拟运行提示
+    # 模拟运行：只输出计划，在任何进度文件、SSH、SCP 或系统修改前退出
     if [ "$DRY_RUN" = true ]; then
         log_warn "模拟运行模式：不会执行实际操作"
+        print_execution_plan
+        return 0
     fi
 
     # 初始化进度跟踪

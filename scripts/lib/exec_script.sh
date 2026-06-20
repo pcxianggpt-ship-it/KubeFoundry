@@ -187,6 +187,65 @@ exec_script_on_control_plane() {
 }
 
 #===============================================================================
+# 函数：exec_script_on_primary_control_plane()
+# 功能：仅在第一个控制节点执行脚本并传递参数
+# 参数：
+#   $1 - 本地脚本路径
+#   $2...$N - 传递给脚本的参数（可选，支持多个）
+# 返回值：
+#   0 - 执行成功
+#   非 0 - 执行失败
+#===============================================================================
+exec_script_on_primary_control_plane() {
+    local script_path="$1"
+    shift
+
+    local primary_ip
+    primary_ip=$(config_get_node 'control_plane' 0 'ip')
+    if [ -z "$primary_ip" ]; then
+        log_error "未找到主控制节点配置"
+        return 1
+    fi
+
+    log_info "在主控制节点执行脚本: ${script_path}"
+    exec_script_on_single_node "$primary_ip" "$script_path" "$@"
+}
+
+#===============================================================================
+# 函数：exec_script_on_other_control_planes()
+# 功能：在主控制节点以外的控制节点顺序执行脚本并传递参数
+# 参数：
+#   $1 - 本地脚本路径
+#   $2...$N - 传递给脚本的参数（可选，支持多个）
+# 返回值：
+#   0 - 所有其他控制节点执行成功，或没有其他控制节点
+#   非 0 - 任一节点执行失败
+#===============================================================================
+exec_script_on_other_control_planes() {
+    local script_path="$1"
+    shift
+
+    local primary_ip
+    primary_ip=$(config_get_node 'control_plane' 0 'ip')
+    if [ -z "$primary_ip" ]; then
+        log_error "未找到主控制节点配置"
+        return 1
+    fi
+
+    local node_ip
+    while IFS= read -r node_ip; do
+        [ -z "$node_ip" ] && continue
+        [ "$node_ip" = "$primary_ip" ] && continue
+        if ! exec_script_on_single_node "$node_ip" "$script_path" "$@"; then
+            log_error "控制节点脚本执行失败: ${node_ip}"
+            return 1
+        fi
+    done <<< "$(get_all_control_plane_ips)"
+
+    return 0
+}
+
+#===============================================================================
 # 函数：exec_script_on_workers()
 # 功能：在所有工作节点执行脚本并传递参数
 # 参数：
