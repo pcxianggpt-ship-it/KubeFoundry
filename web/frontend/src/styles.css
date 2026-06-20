@@ -147,6 +147,11 @@ textarea {
   margin-bottom: 18px;
 }
 
+.pane-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .pane-header.compact {
   margin-bottom: 12px;
 }
@@ -285,6 +290,10 @@ textarea {
 
 .precheck-table {
   margin-top: 18px;
+}
+
+.install-plan-table {
+  margin-bottom: 18px;
 }
 
 .node-log-view {

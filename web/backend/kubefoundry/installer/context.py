@@ -1,4 +1,5 @@
 import json
+import io
 import os
 import re
 
@@ -73,6 +74,7 @@ def build_cluster_context(cluster_id):
         paths[key] = _expand_vars(paths[key], variables)
         variables[key] = paths[key]
     env = dict((k, _expand_vars(v, variables)) for k, v in env.items())
+    storage = cluster_settings.get("storage") or settings.get("storage") or {}
     return {
         "cluster": cluster,
         "nodes": nodes,
@@ -86,7 +88,7 @@ def build_cluster_context(cluster_id):
         "ssh": ssh,
         "paths": paths,
         "env": env,
-        "storage": {},
+        "storage": storage,
         "advanced": advanced,
         "ecosystem": ecosystem,
     }
@@ -119,6 +121,8 @@ def context_to_yaml_data(context):
             "control_persist": 300,
         },
         "paths": context["paths"],
+        "storage": context["storage"],
+        "advanced": context["advanced"],
         "env": context["env"],
         "ecosystem": context["ecosystem"],
     }
@@ -134,6 +138,13 @@ def export_cluster_yaml(cluster_id, path=None):
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         _dump_yaml(context_to_yaml_data(context), fh)
     return path
+
+
+def render_cluster_yaml(cluster_id):
+    context = build_cluster_context(cluster_id)
+    buffer = io.StringIO()
+    _dump_yaml(context_to_yaml_data(context), buffer)
+    return buffer.getvalue()
 
 
 def write_job_snapshot(cluster_id, job_id):
@@ -182,6 +193,17 @@ def import_cluster_yaml(cluster_id, yaml_path=None, yaml_text=None):
         item = dict(item)
         item["role"] = "worker"
         repo.create_node(cluster_id, item)
+    configured_ips = set(node.get("ip") for node in repo.list_nodes(cluster_id))
+    if registry.get("ip") and registry.get("ip") not in configured_ips:
+        repo.create_node(
+            cluster_id,
+            {
+                "hostname": registry.get("hostname") or "registry",
+                "ip": registry.get("ip"),
+                "ipv6": registry.get("ipv6") or "",
+                "role": "registry",
+            },
+        )
 
     ssh = data.get("ssh") or {}
     repo.upsert_ssh_credentials(cluster_id, {
@@ -189,6 +211,13 @@ def import_cluster_yaml(cluster_id, yaml_path=None, yaml_text=None):
         "private_key_path": ssh.get("key_path") or ssh.get("private_key_path") or "~/.ssh/id_rsa",
         "auth_type": "key",
     })
+    settings = {}
+    for key in ["paths", "storage", "advanced", "ecosystem"]:
+        value = data.get(key)
+        if isinstance(value, dict):
+            settings[key] = value
+    if settings:
+        repo.upsert_cluster_settings(cluster_id, settings)
     return build_cluster_context(cluster_id)
 
 

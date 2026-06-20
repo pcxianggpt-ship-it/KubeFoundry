@@ -4,7 +4,13 @@ import time
 
 from flask import Flask, Response, jsonify, request, stream_with_context
 
-from kubefoundry.installer.context import build_cluster_context, export_cluster_yaml, import_cluster_yaml
+from kubefoundry.installer.context import (
+    build_cluster_context,
+    export_cluster_yaml,
+    import_cluster_yaml,
+    render_cluster_yaml,
+)
+from kubefoundry.installer.plan import public_plan
 from kubefoundry.installer.precheck import start_precheck_job
 from kubefoundry.installer.runner import start_install_job
 from kubefoundry.store.db import get_db_path, init_db
@@ -131,8 +137,20 @@ def create_app():
             return jsonify({"error": "cluster not found"}), 404
         return jsonify(build_cluster_context(cluster_id))
 
+    @app.route("/api/clusters/<int:cluster_id>/config-yaml", methods=["GET"])
+    def get_cluster_config_yaml(cluster_id):
+        if not repo().get_cluster(cluster_id):
+            return jsonify({"error": "cluster not found"}), 404
+        return Response(render_cluster_yaml(cluster_id), mimetype="text/yaml")
+
+    @app.route("/api/install-plan", methods=["GET"])
+    def get_install_plan():
+        return jsonify({"items": public_plan()})
+
     @app.route("/api/clusters/<int:cluster_id>/import-yaml", methods=["POST"])
     def import_yaml(cluster_id):
+        if not repo().get_cluster(cluster_id):
+            return jsonify({"error": "cluster not found"}), 404
         data = payload()
         yaml_path = data.get("path")
         yaml_text = data.get("content")

@@ -115,7 +115,28 @@ export function startPrecheck(clusterId) {
 
 export function startInstall(clusterId) {
   return request(`/api/clusters/${clusterId}/install`, {
-    method: 'POST'
+    method: 'POST',
+    body: JSON.stringify({})
+  });
+}
+
+export function listJobs(clusterId = null) {
+  const query = clusterId ? `?cluster_id=${clusterId}` : '';
+  return request(`/api/jobs${query}`);
+}
+
+export function getInstallPlan() {
+  return request('/api/install-plan');
+}
+
+export function getClusterConfigYaml(clusterId) {
+  return request(`/api/clusters/${clusterId}/config-yaml`);
+}
+
+export function importClusterYaml(clusterId, content) {
+  return request(`/api/clusters/${clusterId}/import-yaml`, {
+    method: 'POST',
+    body: JSON.stringify({ content })
   });
 }
 

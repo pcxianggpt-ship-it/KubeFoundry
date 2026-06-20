@@ -25,6 +25,7 @@
             <el-select v-model="selectedClusterId" placeholder="选择已有集群" filterable clearable @change="handleClusterChange">
               <el-option v-for="cluster in clusters" :key="cluster.id" :label="cluster.name" :value="cluster.id" />
             </el-select>
+            <el-button :icon="Clock" :disabled="!selectedClusterId" @click="openJobHistory">任务历史</el-button>
             <el-button :icon="Refresh" @click="loadClusters">刷新</el-button>
           </div>
         </header>
@@ -179,7 +180,10 @@
             <section v-show="activeStep === 6" class="pane">
               <div class="pane-header">
                 <h3>配置确认</h3>
-                <el-button :icon="Document" :disabled="!currentJobId" @click="loadConfigYaml">读取 YAML</el-button>
+                <div class="pane-actions">
+                  <el-button :icon="Upload" :disabled="!selectedClusterId" @click="openYamlImport">导入 YAML</el-button>
+                  <el-button :icon="Document" :disabled="!selectedClusterId" @click="loadConfigYaml">刷新预览</el-button>
+                </div>
               </div>
               <pre class="yaml-preview">{{ yamlPreview }}</pre>
             </section>
@@ -188,9 +192,19 @@
               <div class="pane-header">
                 <h3>安装执行</h3>
                 <el-button type="danger" :icon="VideoPlay" :loading="actionLoading" :disabled="!selectedClusterId" @click="runInstall">
-                  创建安装任务
+                  执行底座安装
                 </el-button>
               </div>
+              <el-table :data="installPlan" class="install-plan-table" border>
+                <el-table-column prop="order" label="#" width="56" />
+                <el-table-column prop="name" label="步骤" min-width="190" />
+                <el-table-column prop="target_scope" label="目标" min-width="150" />
+                <el-table-column label="执行方式" width="110">
+                  <template #default="{ row }">
+                    <el-tag :type="row.mode === 'parallel' ? 'success' : 'info'">{{ row.mode }}</el-tag>
+                  </template>
+                </el-table-column>
+              </el-table>
               <job-status-panel :job="currentJob" :steps="jobSteps" @open-node-log="loadNodeLog" />
             </section>
 
@@ -276,15 +290,43 @@
       <el-dialog v-model="nodeLogDialogVisible" :title="nodeLogTitle" width="min(900px, 92vw)">
         <pre class="node-log-view">{{ nodeLogContent }}</pre>
       </el-dialog>
+
+      <el-dialog v-model="yamlImportDialogVisible" title="导入 cluster.yaml" width="min(820px, 92vw)">
+        <el-input v-model="yamlImportContent" type="textarea" :rows="22" placeholder="粘贴 YAML 配置内容" />
+        <template #footer>
+          <el-button @click="yamlImportDialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="actionLoading" @click="submitYamlImport">导入并覆盖当前配置</el-button>
+        </template>
+      </el-dialog>
+
+      <el-dialog v-model="jobHistoryDialogVisible" title="任务历史" width="min(960px, 94vw)">
+        <el-table :data="jobs" border empty-text="暂无任务">
+          <el-table-column prop="id" label="ID" width="72" />
+          <el-table-column prop="job_type" label="类型" width="110" />
+          <el-table-column label="状态" width="110">
+            <template #default="{ row }">
+              <el-tag :type="jobStatusType(row.status)">{{ row.status }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="current_step_key" label="当前/最后步骤" min-width="190" />
+          <el-table-column prop="created_at" label="创建时间" min-width="170" />
+          <el-table-column label="操作" width="100">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="bindHistoryJob(row)">查看</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-dialog>
     </main>
   </el-config-provider>
 </template>
 
 <script setup>
-import { computed, defineComponent, h, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, defineComponent, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox, ElTag } from 'element-plus';
 import {
   CircleCheck,
+  Clock,
   Close,
   Connection,
   Delete,
@@ -292,6 +334,7 @@ import {
   Edit,
   Plus,
   Refresh,
+  Upload,
   VideoPlay
 } from '@element-plus/icons-vue';
 import {
@@ -299,14 +342,17 @@ import {
   createNode,
   deleteNode,
   getCluster,
+  getClusterConfigYaml,
   getClusterSettings,
+  getInstallPlan,
   getSettings,
   getJob,
-  getJobConfigYaml,
   getJobStepNodeLog,
   getJobSteps,
   getPrecheckResults,
+  importClusterYaml,
   listClusters,
+  listJobs,
   listNodes,
   startInstall,
   startPrecheck,
@@ -403,6 +449,8 @@ const nodes = ref([]);
 const currentJob = ref(null);
 const jobSteps = ref([]);
 const precheckResults = ref([]);
+const jobs = ref([]);
+const installPlan = ref([]);
 const currentJobId = computed(() => currentJob.value?.id || manualJobId.value || '');
 const manualJobId = ref('');
 const yamlPreview = ref('');
@@ -417,6 +465,9 @@ const nodeDialogVisible = ref(false);
 const nodeLogDialogVisible = ref(false);
 const nodeLogTitle = ref('节点日志');
 const nodeLogContent = ref('');
+const yamlImportDialogVisible = ref(false);
+const yamlImportContent = ref('');
+const jobHistoryDialogVisible = ref(false);
 const editingNodeId = ref(null);
 
 const clusterForm = reactive({
@@ -485,8 +536,14 @@ const nodeRules = {
 onMounted(async () => {
   await loadSettings();
   await loadClusters();
+  await loadInstallPlan();
 });
 onBeforeUnmount(disconnectEvents);
+watch(activeStep, (step) => {
+  if (step === 6 && selectedClusterId.value) {
+    loadConfigYaml();
+  }
+});
 
 function normalizeList(payload) {
   if (Array.isArray(payload)) return payload;
@@ -533,8 +590,18 @@ async function handleClusterChange(clusterId) {
     }
     await loadClusterNodes();
     await loadClusterSettings(clusterId);
+    await loadConfigYaml();
   } else {
     nodes.value = [];
+    yamlPreview.value = '';
+  }
+}
+
+async function loadInstallPlan() {
+  try {
+    installPlan.value = normalizeList(await getInstallPlan());
+  } catch (error) {
+    apiError.value = error.message || String(error);
   }
 }
 
@@ -640,6 +707,16 @@ async function runPrecheck() {
 
 async function runInstall() {
   await saveCluster();
+  const confirmed = await ElMessageBox.confirm(
+    `将按顺序执行 ${installPlan.value.length} 个 Kubernetes 底座步骤，安装过程会修改所有目标节点。`,
+    '确认开始安装',
+    {
+      type: 'warning',
+      confirmButtonText: '开始安装',
+      cancelButtonText: '取消'
+    }
+  ).then(() => true, () => false);
+  if (!confirmed) return;
   await withAction(async () => {
     const job = normalizeItem(await startInstall(selectedClusterId.value));
     currentJob.value = job;
@@ -682,12 +759,57 @@ async function bindManualJob() {
 }
 
 async function loadConfigYaml() {
-  if (!currentJobId.value) return;
+  if (!selectedClusterId.value) return;
   try {
-    const payload = await getJobConfigYaml(currentJobId.value);
+    const payload = await getClusterConfigYaml(selectedClusterId.value);
     yamlPreview.value = typeof payload === 'string' ? payload : payload?.yaml || JSON.stringify(payload, null, 2);
   } catch (error) {
     apiError.value = error.message || String(error);
+  }
+}
+
+function openYamlImport() {
+  yamlImportContent.value = yamlPreview.value || '';
+  yamlImportDialogVisible.value = true;
+}
+
+async function submitYamlImport() {
+  if (!yamlImportContent.value.trim()) {
+    ElMessage.warning('请输入 YAML 配置内容');
+    return;
+  }
+  await withAction(async () => {
+    await importClusterYaml(selectedClusterId.value, yamlImportContent.value);
+    yamlImportDialogVisible.value = false;
+    await handleClusterChange(selectedClusterId.value);
+    await loadClusters();
+    ElMessage.success('YAML 配置已导入');
+  });
+}
+
+async function openJobHistory() {
+  await loadJobHistory();
+  jobHistoryDialogVisible.value = true;
+}
+
+async function loadJobHistory() {
+  if (!selectedClusterId.value) return;
+  try {
+    jobs.value = normalizeList(await listJobs(selectedClusterId.value));
+  } catch (error) {
+    apiError.value = error.message || String(error);
+  }
+}
+
+async function bindHistoryJob(job) {
+  disconnectEvents();
+  currentJob.value = job;
+  manualJobId.value = job.id;
+  jobHistoryDialogVisible.value = false;
+  activeStep.value = job.job_type === 'precheck' ? 5 : 8;
+  await refreshJob();
+  if (!['success', 'failed', 'canceled'].includes(job.status)) {
+    connectEvents();
   }
 }
 
@@ -713,6 +835,17 @@ function connectEvents() {
     source.addEventListener(eventName, (event) => {
       appendLog(`[${eventName}] ${event.data}`);
       tryRefreshFromEvent(event.data);
+      if (eventName === 'job.status') {
+        try {
+          const payload = JSON.parse(event.data);
+          const status = payload.payload?.status || payload.status;
+          if (['success', 'failed', 'canceled'].includes(status)) {
+            window.setTimeout(disconnectEvents, 800);
+          }
+        } catch (error) {
+          // Ignore malformed event payloads; the next refresh still updates task state.
+        }
+      }
     });
   });
 }

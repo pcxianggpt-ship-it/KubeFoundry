@@ -215,6 +215,27 @@ def selected_plan(selected_steps=None):
     return [step for step in STEP_PLAN if step["key"] in selected]
 
 
+def public_plan():
+    items = []
+    for index, step in enumerate(STEP_PLAN):
+        items.append(
+            {
+                "order": index + 1,
+                "key": step["key"],
+                "name": step["name"],
+                "phase": step.get("phase", ""),
+                "target_scope": step.get("target_scope", ""),
+                "mode": step.get("mode", "serial"),
+                "max_workers": step.get("max_workers", 1),
+                "required_resources": [
+                    resource.get("path_key") or resource.get("artifact_key")
+                    for resource in step.get("resources") or []
+                ],
+            }
+        )
+    return items
+
+
 def validate_selected_plan(selected_steps=None):
     if selected_steps:
         known = set(step["key"] for step in STEP_PLAN)

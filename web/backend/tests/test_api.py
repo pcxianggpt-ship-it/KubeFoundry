@@ -183,6 +183,41 @@ class ApiTestCase(unittest.TestCase):
         self.assertEqual(13, len(STEP_PLAN))
         self.assertTrue(validate_step_resources(plan, context))
 
+    def test_install_plan_and_yaml_round_trip(self):
+        response = self.client.get("/api/install-plan")
+        self.assertEqual(response.status_code, 200)
+        plan = response.get_json()["items"]
+        self.assertEqual(13, len(plan))
+        self.assertEqual("10-setup-yum-source", plan[0]["key"])
+
+        cluster = self.client.post(
+            "/api/clusters",
+            json={"name": "yaml-demo", "registry_ip": "10.0.0.10"},
+        ).get_json()
+        cluster_id = cluster["id"]
+        self.client.post(
+            "/api/clusters/%s/nodes" % cluster_id,
+            json={"hostname": "master-1", "ip": "10.0.0.10", "role": "control_plane"},
+        )
+        self.client.put(
+            "/api/clusters/%s/settings" % cluster_id,
+            json={"ecosystem": {"traefik": True}, "advanced": {"enable_ipv6_dual_stack": False}},
+        )
+
+        response = self.client.get("/api/clusters/%s/config-yaml" % cluster_id)
+        self.assertEqual(response.status_code, 200)
+        yaml_text = response.get_data(as_text=True)
+        self.assertIn("name: yaml-demo", yaml_text)
+        self.assertIn("traefik: true", yaml_text)
+
+        updated_yaml = yaml_text.replace("name: yaml-demo", "name: yaml-imported")
+        response = self.client.post(
+            "/api/clusters/%s/import-yaml" % cluster_id,
+            json={"content": updated_yaml},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual("yaml-imported", response.get_json()["cluster"]["name"])
+
     def test_ssh_credentials_are_key_only_and_sanitized(self):
         cluster = self.client.post("/api/clusters", json={"name": "ssh"}).get_json()
         cluster_id = cluster["id"]
