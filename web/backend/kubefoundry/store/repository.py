@@ -223,6 +223,27 @@ class Repository(object):
     def get_job(self, job_id):
         return _row(self.conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone())
 
+    def find_active_job(self, cluster_id, job_type=None):
+        sql = (
+            "SELECT * FROM jobs WHERE cluster_id=? "
+            "AND status IN ('pending', 'running')"
+        )
+        params = [cluster_id]
+        if job_type:
+            sql += " AND job_type=?"
+            params.append(job_type)
+        sql += " ORDER BY id DESC LIMIT 1"
+        return _row(self.conn.execute(sql, params).fetchone())
+
+    def fail_interrupted_jobs(self, reason):
+        with self.conn:
+            cur = self.conn.execute(
+                "UPDATE jobs SET status='failed', finished_at=datetime('now'), "
+                "failure_reason=? WHERE status IN ('pending', 'running')",
+                (reason,),
+            )
+        return cur.rowcount
+
     def update_job(self, job_id, **kwargs):
         if not kwargs:
             return self.get_job(job_id)

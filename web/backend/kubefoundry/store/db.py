@@ -36,6 +36,7 @@ def init_db():
     try:
         with conn:
             conn.executescript(SCHEMA_SQL)
+            _migrate_schema(conn)
             conn.execute(
                 "INSERT OR REPLACE INTO schema_migrations(version, applied_at) "
                 "VALUES (?, datetime('now'))",
@@ -43,6 +44,17 @@ def init_db():
             )
     finally:
         conn.close()
+
+
+def _migrate_schema(conn):
+    job_columns = [
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(jobs)").fetchall()
+    ]
+    if "failure_reason" not in job_columns:
+        conn.execute(
+            "ALTER TABLE jobs ADD COLUMN failure_reason TEXT DEFAULT ''"
+        )
 
 
 SCHEMA_SQL = """
@@ -125,6 +137,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     started_at TEXT DEFAULT '',
     finished_at TEXT DEFAULT '',
+    failure_reason TEXT DEFAULT '',
     FOREIGN KEY(cluster_id) REFERENCES clusters(id) ON DELETE CASCADE
 );
 

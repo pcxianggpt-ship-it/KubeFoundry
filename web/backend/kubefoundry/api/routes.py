@@ -20,6 +20,10 @@ from kubefoundry.store.repository import Repository
 def create_app():
     app = Flask(__name__)
     init_db()
+    with Repository() as startup_repo:
+        startup_repo.fail_interrupted_jobs(
+            "backend restarted before task completion"
+        )
 
     def repo():
         return Repository()
@@ -189,6 +193,12 @@ def create_app():
             return jsonify({"error": "cluster not found"}), 404
         if not repo().list_nodes(cluster_id):
             return jsonify({"error": "cluster has no nodes"}), 400
+        active_job = repo().find_active_job(cluster_id, "install")
+        if active_job:
+            return jsonify({
+                "error": "cluster already has an active install job",
+                "job_id": active_job["id"],
+            }), 409
         data = payload()
         try:
             job = start_install_job(cluster_id, selected_steps=data.get("steps"))
