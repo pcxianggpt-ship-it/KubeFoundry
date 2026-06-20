@@ -90,11 +90,14 @@ def _run_step(job_id, context, step, log_dir, artifacts):
                 for node in targets
             ]
             for future in as_completed(futures):
-                if not future.result():
+                if not _result_ok(future.result()):
                     failed = True
     else:
         for node in targets:
-            if not _run_step_on_node(job_id, context, step, step_row["id"], node, log_dir, artifacts):
+            result = _run_step_on_node(
+                job_id, context, step, step_row["id"], node, log_dir, artifacts
+            )
+            if not _result_ok(result):
                 failed = True
                 if step.get("fail_fast", True):
                     break
@@ -122,52 +125,79 @@ def _run_step_on_node(job_id, context, step, step_id, node, log_dir, artifacts):
     repo.update_job_step_node(node_row["id"], status="running", started_at=_now())
     emit(job_id, "node.status", {"step_key": step["key"], "node_id": node["id"], "hostname": node["hostname"], "status": "running"})
 
-    work_dir = os.path.join(data_dir(), "jobs", str(job_id), "work", step["key"], node["hostname"])
-    if not os.path.exists(work_dir):
-        os.makedirs(work_dir)
-    runtime_path = write_runtime_env(os.path.join(work_dir, "runtime.env"), context, node)
-    script_copy = os.path.join(work_dir, "step.sh")
-    _write_step_script(script_copy, step, context, node)
+    code = 1
+    out = ""
+    err = ""
+    try:
+        work_dir = os.path.join(data_dir(), "jobs", str(job_id), "work", step["key"], node["hostname"])
+        if not os.path.exists(work_dir):
+            os.makedirs(work_dir)
+        runtime_path = write_runtime_env(os.path.join(work_dir, "runtime.env"), context, node)
+        script_copy = os.path.join(work_dir, "step.sh")
+        _write_step_script(script_copy, step, context, node)
 
-    remote_dir = "/tmp/kubefoundry/%s/%s/%s" % (job_id, step["key"], node["hostname"])
-    code, out, err = run_ssh(node, context, "mkdir -p %s" % shell_quote(remote_dir), timeout=60)
-    if code == 0:
-        code, out, err = _copy_step_resources(step, context, node, artifacts)
-    if code == 0:
-        for local_name in [runtime_path, script_copy]:
-            code, out, err = scp_to_node(local_name, remote_dir + "/" + os.path.basename(local_name), node, context)
-            if code != 0:
-                break
-    if code == 0:
-        args = " ".join(shell_quote(item) for item in _resolve_step_args(step, context))
-        inner_command = "source runtime.env && bash step.sh"
-        if args:
-            inner_command += " " + args
-        verify_command = _format_verify_command(step.get("verify_command"), context, node)
-        if verify_command:
-            inner_command += " && { %s; }" % verify_command
-        command = "cd %s && chmod +x step.sh && bash -lc %s" % (
-            shell_quote(remote_dir),
-            shell_quote(inner_command),
-        )
-        code, out, err = run_ssh(node, context, command, timeout=3600)
+        remote_dir = "/tmp/kubefoundry/%s/%s/%s" % (job_id, step["key"], node["hostname"])
+        code, out, err = run_ssh(node, context, "mkdir -p %s" % shell_quote(remote_dir), timeout=60)
+        if code == 0:
+            code, out, err = _copy_step_resources(step, context, node, artifacts)
+        if code == 0:
+            for local_name in [runtime_path, script_copy]:
+                code, out, err = scp_to_node(local_name, remote_dir + "/" + os.path.basename(local_name), node, context)
+                if code != 0:
+                    break
+        if code == 0:
+            args = " ".join(shell_quote(item) for item in _resolve_step_args(step, context))
+            inner_command = "source runtime.env && bash step.sh"
+            if args:
+                inner_command += " " + args
+            verify_command = _format_verify_command(step.get("verify_command"), context, node)
+            if verify_command:
+                inner_command += " && { %s; }" % verify_command
+            command = "cd %s && chmod +x step.sh && bash -lc %s" % (
+                shell_quote(remote_dir),
+                shell_quote(inner_command),
+            )
+            code, out, err = run_ssh(node, context, command, timeout=3600)
+    except Exception as exc:
+        code = 1
+        out = ""
+        err = str(exc)
 
-    with open(node_log_path, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write(out or "")
-        fh.write(err or "")
-    ok = code == 0
-    status = "success" if ok else "failed"
-    message = "执行成功" if ok else "执行失败，退出码: %s" % code
-    repo.update_job_step_node(node_row["id"], status=status, finished_at=_now(), exit_code=code, message=message)
-    append_log(job_id, log_dir, "%s %s %s" % (step["key"], node["hostname"], message), "node.status", {
-        "step_key": step["key"],
-        "node_id": node["id"],
-        "hostname": node["hostname"],
-        "status": status,
-        "exit_code": code,
-        "log_path": node_log_path,
-    })
-    return ok
+    try:
+        with open(node_log_path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(out or "")
+            fh.write(err or "")
+        ok = code == 0
+        status = "success" if ok else "failed"
+        message = "执行成功" if ok else "执行失败，退出码: %s" % code
+        repo.update_job_step_node(node_row["id"], status=status, finished_at=_now(), exit_code=code, message=message)
+        append_log(job_id, log_dir, "%s %s %s" % (step["key"], node["hostname"], message), "node.status", {
+            "step_key": step["key"],
+            "node_id": node["id"],
+            "hostname": node["hostname"],
+            "status": status,
+            "exit_code": code,
+            "log_path": node_log_path,
+        })
+        return _node_result(ok, code, message, out, err)
+    finally:
+        repo.close()
+
+
+def _node_result(ok, exit_code, message, stdout="", stderr=""):
+    return {
+        "ok": bool(ok),
+        "exit_code": int(exit_code),
+        "message": message,
+        "stdout": stdout or "",
+        "stderr": stderr or "",
+    }
+
+
+def _result_ok(result):
+    if isinstance(result, dict):
+        return bool(result.get("ok"))
+    return bool(result)
 
 
 def _copy_step_resources(step, context, node, artifacts):
