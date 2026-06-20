@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.7'
+      - run: pip install -r web/backend/requirements.txt
+      - run: python -m unittest discover -s tests -v
+        working-directory: web/backend
+      - run: python -m compileall -q kubefoundry tests
+        working-directory: web/backend
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/frontend/package-lock.json
+      - run: npm ci
+        working-directory: web/frontend
+      - run: npm test
+        working-directory: web/frontend
+      - run: npm run build
+        working-directory: web/frontend
+      - run: npm audit --omit=dev
+        working-directory: web/frontend
+
+  repository:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: find scripts -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+      - run: bash scripts/tests/test_cli_routing.sh
+      - run: bash scripts/ci/check-lf.sh
+      - run: bash scripts/ci/check-secrets.sh
