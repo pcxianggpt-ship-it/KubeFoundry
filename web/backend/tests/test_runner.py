@@ -129,6 +129,25 @@ class RunnerTestCase(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(2, run_node.call_count)
 
+    def test_parallel_worker_exception_marks_step_failed(self):
+        with patch(
+            "kubefoundry.installer.runner._run_step_on_node",
+            side_effect=RuntimeError("parallel worker crashed"),
+        ):
+            ok = runner._run_step(
+                self.job["id"],
+                self.context,
+                self.step("parallel-error", mode="parallel"),
+                self.log_dir,
+                {},
+            )
+
+        self.assertFalse(ok)
+        with Repository() as repo:
+            step = repo.list_job_steps(self.job["id"])[0]
+        self.assertEqual("failed", step["status"])
+        self.assertIn("parallel worker crashed", step["message"])
+
     def test_join_artifact_is_collected_and_reused(self):
         artifacts = {}
         output_step = {
@@ -244,6 +263,40 @@ class RunnerTestCase(unittest.TestCase):
         self.assertTrue(result["ok"])
         check_health.assert_called_once_with(self.master, self.context)
         scp.assert_not_called()
+
+    def test_node_log_directory_creation_is_idempotent(self):
+        step = self.step("idempotent-dir", target_scope="workers")
+        with Repository() as repo:
+            step_row = repo.create_job_step(self.job["id"], step)
+        real_makedirs = os.makedirs
+        node_dir = os.path.join(self.log_dir, step["key"])
+
+        def require_exist_ok(path, *args, **kwargs):
+            if path == node_dir and not kwargs.get("exist_ok"):
+                raise FileExistsError(path)
+            return real_makedirs(path, *args, **kwargs)
+
+        with patch(
+            "kubefoundry.installer.runner.os.makedirs",
+            side_effect=require_exist_ok,
+        ), patch(
+            "kubefoundry.installer.runner.run_ssh",
+            return_value=(0, "", ""),
+        ), patch(
+            "kubefoundry.installer.runner.scp_to_node",
+            return_value=(0, "", ""),
+        ):
+            result = runner._run_step_on_node(
+                self.job["id"],
+                self.context,
+                step,
+                step_row["id"],
+                self.worker,
+                self.log_dir,
+                {},
+            )
+
+        self.assertTrue(result["ok"])
 
 
 if __name__ == "__main__":

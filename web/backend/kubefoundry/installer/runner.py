@@ -76,13 +76,16 @@ def _run_step(job_id, context, step, log_dir, artifacts):
         message = "脚本不存在: %s" % step["script"]
         repo.update_job_step(step_row["id"], status="failed", finished_at=_now(), exit_code=127, message=message)
         append_log(job_id, log_dir, message, "step.status", {"step_key": step["key"], "status": "failed"})
+        repo.close()
         return False
     if not targets:
         repo.update_job_step(step_row["id"], status="success", finished_at=_now(), exit_code=0, message="无目标节点，跳过")
         append_log(job_id, log_dir, "步骤无目标节点，跳过: %s" % step["key"])
+        repo.close()
         return True
 
     failed = False
+    failure_messages = []
     if step.get("mode") == "parallel":
         max_workers = min(int(step.get("max_workers") or 5), len(targets))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -91,7 +94,13 @@ def _run_step(job_id, context, step, log_dir, artifacts):
                 for node in targets
             ]
             for future in as_completed(futures):
-                if not _result_ok(future.result()):
+                try:
+                    result = future.result()
+                except Exception as exc:
+                    failed = True
+                    failure_messages.append(str(exc))
+                    continue
+                if not _result_ok(result):
                     failed = True
     else:
         for node in targets:
@@ -110,17 +119,24 @@ def _run_step(job_id, context, step, log_dir, artifacts):
         except ValueError as exc:
             failed = True
             status = "failed"
-            repo.update_job_step(step_row["id"], message=str(exc))
-    repo.update_job_step(step_row["id"], status=status, finished_at=_now(), exit_code=1 if failed else 0)
+            failure_messages.append(str(exc))
+    message = "; ".join(failure_messages)
+    repo.update_job_step(
+        step_row["id"],
+        status=status,
+        finished_at=_now(),
+        exit_code=1 if failed else 0,
+        message=message,
+    )
     append_log(job_id, log_dir, "步骤完成: %s status=%s" % (step["key"], status), "step.status", {"step_key": step["key"], "status": status})
+    repo.close()
     return not failed
 
 
 def _run_step_on_node(job_id, context, step, step_id, node, log_dir, artifacts):
     repo = Repository()
     node_dir = os.path.join(log_dir, step["key"])
-    if not os.path.exists(node_dir):
-        os.makedirs(node_dir)
+    os.makedirs(node_dir, exist_ok=True)
     node_log_path = os.path.join(node_dir, "%s.log" % node["hostname"])
     node_row = repo.create_job_step_node(step_id, node["id"], node_log_path)
     repo.update_job_step_node(node_row["id"], status="running", started_at=_now())
