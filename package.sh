@@ -135,8 +135,10 @@ collect_python_dependencies() {
     fi
 
     log_info "收集纯 Python 后端依赖..."
-    PYYAML_FORCE_LIBYAML=0 python3 -m pip install \
+    PYYAML_FORCE_LIBYAML=0 PIP_ROOT_USER_ACTION=ignore python3 -m pip install \
         --disable-pip-version-check \
+        --ignore-installed \
+        --no-warn-conflicts \
         --target "${release_dir}/vendor" \
         --requirement "${PROJECT_ROOT}/web/backend/requirements.txt"
 
