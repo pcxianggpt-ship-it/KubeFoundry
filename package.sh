@@ -71,7 +71,7 @@ check_project() {
 check_commands() {
     local commands=(tar sha256sum)
     if [ "${TEST_MODE}" != "1" ]; then
-        commands+=(node npm python3)
+        commands+=(python3)
     fi
     local command_name
     for command_name in "${commands[@]}"; do
@@ -91,13 +91,20 @@ build_frontend() {
         return 0
     fi
 
-    log_info "安装前端依赖并执行测试..."
-    (
-        cd "${PROJECT_ROOT}/web/frontend"
-        npm ci
-        npm test
-        npm run build
-    )
+    if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
+        log_info "安装前端依赖并执行测试..."
+        (
+            cd "${PROJECT_ROOT}/web/frontend"
+            npm ci
+            npm test
+            npm run build
+        )
+    elif [ -f "${PROJECT_ROOT}/web/frontend/dist/index.html" ]; then
+        log_info "未找到 Node.js/npm，使用已有前端构建产物"
+    else
+        log_error "未找到 Node.js/npm，且 web/frontend/dist 不存在"
+        return 1
+    fi
     cp -a "${PROJECT_ROOT}/web/frontend/dist" "${release_dir}/frontend-dist"
 }
 

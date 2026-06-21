@@ -64,4 +64,13 @@ grep -q "KF_DB_PATH=${TEST_ROOT}/deployment/data/kubefoundry.db" "${SERVICE_FILE
 grep -q "0.0.0.0:11001" "${SERVICE_FILE}" ||
     fail "service 自定义端口不正确"
 
+grep -q "bash package.sh" "${PROJECT_ROOT}/README.md" ||
+    fail "README 缺少一键打包命令"
+grep -q "sudo bash deploy.sh" "${PROJECT_ROOT}/README.md" ||
+    fail "README 缺少一键部署命令"
+grep -q "10001" "${PROJECT_ROOT}/doc/v0.1.0/web-wizard-v0.1.0-usage.md" ||
+    fail "使用说明缺少生产端口"
+grep -q '${PWD}/data' "${PROJECT_ROOT}/doc/v0.1.0/web-wizard-v0.1.0-usage.md" ||
+    fail "使用说明缺少数据目录"
+
 echo "Web 打包部署脚本测试通过"
