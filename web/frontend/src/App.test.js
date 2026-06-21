@@ -11,9 +11,12 @@ import {
   getClusterSettings,
   getInstallPlan,
   getJob,
+  getJobStepNodeLog,
   getJobSteps,
+  getPrecheckResults,
   getSettings,
   listClusters,
+  listJobs,
   listNodes,
   startInstall,
   startPrecheck,
@@ -59,11 +62,23 @@ function mountApp() {
 
 
 describe('Web wizard', () => {
+  let eventSources;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    eventSources = [];
     vi.stubGlobal('EventSource', class {
-      addEventListener() {}
-      close() {}
+      constructor(url) {
+        this.url = url;
+        this.listeners = {};
+        eventSources.push(this);
+      }
+      addEventListener(name, handler) {
+        this.listeners[name] = handler;
+      }
+      close() {
+        this.closed = true;
+      }
     });
     listClusters.mockResolvedValue({ items: [] });
     getInstallPlan.mockResolvedValue({ items: [] });
@@ -176,5 +191,99 @@ describe('Web wizard', () => {
     expect(wrapper.vm.manualJobId).toBe(42);
     expect(wrapper.vm.activeStep).toBe(8);
     expect(getJob).toHaveBeenCalledWith(42);
+  });
+
+  it('opens task history and restores a completed precheck job', async () => {
+    const wrapper = mountApp();
+    await flushPromises();
+    wrapper.vm.selectedClusterId = 7;
+    const job = {
+      id: 31,
+      cluster_id: 7,
+      job_type: 'precheck',
+      status: 'success'
+    };
+    listJobs.mockResolvedValue({ items: [job] });
+    getJob.mockResolvedValue(job);
+    getJobSteps.mockResolvedValue({
+      items: [{
+        id: 4,
+        step_key: 'web-precheck-node-env',
+        status: 'success',
+        nodes: []
+      }]
+    });
+    getPrecheckResults.mockResolvedValue({
+      items: [{
+        hostname: 'k8sc1',
+        check_name: 'SSH 连通性',
+        status: 'pass',
+        message: 'SSH 连接成功'
+      }]
+    });
+
+    await wrapper.vm.openJobHistory();
+    expect(wrapper.vm.jobHistoryDialogVisible).toBe(true);
+    expect(wrapper.vm.jobs).toEqual([job]);
+
+    await wrapper.vm.bindHistoryJob(job);
+    await flushPromises();
+
+    expect(wrapper.vm.activeStep).toBe(5);
+    expect(wrapper.vm.manualJobId).toBe(31);
+    expect(wrapper.vm.precheckResults).toHaveLength(1);
+    expect(eventSources).toHaveLength(0);
+  });
+
+  it('opens a node log from the step status panel', async () => {
+    const wrapper = mountApp();
+    await flushPromises();
+    getJobStepNodeLog.mockResolvedValue({
+      item: {
+        id: 18,
+        step_key: '16-install-containerd',
+        hostname: 'k8sw1'
+      },
+      content: 'containerd installation completed'
+    });
+
+    await wrapper.vm.loadNodeLog({ id: 18, hostname: 'k8sw1' });
+    await flushPromises();
+
+    expect(getJobStepNodeLog).toHaveBeenCalledWith(18);
+    expect(wrapper.vm.nodeLogDialogVisible).toBe(true);
+    expect(wrapper.vm.nodeLogTitle).toContain('16-install-containerd');
+    expect(wrapper.vm.nodeLogContent).toContain('installation completed');
+  });
+
+  it('connects SSE events, refreshes state, and closes on terminal status', async () => {
+    vi.useFakeTimers();
+    const wrapper = mountApp();
+    await flushPromises();
+    wrapper.vm.manualJobId = 44;
+    getJob.mockResolvedValue({
+      id: 44,
+      job_type: 'install',
+      status: 'success'
+    });
+    getJobSteps.mockResolvedValue({ items: [] });
+
+    wrapper.vm.connectEvents();
+    expect(eventSources).toHaveLength(1);
+    expect(eventSources[0].url).toBe('/api/jobs/44/events');
+
+    eventSources[0].listeners['step.status']({
+      data: JSON.stringify({ payload: { status: 'running' } })
+    });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(getJob).toHaveBeenCalledWith(44);
+
+    eventSources[0].listeners['job.status']({
+      data: JSON.stringify({ payload: { status: 'success' } })
+    });
+    await vi.advanceTimersByTimeAsync(800);
+    expect(eventSources[0].closed).toBe(true);
+    expect(wrapper.vm.eventConnected).toBe(false);
+    vi.useRealTimers();
   });
 });

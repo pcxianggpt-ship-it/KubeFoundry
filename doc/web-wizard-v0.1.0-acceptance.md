@@ -181,3 +181,35 @@ registry-ui                           Up 0.0.0.0:5080->80
 - 安装介质必须位于运行后端的 Linux 管理节点本地。
 - 任务由进程内线程执行，不支持取消、步骤重试或进程重启后恢复。
 - Phase 3 生态组件未接入 Web 安装计划。
+
+## 9. Web 页面自动验收
+
+前端组件测试覆盖：
+
+```text
+创建集群、保存 SSH 和路径设置
+添加节点
+启动预检查
+安装任务 409 冲突后绑定现有任务
+打开任务历史并恢复预检查结果
+打开节点级日志
+连接 SSE、事件触发刷新、终态自动断开
+Phase 3 生态组件只读提示
+```
+
+2026-06-21 本地真实服务链路验证：
+
+```text
+GET http://127.0.0.1:5173/                         200
+GET http://127.0.0.1:5173/api/health              200
+GET http://127.0.0.1:5173/api/clusters            200
+GET http://127.0.0.1:5173/api/jobs                200
+GET http://127.0.0.1:5173/api/jobs/1/steps        200
+GET http://127.0.0.1:5173/api/jobs/1/precheck-results 200
+GET http://127.0.0.1:5173/api/job-step-nodes/1/log    200
+GET http://127.0.0.1:5173/api/jobs/1/events       200 text/event-stream
+```
+
+真实 SSE 响应包含 `job.status` 和 `precheck.result` 事件，节点日志接口返回历史预检查日志。
+
+本次 Codex 应用内浏览器控制插件因运行环境元数据异常无法建立会话，因此未完成视觉截图和人工点击复核；上述结论来自 Vue 组件测试和真实 HTTP 代理链路，不将其表述为人工浏览器验收。
