@@ -1,3 +1,5 @@
+import time
+
 from kubefoundry.installer.ssh import run_ssh
 
 
@@ -47,27 +49,8 @@ def evaluate_cluster_health(
     }
 
 
-def check_cluster_health(node, context):
-    node_code, node_output, node_error = run_ssh(
-        node,
-        context,
-        KUBECTL_NODES_COMMAND,
-        timeout=120,
-    )
-    if node_code != 0:
-        return node_code, node_output, node_error
-
-    pod_code, pod_output, pod_error = run_ssh(
-        node,
-        context,
-        KUBECTL_PODS_COMMAND,
-        timeout=120,
-    )
-    if pod_code != 0:
-        return pod_code, node_output, pod_error
-
-    ready_nodes, not_ready_nodes = _parse_nodes(node_output)
-    failed_pods, flannel_ready = _parse_pods(pod_output)
+def check_cluster_health(node, context, attempts=30, interval=10):
+    attempts = max(1, int(attempts))
     expected_nodes = [
         item.get("hostname")
         for item in (
@@ -76,23 +59,49 @@ def check_cluster_health(node, context):
         )
         if item.get("hostname")
     ]
-    result = evaluate_cluster_health(
-        expected_nodes,
-        ready_nodes,
-        not_ready_nodes,
-        failed_pods,
-        flannel_ready,
-    )
-    output = "\n".join([
-        "=== kubectl get nodes ===",
-        (node_output or "").rstrip(),
-        "=== kubectl get pods -A ===",
-        (pod_output or "").rstrip(),
-        "=== health result ===",
-        result["message"],
-        "",
-    ])
-    return (0 if result["ok"] else 1), output, ""
+    output = ""
+    for attempt in range(attempts):
+        node_code, node_output, node_error = run_ssh(
+            node,
+            context,
+            KUBECTL_NODES_COMMAND,
+            timeout=120,
+        )
+        if node_code != 0:
+            return node_code, node_output, node_error
+
+        pod_code, pod_output, pod_error = run_ssh(
+            node,
+            context,
+            KUBECTL_PODS_COMMAND,
+            timeout=120,
+        )
+        if pod_code != 0:
+            return pod_code, node_output, pod_error
+
+        ready_nodes, not_ready_nodes = _parse_nodes(node_output)
+        failed_pods, flannel_ready = _parse_pods(pod_output)
+        result = evaluate_cluster_health(
+            expected_nodes,
+            ready_nodes,
+            not_ready_nodes,
+            failed_pods,
+            flannel_ready,
+        )
+        output = "\n".join([
+            "=== kubectl get nodes ===",
+            (node_output or "").rstrip(),
+            "=== kubectl get pods -A ===",
+            (pod_output or "").rstrip(),
+            "=== health result ===",
+            result["message"],
+            "",
+        ])
+        if result["ok"]:
+            return 0, output, ""
+        if attempt + 1 < attempts:
+            time.sleep(interval)
+    return 1, output, ""
 
 
 def _parse_nodes(output):

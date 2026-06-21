@@ -93,6 +93,44 @@ class ClusterHealthTestCase(unittest.TestCase):
         self.assertEqual("", out)
         self.assertIn("connection refused", err)
 
+    def test_remote_health_check_waits_for_cluster_to_converge(self):
+        not_ready_nodes = (
+            "master-1 Ready control-plane 2m v1.30.14\n"
+            "worker-1 NotReady <none> 5s v1.30.14\n"
+        )
+        pending_pods = (
+            "kube-flannel kube-flannel-ds-a 1/1 Running 0 2m\n"
+            "kube-flannel kube-flannel-ds-b 0/1 Init:1/2 0 5s\n"
+        )
+        ready_nodes = (
+            "master-1 Ready control-plane 2m v1.30.14\n"
+            "worker-1 Ready <none> 15s v1.30.14\n"
+        )
+        running_pods = (
+            "kube-flannel kube-flannel-ds-a 1/1 Running 0 2m\n"
+            "kube-flannel kube-flannel-ds-b 1/1 Running 0 15s\n"
+        )
+        with patch(
+            "kubefoundry.installer.health.run_ssh",
+            side_effect=[
+                (0, not_ready_nodes, ""),
+                (0, pending_pods, ""),
+                (0, ready_nodes, ""),
+                (0, running_pods, ""),
+            ],
+        ), patch("time.sleep") as sleep:
+            code, out, err = check_cluster_health(
+                self.master,
+                self.context,
+                attempts=2,
+                interval=1,
+            )
+
+        self.assertEqual(0, code)
+        self.assertEqual("", err)
+        self.assertIn("cluster health check passed", out)
+        sleep.assert_called_once_with(1)
+
 
 if __name__ == "__main__":
     unittest.main()
