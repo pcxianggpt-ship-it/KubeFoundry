@@ -2,14 +2,7 @@ import json
 import os
 import time
 
-from flask import (
-    Flask,
-    Response,
-    jsonify,
-    request,
-    send_from_directory,
-    stream_with_context,
-)
+from flask import Flask, Response, jsonify, request, stream_with_context
 
 from kubefoundry.installer.context import (
     build_cluster_context,
@@ -25,14 +18,7 @@ from kubefoundry.store.repository import Repository
 
 
 def create_app():
-    frontend_dist = os.environ.get(
-        "KF_FRONTEND_DIST",
-        os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            "frontend-dist",
-        ),
-    )
-    app = Flask(__name__, static_folder=None)
+    app = Flask(__name__)
     init_db()
     with Repository() as startup_repo:
         startup_repo.fail_interrupted_jobs(
@@ -318,19 +304,6 @@ def create_app():
                 time.sleep(1)
 
         return Response(stream(), mimetype="text/event-stream")
-
-    @app.route("/", defaults={"path": ""})
-    @app.route("/<path:path>")
-    def frontend(path):
-        if path.startswith("api/"):
-            return jsonify({"error": "not found"}), 404
-        candidate = os.path.join(frontend_dist, path)
-        if path and os.path.isfile(candidate):
-            return send_from_directory(frontend_dist, path)
-        index_path = os.path.join(frontend_dist, "index.html")
-        if os.path.isfile(index_path):
-            return send_from_directory(frontend_dist, "index.html")
-        return jsonify({"error": "frontend assets not found"}), 404
 
     return app
 

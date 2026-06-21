@@ -23,26 +23,8 @@ class ApiTestCase(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp(prefix="kubefoundry-test-")
         self.old_db_path = os.environ.get("KF_DB_PATH")
         self.old_data_dir = os.environ.get("KF_DATA_DIR")
-        self.old_frontend_dist = os.environ.get("KF_FRONTEND_DIST")
         os.environ["KF_DATA_DIR"] = self.temp_dir
         os.environ["KF_DB_PATH"] = os.path.join(self.temp_dir, "kubefoundry.db")
-        self.frontend_dist = os.path.join(self.temp_dir, "frontend-dist")
-        os.makedirs(os.path.join(self.frontend_dist, "assets"))
-        with open(
-            os.path.join(self.frontend_dist, "index.html"),
-            "w",
-            encoding="utf-8",
-            newline="\n",
-        ) as fh:
-            fh.write("<html>KubeFoundry production</html>\n")
-        with open(
-            os.path.join(self.frontend_dist, "assets", "app.js"),
-            "w",
-            encoding="utf-8",
-            newline="\n",
-        ) as fh:
-            fh.write("console.log('production asset');\n")
-        os.environ["KF_FRONTEND_DIST"] = self.frontend_dist
         init_db()
         self.app = create_app()
         self.app.config["TESTING"] = True
@@ -57,31 +39,7 @@ class ApiTestCase(unittest.TestCase):
             os.environ.pop("KF_DATA_DIR", None)
         else:
             os.environ["KF_DATA_DIR"] = self.old_data_dir
-        if self.old_frontend_dist is None:
-            os.environ.pop("KF_FRONTEND_DIST", None)
-        else:
-            os.environ["KF_FRONTEND_DIST"] = self.old_frontend_dist
         shutil.rmtree(self.temp_dir)
-
-    def test_frontend_static_files_and_spa_fallback(self):
-        response = self.client.get("/")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("KubeFoundry production", response.get_data(as_text=True))
-        response.close()
-
-        response = self.client.get("/assets/app.js")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("production asset", response.get_data(as_text=True))
-        response.close()
-
-        response = self.client.get("/clusters/1/install")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("KubeFoundry production", response.get_data(as_text=True))
-        response.close()
-
-        response = self.client.get("/api/not-found")
-        self.assertEqual(response.status_code, 404)
-        response.close()
 
     def test_cluster_node_settings_context_and_runtime_env(self):
         response = self.client.post(
