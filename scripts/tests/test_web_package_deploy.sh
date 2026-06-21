@@ -19,6 +19,18 @@ fail() {
 [ -f "${PROJECT_ROOT}/package.sh" ] || fail "package.sh 不存在"
 [ -f "${PROJECT_ROOT}/deploy.sh" ] || fail "deploy.sh 不存在"
 
+for requirement in \
+    "Jinja2==3.1.2" \
+    "itsdangerous==2.1.2" \
+    "click==8.1.7" \
+    "MarkupSafe==2.1.5" \
+    "importlib-metadata==6.7.0" \
+    "zipp==3.15.0" \
+    "packaging==23.2"; do
+    grep -qx "${requirement}" "${PROJECT_ROOT}/web/backend/requirements.txt" ||
+        fail "缺少 Python 3.7 兼容依赖锁定: ${requirement}"
+done
+
 bash "${PROJECT_ROOT}/package.sh" --help | grep -q "kubefoundry-web-v" ||
     fail "package.sh 帮助信息缺少发布包名称"
 bash "${PROJECT_ROOT}/deploy.sh" --help | grep -q -- "--port PORT" ||
