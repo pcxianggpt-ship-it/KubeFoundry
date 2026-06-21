@@ -6,6 +6,7 @@
 
 ## 目录
 
+- [Web Wizard API](#web-wizard-api)
 - [一、日志函数](#一日志函数)
 - [二、配置解析函数](#二配置解析函数)
 - [三、SSH/SCP 函数](#三sshscp-函数)
@@ -13,6 +14,53 @@
 - [五、批量执行函数（脚本）](#五批量执行函数脚本)
 - [六、回滚函数](#六回滚函数)
 - [七、验证函数](#七验证函数)
+
+---
+
+## Web Wizard API
+
+基础路径：`/api`
+
+核心接口：
+
+```text
+GET    /api/health
+GET    /api/clusters
+POST   /api/clusters
+GET    /api/clusters/{cluster_id}
+PUT    /api/clusters/{cluster_id}
+DELETE /api/clusters/{cluster_id}
+POST   /api/clusters/{cluster_id}/precheck
+POST   /api/clusters/{cluster_id}/install
+GET    /api/jobs/{job_id}
+GET    /api/jobs/{job_id}/steps
+GET    /api/jobs/{job_id}/events
+GET    /api/jobs/{job_id}/logs
+GET    /api/jobs/{job_id}/config-yaml
+GET    /api/jobs/{job_id}/config-snapshot
+```
+
+创建安装任务：
+
+```text
+POST /api/clusters/{cluster_id}/install
+202: 安装任务创建成功
+400: 配置、节点或安装介质校验失败
+409: 同一集群已有 pending/running 安装任务
+```
+
+409 响应示例：
+
+```json
+{
+  "error": "cluster already has an active install job",
+  "job_id": 42
+}
+```
+
+后端启动时会把遗留的 `pending` 或 `running` 任务标记为 `failed`，并在 `jobs.failure_reason` 中记录中断原因。
+
+安装计划最后一步为 `web-verify-cluster-health`，最多等待 5 分钟，检查节点 Ready、Flannel 和系统 Pod 状态。
 
 ---
 

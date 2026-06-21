@@ -2,6 +2,8 @@
 
 K8S 集群一键安装工具 - 基于 Bash 脚本，支持高可用集群部署。
 
+项目同时提供 Web Wizard v0.1.0：使用 Flask、SQLite、Vue 3 和现有 Bash step 脚本完成可视化预检查、安装编排、实时日志与失败定位。
+
 ## 功能特性
 
 - ✅ 一键部署 K8S 高可用集群（多控制节点 + 多工作节点）
@@ -28,6 +30,26 @@ K8S 集群一键安装工具 - 基于 Bash 脚本，支持高可用集群部署�
 - 网络：节点之间网络互通
 
 ## 快速开始
+
+### Web Wizard
+
+后端要求 Python 3.7：
+
+```bash
+cd web/backend
+python3 -m pip install -r requirements.txt
+python3 app.py
+```
+
+前端要求 Node.js 18+：
+
+```bash
+cd web/frontend
+npm ci
+npm run dev
+```
+
+v0.1.0 仅支持 SSH 私钥认证，安装范围为 Kubernetes Phase 2、Flannel 和最终健康检查。安装介质必须位于运行后端的 Linux 管理节点本地。详细说明见 `doc/web-wizard-v0.1.0-usage.md`。
 
 ### 1. 克隆项目
 

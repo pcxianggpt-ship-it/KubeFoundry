@@ -54,6 +54,8 @@ RBAC
 
 ## 3. 里程碑
 
+当前状态：M1 至 M8 已完成。2026-06-20 至 2026-06-21 已完成 Kylin Linux 三节点真实环境安装，详细证据见 `doc/web-wizard-v0.1.0-acceptance.md`。
+
 ### M1: 后端工程骨架
 
 目标：建立可启动、可测试、可初始化数据库的 Python 后端。
@@ -336,6 +338,7 @@ v0.1.0 后端先实现核心 K8S 底座步骤。
 20-add-control-nodes         other_control_planes   serial
 21-add-worker-nodes          workers                parallel
 22-install-cni-flannel       primary_control_plane  serial
+web-verify-cluster-health    primary_control_plane  serial
 ```
 
 生态组件在 v0.1.0 中作为第二批接入：
@@ -497,4 +500,3 @@ docs: add web wizard usage guide
 ```
 
 完成第一轮后，再接安装编排器。
-

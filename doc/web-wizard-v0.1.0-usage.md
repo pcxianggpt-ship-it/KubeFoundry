@@ -111,19 +111,24 @@ v0.1.0 前端提供基础向导能力：
 20-add-control-nodes
 21-add-worker-nodes
 22-install-cni-flannel
+web-verify-cluster-health
 ```
 
 执行安装前，管理节点的安装介质目录至少需要包含：
 
 ```text
 ${install_media}/01.rpm_package/k8srepo_kylinos_sp3_${arch}.tar.gz
-${install_media}/01.rpm_package/kubeadm-${k8s_version}-100y-${arch}
+${install_media}/01.rpm_package/kubeadm-v${k8s_version}-100y-${arch}
 ${install_media}/02.container_runtime/
 ${install_media}/03.setup_file/kube-flannel.yml
 ${install_media}/04.registry/
 ```
 
 Python 会在任务启动前验证这些路径，并按步骤分发到目标节点。`18-init-k8s-cluster` 使用 `kubeadm token create --print-join-command` 和 `kubeadm init phase upload-certs` 生成控制节点及工作节点 join 命令，保存为任务产物后自动分发给步骤 20 和 21。
+
+安装介质必须位于运行后端的 Linux 管理节点本地。管理节点还必须能够使用配置的 SSH 私钥免密登录所有目标节点。
+
+最终步骤 `web-verify-cluster-health` 会等待最多 5 分钟，检查所有节点 Ready、Flannel 就绪以及系统 Pod 无失败状态。
 
 ## API 依赖
 
@@ -154,3 +159,18 @@ GET    /api/job-step-nodes/{item_id}/log
 ## SSH 认证范围
 
 v0.1.0 仅支持 SSH 私钥认证，后端不会保存 SSH 密码或 sudo 密码。运行后端的管理节点必须能够使用配置的私钥登录目标节点。
+
+## 已验证环境
+
+2026-06-20 至 2026-06-21 已在以下环境完成真实安装：
+
+```text
+Kylin Linux Advanced Server V10
+1 control_plane + 2 workers
+Kubernetes v1.30.14
+containerd 1.7.18
+Flannel
+registry 2.8.3
+```
+
+详细记录见 `doc/web-wizard-v0.1.0-acceptance.md`。
