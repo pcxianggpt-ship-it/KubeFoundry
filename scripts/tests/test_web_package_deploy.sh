@@ -37,7 +37,8 @@ for requirement in \
     "MarkupSafe==2.1.5" \
     "importlib-metadata==6.7.0" \
     "zipp==3.15.0" \
-    "packaging==23.2"; do
+    "packaging==23.2" \
+    "typing_extensions==4.7.1"; do
     grep -qx "${requirement}" "${PROJECT_ROOT}/web/backend/requirements.txt" ||
         fail "缺少 Python 3.7 兼容依赖锁定: ${requirement}"
 done
@@ -93,6 +94,10 @@ grep -q "KF_DB_PATH=${TEST_ROOT}/deployment/data/kubefoundry.db" "${SERVICE_FILE
     fail "service 数据库路径不正确"
 grep -q "0.0.0.0:11001" "${SERVICE_FILE}" ||
     fail "service 自定义端口不正确"
+grep -q 'tail -n 100 "${LOG_DIR}/error.log"' "${PROJECT_ROOT}/deploy.sh" ||
+    fail "deploy.sh 健康检查失败时未输出 Gunicorn 错误日志"
+grep -q 'journalctl -u "${SERVICE_NAME}" -n 100 --no-pager' "${PROJECT_ROOT}/deploy.sh" ||
+    fail "deploy.sh 健康检查失败时未输出 systemd 日志"
 
 grep -q "bash package.sh" "${PROJECT_ROOT}/README.md" ||
     fail "README 缺少一键打包命令"

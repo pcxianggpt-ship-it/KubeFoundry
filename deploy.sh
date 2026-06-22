@@ -342,6 +342,12 @@ start_service() {
     done
 
     log_error "服务健康检查超时"
+    if [ -f "${LOG_DIR}/error.log" ]; then
+        log_error "Gunicorn 最近错误日志:"
+        tail -n 100 "${LOG_DIR}/error.log" >&2 || true
+    fi
+    log_error "systemd 最近日志:"
+    journalctl -u "${SERVICE_NAME}" -n 100 --no-pager >&2 || true
     systemctl status "${SERVICE_NAME}" --no-pager || true
     return 1
 }
