@@ -158,9 +158,9 @@ k8s_version=$(config_get '.cluster.k8s_version')
 # 获取 Pod 网段，默认值
 pod_subnet=$(config_get '.cluster.pod_subnet' "10.244.0.0/16")
 
-# 获取 API 端口，默认值
-api_port=$(config_get '.network.api_server_port' 6443)
 ```
+
+Kubernetes API Server 端口固定为 `6443`，不通过 `config_get` 读取。
 
 ---
 

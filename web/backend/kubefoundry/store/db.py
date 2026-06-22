@@ -1,7 +1,7 @@
 import os
 import sqlite3
 
-SCHEMA_VERSION = "0.1.0"
+SCHEMA_VERSION = "0.1.1"
 
 
 def project_root():
@@ -55,6 +55,62 @@ def _migrate_schema(conn):
         conn.execute(
             "ALTER TABLE jobs ADD COLUMN failure_reason TEXT DEFAULT ''"
         )
+    cluster_columns = [
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(clusters)").fetchall()
+    ]
+    if "api_server_port" in cluster_columns:
+        _remove_api_server_port_column(conn)
+
+
+def _remove_api_server_port_column(conn):
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys = OFF")
+    try:
+        conn.executescript(
+            """
+BEGIN IMMEDIATE;
+
+DROP TABLE IF EXISTS clusters_without_api_server_port;
+
+CREATE TABLE clusters_without_api_server_port (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    k8s_version TEXT NOT NULL DEFAULT '1.30.14',
+    pod_subnet TEXT NOT NULL DEFAULT '10.244.0.0/16',
+    service_subnet TEXT NOT NULL DEFAULT '10.96.0.0/16',
+    registry_hostname TEXT DEFAULT 'registry',
+    registry_ip TEXT DEFAULT '',
+    registry_port INTEGER NOT NULL DEFAULT 5000,
+    install_mode TEXT DEFAULT 'online',
+    status TEXT NOT NULL DEFAULT 'draft',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+INSERT INTO clusters_without_api_server_port (
+    id, name, description, k8s_version, pod_subnet, service_subnet,
+    registry_hostname, registry_ip, registry_port, install_mode, status,
+    created_at, updated_at
+)
+SELECT
+    id, name, description, k8s_version, pod_subnet, service_subnet,
+    registry_hostname, registry_ip, registry_port, install_mode, status,
+    created_at, updated_at
+FROM clusters;
+
+DROP TABLE clusters;
+ALTER TABLE clusters_without_api_server_port RENAME TO clusters;
+
+COMMIT;
+"""
+        )
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
 
 
 SCHEMA_SQL = """
@@ -70,7 +126,6 @@ CREATE TABLE IF NOT EXISTS clusters (
     k8s_version TEXT NOT NULL DEFAULT '1.30.14',
     pod_subnet TEXT NOT NULL DEFAULT '10.244.0.0/16',
     service_subnet TEXT NOT NULL DEFAULT '10.96.0.0/16',
-    api_server_port INTEGER NOT NULL DEFAULT 6443,
     registry_hostname TEXT DEFAULT 'registry',
     registry_ip TEXT DEFAULT '',
     registry_port INTEGER NOT NULL DEFAULT 5000,

@@ -109,7 +109,6 @@ registry:
 |--------|------|--------|------|---------|
 | `network.gateway` | string | "10.3.66.1" | IPv4 网关 | 根据节点 IP 网段推导 |
 | `network.ipv6_gateway` | string | "fd00::1" | IPv6 网关 | 固定值 |
-| `network.api_server_port` | int | 6443 | API Server 端口 | K8S 默认值 |
 | `network.pod_cidr` | string | "10.244.0.0/16" | Pod 网络 | 与 cluster.pod_subnet 同步 |
 | `network.service_cidr` | string | "10.96.0.0/16" | Service 网络 | 与 cluster.service_subnet 同步 |
 
@@ -118,8 +117,9 @@ registry:
 network:
   gateway: "10.3.66.1"
   ipv6_gateway: "fd00::1"
-  api_server_port: 6443
 ```
+
+API Server 端口固定为 `6443`，不属于配置变量。
 
 ---
 
@@ -223,7 +223,6 @@ first_control_ip=$(echo "$first_control_plane" | jq -r '.ip')
 
 # 读取网络配置
 gateway=$(config_get '.network.gateway')
-api_port=$(config_get '.network.api_server_port')
 
 # 输出配置
 echo "K8S 版本: $k8s_version"
@@ -231,7 +230,6 @@ echo "Pod 网段: $pod_subnet"
 echo "控制节点数量: $control_plane_count"
 echo "工作节点数量: $worker_count"
 echo "网关: $gateway"
-echo "API 端口: $api_port"
 ```
 
 ### 12.2 在模板文件中使用
@@ -245,7 +243,7 @@ apiVersion: kubeadm.k8s.io/v1beta3
 kind: InitConfiguration
 localAPIEndpoint:
   advertiseAddress: $(config_get '.control_plane[0].ip')
-  bindPort: $(config_get '.network.api_server_port')
+  bindPort: 6443
 networking:
   podSubnet: $(config_get '.cluster.pod_subnet')
   serviceSubnet: $(config_get '.cluster.service_subnet')

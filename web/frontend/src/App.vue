@@ -53,9 +53,6 @@
                   <el-form-item label="Service 网段" prop="service_subnet">
                     <el-input v-model="clusterForm.service_subnet" placeholder="10.96.0.0/16" />
                   </el-form-item>
-                  <el-form-item label="API Server 端口" prop="api_server_port">
-                    <el-input-number v-model="clusterForm.api_server_port" :min="1" :max="65535" controls-position="right" />
-                  </el-form-item>
                   <el-form-item label="安装模式">
                     <el-segmented v-model="clusterForm.install_mode" :options="installModeOptions" />
                   </el-form-item>
@@ -483,7 +480,6 @@ const clusterForm = reactive({
   k8s_version: '1.30.14',
   pod_subnet: '10.244.0.0/16',
   service_subnet: '10.96.0.0/16',
-  api_server_port: 6443,
   registry_hostname: 'registry',
   registry_ip: '',
   registry_port: 5000,
@@ -528,8 +524,7 @@ const clusterRules = {
   name: [{ required: true, message: '请输入集群名称', trigger: 'blur' }],
   k8s_version: [{ required: true, message: '请输入 Kubernetes 版本', trigger: 'blur' }],
   pod_subnet: [{ required: true, message: '请输入 Pod 网段', trigger: 'blur' }],
-  service_subnet: [{ required: true, message: '请输入 Service 网段', trigger: 'blur' }],
-  api_server_port: [{ required: true, message: '请输入 API Server 端口', trigger: 'blur' }]
+  service_subnet: [{ required: true, message: '请输入 Service 网段', trigger: 'blur' }]
 };
 
 const nodeRules = {
@@ -587,7 +582,10 @@ async function loadClusters() {
 async function handleClusterChange(clusterId) {
   const cluster = clusterId ? normalizeItem(await getCluster(clusterId)) : null;
   if (cluster) {
-    Object.assign(clusterForm, cluster);
+    const clusterData = { ...cluster };
+    delete clusterData.api_server_port;
+    delete clusterForm.api_server_port;
+    Object.assign(clusterForm, clusterData);
     if (cluster.ssh_credentials) {
       Object.assign(sshForm, {
         auth_type: cluster.ssh_credentials.auth_type || 'key',

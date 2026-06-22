@@ -94,9 +94,9 @@
 | **执行机器** | 管理节点（本地执行） |
 | **批量执行函数** | 无需远程执行，本地直接运行脚本 |
 | **依赖关系** | 依赖 02-init-config.sh |
-| **主要功能** | 检查配置文件是否存在、验证必需配置项、验证所有节点 IP 地址格式（IPv4）、验证 API Server 端口号有效性、验证文件路径可访问性（如 YUM 源文件）、生成验证报告 |
-| **验证内容** | IP 地址格式、端口号范围、文件路径存在性 |
-| **所需参数** | 所有节点 IP、network.api_server_port、paths.repo_source、paths.kubeadm_100y、paths.container_runtime、paths.registry_install<br>（来源：config.control_plane[].ip、config.workers[].ip、config.network.*、config.paths.*） |
+| **主要功能** | 检查配置文件是否存在、验证必需配置项、验证所有节点 IP 地址格式（IPv4）、验证文件路径可访问性（如 YUM 源文件）、生成验证报告 |
+| **验证内容** | IP 地址格式、文件路径存在性 |
+| **所需参数** | 所有节点 IP、paths.repo_source、paths.kubeadm_100y、paths.container_runtime、paths.registry_install<br>（来源：config.control_plane[].ip、config.workers[].ip、config.paths.*） |
 
 ---
 
@@ -232,9 +232,9 @@
 | **执行机器** | 仅在 k8sc1（第一个控制节点）上执行 |
 | **批量执行函数** | `exec_remote_script "k8sc1" "scripts/steps/phase2_k8s_base/18-init-k8s-cluster.sh"` |
 | **依赖关系** | 依赖 14-replace-kubeadm.sh 和 16-install-containerd.sh |
-| **主要功能** | 编辑 cluster.yaml 配置文件（控制平面地址、本机IP、Pod网段、Service网段）、配置 kubelet 路径（`--root-dir=/data/kubelet_root`）、使用 kubeadm init 初始化集群、配置 kubectl（复制 admin.conf 到 `~/.kube/config`）、记录 kubeadm join 命令供后续添加节点使用 |
+| **主要功能** | 编辑 cluster.yaml 配置文件（控制平面地址、本机IP、Pod网段、Service网段）、固定 API Server 端口为 `6443`、配置 kubelet 路径（`--root-dir=/data/kubelet_root`）、使用 kubeadm init 初始化集群、配置 kubectl（复制 admin.conf 到 `~/.kube/config`）、记录 kubeadm join 命令供后续添加节点使用 |
 | **关键输出** | kubeadm join 控制节点命令（包含 --control-plane 参数）、kubeadm join 工作节点命令 |
-| **所需参数** | cluster.name、cluster.pod_subnet、cluster.service_subnet、control_plane[0].ip、control_plane[0].hostname、network.api_server_port、env.kubelet_root<br>（来源：config.cluster.*、config.control_plane[0].*、config.network.api_server_port、config.env.kubelet_root） |
+| **所需参数** | cluster.name、cluster.pod_subnet、cluster.service_subnet、control_plane[0].ip、control_plane[0].hostname、env.kubelet_root<br>（来源：config.cluster.*、config.control_plane[0].*、config.env.kubelet_root） |
 
 ---
 

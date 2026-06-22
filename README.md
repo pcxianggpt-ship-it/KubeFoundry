@@ -211,8 +211,9 @@ control_plane:
 network:
   gateway: "10.3.66.1"
   ipv6_gateway: "fd00::1"
-  api_server_port: 6443
 ```
+
+Kubernetes API Server 端口固定为 `6443`，不提供配置项。
 
 ### 路径配置
 ```yaml

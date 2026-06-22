@@ -82,9 +82,6 @@ def build_cluster_context(cluster_id):
         "workers": workers,
         "registry_nodes": registry_nodes,
         "registry": registry,
-        "network": {
-            "api_server_port": cluster.get("api_server_port") or 6443,
-        },
         "ssh": ssh,
         "paths": paths,
         "env": env,
@@ -112,7 +109,6 @@ def context_to_yaml_data(context):
             for n in context["workers"]
         ],
         "registry": context["registry"],
-        "network": context["network"],
         "ssh": {
             "user": context["ssh"].get("username") or "root",
             "port": _first_node_ssh_port(context["nodes"]),
@@ -171,13 +167,11 @@ def import_cluster_yaml(cluster_id, yaml_path=None, yaml_text=None):
     repo = Repository()
     cluster_data = data.get("cluster") or {}
     registry = data.get("registry") or {}
-    network = data.get("network") or {}
     repo.update_cluster(cluster_id, {
         "name": cluster_data.get("name"),
         "k8s_version": cluster_data.get("k8s_version"),
         "pod_subnet": cluster_data.get("pod_subnet"),
         "service_subnet": cluster_data.get("service_subnet"),
-        "api_server_port": network.get("api_server_port"),
         "registry_hostname": registry.get("hostname"),
         "registry_ip": registry.get("ip"),
         "registry_port": registry.get("port"),

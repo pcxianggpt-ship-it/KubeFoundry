@@ -48,7 +48,7 @@ class Repository(object):
     def create_cluster(self, data):
         allowed = [
             "name", "description", "k8s_version", "pod_subnet", "service_subnet",
-            "api_server_port", "registry_hostname", "registry_ip", "registry_port",
+            "registry_hostname", "registry_ip", "registry_port",
             "install_mode", "status",
         ]
         values = _pick(data, allowed)
@@ -66,7 +66,7 @@ class Repository(object):
     def update_cluster(self, cluster_id, data):
         allowed = [
             "name", "description", "k8s_version", "pod_subnet", "service_subnet",
-            "api_server_port", "registry_hostname", "registry_ip", "registry_port",
+            "registry_hostname", "registry_ip", "registry_port",
             "install_mode", "status",
         ]
         values = _pick(data, allowed)

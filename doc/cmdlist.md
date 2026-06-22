@@ -153,17 +153,7 @@ done
 
 echo "【INFO】: IP 地址格式验证通过"
 
-# 4. 验证端口号有效性
-echo "【INFO】: 验证端口号..."
-api_server_port=$(config_get ".network.api_server_port" "6443")
-if ! validate_port "$api_server_port"; then
-    echo "【ERROR】: API Server 端口号无效: $api_server_port"
-    exit 1
-fi
-
-echo "【INFO】: 端口号验证通过"
-
-# 5. 验证文件路径可访问性
+# 4. 验证文件路径可访问性
 echo "【INFO】: 验证文件路径..."
 repo_source=$(config_get ".repo.source_path")
 if [ -n "$repo_source" ] && [ ! -f "$repo_source" ]; then

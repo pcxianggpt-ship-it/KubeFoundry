@@ -103,6 +103,8 @@ describe('Web wizard', () => {
   it('creates a cluster, adds a node, and starts precheck', async () => {
     const wrapper = mountApp();
     await flushPromises();
+    expect(wrapper.text()).not.toContain('API Server 端口');
+    expect(wrapper.vm.clusterForm).not.toHaveProperty('api_server_port');
     createCluster.mockResolvedValue({ id: 7, name: 'k8s-cluster' });
     createNode.mockResolvedValue({
       id: 9,
@@ -150,6 +152,7 @@ describe('Web wizard', () => {
     await flushPromises();
 
     expect(createCluster).toHaveBeenCalled();
+    expect(createCluster.mock.calls[0][0]).not.toHaveProperty('api_server_port');
     expect(upsertSshCredentials).toHaveBeenCalledWith(
       7,
       expect.objectContaining({ auth_type: 'key' })
@@ -164,6 +167,21 @@ describe('Web wizard', () => {
     );
     expect(startPrecheck).toHaveBeenCalledWith(7);
     expect(wrapper.vm.manualJobId).toBe(21);
+  });
+
+  it('drops a legacy API Server port returned by the backend', async () => {
+    const wrapper = mountApp();
+    await flushPromises();
+    getCluster.mockResolvedValue({
+      id: 7,
+      name: 'legacy',
+      api_server_port: 7443
+    });
+
+    wrapper.vm.selectedClusterId = 7;
+    await wrapper.vm.handleClusterChange(7);
+
+    expect(wrapper.vm.clusterForm).not.toHaveProperty('api_server_port');
   });
 
   it('binds the existing install job when the backend returns 409', async () => {

@@ -131,17 +131,7 @@ if [ -n "$registry_ip" ]; then
     log_success "镜像仓库节点 IP 和 hostname 验证通过"
 fi
 
-# 5. 验证端口号有效性
-log_info "验证端口号..."
-api_server_port=$(config_get '.network.api_server_port' '6443')
-if ! validate_port "$api_server_port"; then
-    log_error "API Server 端口号无效: $api_server_port"
-    exit 1
-fi
-
-log_success "端口号验证通过"
-
-# 6. 验证文件路径可访问性
+# 5. 验证文件路径可访问性
 log_info "验证文件路径..."
 repo_source=$(config_resolve '.paths.repo_source')
 if [ -n "$repo_source" ] && [ ! -f "$repo_source" ]; then
@@ -155,7 +145,7 @@ fi
 
 log_success "配置文件完整性检查完成"
 
-# 7. 验证结果
+# 6. 验证结果
 log_success "配置文件完整性验证通过"
 echo ""
 log_info "验证摘要:"
@@ -163,4 +153,3 @@ log_info "  - 控制节点数量: $control_plane_count"
 log_info "  - 工作节点数量: $worker_count"
 log_info "  - 集群名称: $cluster_name"
 log_info "  - K8S 版本: $k8s_version"
-

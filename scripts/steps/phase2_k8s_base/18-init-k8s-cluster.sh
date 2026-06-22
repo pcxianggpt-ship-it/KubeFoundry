@@ -13,7 +13,6 @@
 #   POD_SUBNET        - Pod网段
 #   SERVICE_SUBNET    - Service网段
 #   DUAL_STACK        - 是否双栈 (Y/N)
-#   API_SERVER_PORT   - API Server端口
 #   REGISTRY_HOSTNAME - 镜像仓库主机名
 #===============================================================================
 
@@ -78,7 +77,7 @@ bootstrapTokens:
   - system:bootstrappers:kubeadm:default-node-token
 localAPIEndpoint:
   advertiseAddress: "${ipv4}"
-  bindPort: ${API_SERVER_PORT}
+  bindPort: 6443
 nodeRegistration:
   imagePullPolicy: IfNotPresent
   taints: null
@@ -90,7 +89,7 @@ kind: ClusterConfiguration
 kubernetesVersion: ${K8S_VERSION}
 clusterName: kubernetes
 certificatesDir: /etc/kubernetes/pki
-controlPlaneEndpoint: "${local_hostname}:${API_SERVER_PORT}"
+controlPlaneEndpoint: "${local_hostname}:6443"
 imageRepository: ${REGISTRY_HOSTNAME}:5000/registry.k8s.io
 networking:
   podSubnet: "${POD_SUBNET},fd10:244::/56"
@@ -123,7 +122,7 @@ bootstrapTokens:
 kind: InitConfiguration
 localAPIEndpoint:
   advertiseAddress: "${ipv4}"
-  bindPort: ${API_SERVER_PORT}
+  bindPort: 6443
 nodeRegistration:
   imagePullPolicy: IfNotPresent
   taints: null
@@ -141,7 +140,7 @@ etcd:
 imageRepository: ${REGISTRY_HOSTNAME}:5000/registry.k8s.io
 kind: ClusterConfiguration
 kubernetesVersion: ${K8S_VERSION}
-controlPlaneEndpoint: "${local_hostname}:${API_SERVER_PORT}"
+controlPlaneEndpoint: "${local_hostname}:6443"
 networking:
   dnsDomain: cluster.local
   podSubnet: ${POD_SUBNET}

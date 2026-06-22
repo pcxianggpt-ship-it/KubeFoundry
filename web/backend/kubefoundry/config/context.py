@@ -40,9 +40,6 @@ def build_cluster_context(cluster):
             "ip": registry_ip,
             "port": cluster.get("registry_port", 5000),
         },
-        "network": {
-            "api_server_port": cluster.get("api_server_port", 6443),
-        },
         "ssh": {
             "user": ssh.get("username") or "root",
             "port": _first_node_ssh_port(nodes),

@@ -5,7 +5,11 @@ import tempfile
 import unittest
 
 from kubefoundry.api.routes import create_app
-from kubefoundry.installer.context import build_cluster_context, context_to_yaml_data
+from kubefoundry.installer.context import (
+    build_cluster_context,
+    context_to_yaml_data,
+    import_cluster_yaml,
+)
 from kubefoundry.installer.plan import (
     STEP_PLAN,
     resolve_targets,
@@ -83,6 +87,48 @@ class ApiTestCase(unittest.TestCase):
         self.assertIn('export K8S_HOME="${KF_K8S_HOME}"', runtime_env)
         self.assertIn("log_info()", runtime_env)
         self.assertIn("export -f log_info", runtime_env)
+
+    def test_api_server_port_is_ignored_and_not_exported(self):
+        with Repository() as repo:
+            cluster = repo.create_cluster(
+                {"name": "fixed-port", "api_server_port": 7443}
+            )
+            repo.update_cluster(cluster["id"], {"api_server_port": 8443})
+            stored_cluster = repo.get_cluster(cluster["id"])
+            node = repo.create_node(
+                cluster["id"],
+                {
+                    "hostname": "master-1",
+                    "ip": "10.0.0.10",
+                    "role": "control_plane",
+                },
+            )
+
+        self.assertNotIn("api_server_port", cluster)
+        self.assertNotIn(
+            "api_server_port",
+            stored_cluster,
+        )
+
+        import_cluster_yaml(
+            cluster["id"],
+            yaml_text=(
+                "cluster:\n"
+                "  name: fixed-port\n"
+                "network:\n"
+                "  api_server_port: 9443\n"
+                "control_plane:\n"
+                "  - hostname: master-1\n"
+                "    ip: 10.0.0.10\n"
+            ),
+        )
+        context = build_cluster_context(cluster["id"])
+        self.assertNotIn("network", context)
+        self.assertNotIn("network", context_to_yaml_data(context))
+
+        runtime_env = render_runtime_env(context, node)
+        self.assertNotIn("API_SERVER_PORT", runtime_env)
+        self.assertNotIn("KF_API_SERVER_PORT", runtime_env)
 
     def test_jobs_require_nodes(self):
         cluster = self.client.post("/api/clusters", json={"name": "empty"}).get_json()

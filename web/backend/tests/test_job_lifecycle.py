@@ -81,6 +81,84 @@ class JobLifecycleTestCase(unittest.TestCase):
             conn.close()
         self.assertIn("failure_reason", columns)
 
+    def test_init_db_removes_legacy_api_server_port_column(self):
+        db_path = os.environ["KF_DB_PATH"]
+        os.remove(db_path)
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute(
+                "CREATE TABLE clusters ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "name TEXT NOT NULL, "
+                "description TEXT DEFAULT '', "
+                "k8s_version TEXT NOT NULL DEFAULT '1.30.14', "
+                "pod_subnet TEXT NOT NULL DEFAULT '10.244.0.0/16', "
+                "service_subnet TEXT NOT NULL DEFAULT '10.96.0.0/16', "
+                "api_server_port INTEGER NOT NULL DEFAULT 6443, "
+                "registry_hostname TEXT DEFAULT 'registry', "
+                "registry_ip TEXT DEFAULT '', "
+                "registry_port INTEGER NOT NULL DEFAULT 5000, "
+                "install_mode TEXT DEFAULT 'online', "
+                "status TEXT NOT NULL DEFAULT 'draft', "
+                "created_at TEXT NOT NULL DEFAULT '2026-01-01', "
+                "updated_at TEXT NOT NULL DEFAULT '2026-01-01'"
+                ")"
+            )
+            conn.execute(
+                "INSERT INTO clusters(name, api_server_port) VALUES(?, ?)",
+                ("legacy", 7443),
+            )
+            conn.execute(
+                "CREATE TABLE nodes ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "cluster_id INTEGER NOT NULL, "
+                "hostname TEXT NOT NULL, "
+                "ip TEXT NOT NULL, "
+                "ipv6 TEXT DEFAULT '', "
+                "role TEXT NOT NULL, "
+                "ssh_port INTEGER NOT NULL DEFAULT 22, "
+                "ssh_user TEXT NOT NULL DEFAULT 'root', "
+                "os_type TEXT DEFAULT '', "
+                "arch TEXT DEFAULT 'amd64', "
+                "status TEXT NOT NULL DEFAULT 'pending', "
+                "created_at TEXT NOT NULL DEFAULT '2026-01-01', "
+                "updated_at TEXT NOT NULL DEFAULT '2026-01-01', "
+                "FOREIGN KEY(cluster_id) REFERENCES clusters(id) ON DELETE CASCADE"
+                ")"
+            )
+            conn.execute(
+                "INSERT INTO nodes(cluster_id, hostname, ip, role) "
+                "VALUES(1, 'master-1', '10.0.0.10', 'control_plane')"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        init_db()
+
+        conn = sqlite3.connect(db_path)
+        try:
+            columns = [
+                row[1]
+                for row in conn.execute("PRAGMA table_info(clusters)").fetchall()
+            ]
+            cluster = conn.execute(
+                "SELECT name FROM clusters WHERE name='legacy'"
+            ).fetchone()
+            node = conn.execute(
+                "SELECT hostname FROM nodes WHERE cluster_id=1"
+            ).fetchone()
+            foreign_key_errors = conn.execute(
+                "PRAGMA foreign_key_check"
+            ).fetchall()
+        finally:
+            conn.close()
+
+        self.assertNotIn("api_server_port", columns)
+        self.assertEqual(("legacy",), cluster)
+        self.assertEqual(("master-1",), node)
+        self.assertEqual([], foreign_key_errors)
+
     def test_install_api_rejects_second_active_job(self):
         app = create_app()
         app.config["TESTING"] = True

@@ -57,7 +57,7 @@ exec_script_on_single_node() {
     local _inj_registry_ip _inj_registry_hn
     local _inj_ssh_user _inj_ssh_password _inj_ssh_port
     local _inj_pod_subnet _inj_service_subnet _inj_dual_stack
-    local _inj_etcd_data_dir _inj_api_server_port
+    local _inj_etcd_data_dir
     local _inj_install_media
     local _inj_nfs_server _inj_nfs_path _inj_nfs_mount _inj_storage_class
     _inj_k8s_soft=$(config_get '.paths.k8s_home' '/data/k8s_install' 2>/dev/null)
@@ -78,7 +78,6 @@ _inj_storage_class=$(config_get '.storage.storage_class' 'nfs-storage' 2>/dev/nu
     _inj_service_subnet=$(config_get '.cluster.service_subnet' '10.96.0.0/12' 2>/dev/null)
     _inj_dual_stack=$(config_get '.cluster.dual_stack' 'N' 2>/dev/null)
     _inj_etcd_data_dir=$(config_get '.env.etcd_data_dir' '/data/etcd_root' 2>/dev/null)
-    _inj_api_server_port=$(config_get '.network.api_server_port' '6443' 2>/dev/null)
 
     # 构建注入头：环境变量 + 内联简化日志函数 + 预解析配置值
     local inject_header
@@ -100,7 +99,6 @@ export POD_SUBNET="${_inj_pod_subnet}"
 export SERVICE_SUBNET="${_inj_service_subnet}"
 export DUAL_STACK="${_inj_dual_stack}"
 export ETCD_DATA_DIR="${_inj_etcd_data_dir}"
-export API_SERVER_PORT="${_inj_api_server_port}"
 export INSTALL_MEDIA="${_inj_install_media}"
 export NFS_SERVER="${_inj_nfs_server}"
 export NFS_PATH="${_inj_nfs_path}"
