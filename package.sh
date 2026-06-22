@@ -1,12 +1,15 @@
 #!/bin/bash
 
-if [ -z "${BASH_VERSION:-}" ]; then
-    if command -v bash >/dev/null 2>&1; then
-        exec bash "$0" "$@"
+if [ "${KF_PACKAGE_BASH_REEXEC:-0}" != "1" ]; then
+    if ! command -v bash >/dev/null 2>&1; then
+        echo "错误：package.sh 需要 Bash，请安装 Bash 后执行。" >&2
+        exit 1
     fi
-    echo "错误：package.sh 需要 Bash，请安装 Bash 后执行。" >&2
-    exit 1
+    KF_PACKAGE_BASH_REEXEC=1
+    export KF_PACKAGE_BASH_REEXEC
+    exec bash "$0" "$@"
 fi
+unset KF_PACKAGE_BASH_REEXEC
 
 #===============================================================================
 # 脚本名称：package.sh

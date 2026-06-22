@@ -19,10 +19,16 @@ fail() {
 [ -f "${PROJECT_ROOT}/package.sh" ] || fail "package.sh 不存在"
 [ -f "${PROJECT_ROOT}/deploy.sh" ] || fail "deploy.sh 不存在"
 
-grep -q 'exec bash "\$0" "\$@"' "${PROJECT_ROOT}/package.sh" ||
+grep -q 'KF_PACKAGE_BASH_REEXEC' "${PROJECT_ROOT}/package.sh" ||
     fail "package.sh 缺少 sh 到 Bash 的兼容切换"
-grep -q 'exec bash "\$0" "\$@"' "${PROJECT_ROOT}/deploy.sh" ||
+grep -q 'KF_DEPLOY_BASH_REEXEC' "${PROJECT_ROOT}/deploy.sh" ||
     fail "deploy.sh 缺少 sh 到 Bash 的兼容切换"
+if grep -q '< <(' "${PROJECT_ROOT}/deploy.sh"; then
+    fail "deploy.sh 仍包含易被 sh 误解析的进程替换"
+fi
+if grep -q '\[\[' "${PROJECT_ROOT}/deploy.sh"; then
+    fail "deploy.sh 仍包含易被 sh 误解析的双中括号"
+fi
 
 for requirement in \
     "Jinja2==3.1.2" \
@@ -46,6 +52,9 @@ sh "${PROJECT_ROOT}/package.sh" --help | grep -q "kubefoundry-web-v" ||
     fail "package.sh 不支持通过 sh 启动"
 sh "${PROJECT_ROOT}/deploy.sh" --help | grep -q -- "--port PORT" ||
     fail "deploy.sh 不支持通过 sh 启动"
+if sh "${PROJECT_ROOT}/deploy.sh" 2>&1 | grep -q "syntax error"; then
+    fail "deploy.sh 无参数通过 sh 启动时仍出现语法错误"
+fi
 
 KF_PACKAGE_TEST_MODE=1 bash "${PROJECT_ROOT}/package.sh"
 PACKAGE="${PROJECT_ROOT}/dist/kubefoundry-web-v0.1.0.tar.gz"

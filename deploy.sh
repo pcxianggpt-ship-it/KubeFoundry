@@ -1,12 +1,15 @@
 #!/bin/bash
 
-if [ -z "${BASH_VERSION:-}" ]; then
-    if command -v bash >/dev/null 2>&1; then
-        exec bash "$0" "$@"
+if [ "${KF_DEPLOY_BASH_REEXEC:-0}" != "1" ]; then
+    if ! command -v bash >/dev/null 2>&1; then
+        echo "错误：deploy.sh 需要 Bash，请安装 Bash 后执行。" >&2
+        exit 1
     fi
-    echo "错误：deploy.sh 需要 Bash，请安装 Bash 后执行。" >&2
-    exit 1
+    KF_DEPLOY_BASH_REEXEC=1
+    export KF_DEPLOY_BASH_REEXEC
+    exec bash "$0" "$@"
 fi
+unset KF_DEPLOY_BASH_REEXEC
 
 #===============================================================================
 # 脚本名称：deploy.sh
@@ -113,10 +116,16 @@ parse_arguments() {
         esac
     done
 
-    [[ "${PORT}" =~ ^[0-9]+$ ]] && [ "${PORT}" -ge 1 ] && [ "${PORT}" -le 65535 ] || {
+    case "${PORT}" in
+        ''|*[!0-9]*)
+            echo "无效端口: ${PORT}" >&2
+            return 1
+            ;;
+    esac
+    if [ "${PORT}" -lt 1 ] || [ "${PORT}" -gt 65535 ]; then
         echo "无效端口: ${PORT}" >&2
         return 1
-    }
+    fi
 }
 
 run_service_action() {
@@ -182,14 +191,19 @@ check_environment() {
 
 validate_archive_entries() {
     local entry
+    local archive_list
+    archive_list="$(mktemp)"
+    tar -tzf "${PACKAGE_FILE}" > "${archive_list}"
     while IFS= read -r entry; do
         case "${entry}" in
             /*|../*|*/../*|*/..)
+                rm -f "${archive_list}"
                 log_error "压缩包包含不安全路径: ${entry}"
                 return 1
                 ;;
         esac
-    done < <(tar -tzf "${PACKAGE_FILE}")
+    done < "${archive_list}"
+    rm -f "${archive_list}"
 }
 
 extract_and_validate_package() {
