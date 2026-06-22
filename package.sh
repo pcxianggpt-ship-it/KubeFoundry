@@ -1,5 +1,13 @@
 #!/bin/bash
 
+if [ -z "${BASH_VERSION:-}" ]; then
+    if command -v bash >/dev/null 2>&1; then
+        exec bash "$0" "$@"
+    fi
+    echo "错误：package.sh 需要 Bash，请安装 Bash 后执行。" >&2
+    exit 1
+fi
+
 #===============================================================================
 # 脚本名称：package.sh
 # 功能：构建 KubeFoundry Web 前后端并生成离线部署压缩包

@@ -19,6 +19,11 @@ fail() {
 [ -f "${PROJECT_ROOT}/package.sh" ] || fail "package.sh 不存在"
 [ -f "${PROJECT_ROOT}/deploy.sh" ] || fail "deploy.sh 不存在"
 
+grep -q 'exec bash "\$0" "\$@"' "${PROJECT_ROOT}/package.sh" ||
+    fail "package.sh 缺少 sh 到 Bash 的兼容切换"
+grep -q 'exec bash "\$0" "\$@"' "${PROJECT_ROOT}/deploy.sh" ||
+    fail "deploy.sh 缺少 sh 到 Bash 的兼容切换"
+
 for requirement in \
     "Jinja2==3.1.2" \
     "itsdangerous==2.1.2" \
@@ -37,6 +42,10 @@ bash "${PROJECT_ROOT}/deploy.sh" --help | grep -q -- "--port PORT" ||
     fail "deploy.sh 帮助信息缺少端口参数"
 bash "${PROJECT_ROOT}/deploy.sh" --help | grep -q "10001" ||
     fail "deploy.sh 默认端口不是 10001"
+sh "${PROJECT_ROOT}/package.sh" --help | grep -q "kubefoundry-web-v" ||
+    fail "package.sh 不支持通过 sh 启动"
+sh "${PROJECT_ROOT}/deploy.sh" --help | grep -q -- "--port PORT" ||
+    fail "deploy.sh 不支持通过 sh 启动"
 
 KF_PACKAGE_TEST_MODE=1 bash "${PROJECT_ROOT}/package.sh"
 PACKAGE="${PROJECT_ROOT}/dist/kubefoundry-web-v0.1.0.tar.gz"

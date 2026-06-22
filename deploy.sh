@@ -1,5 +1,13 @@
 #!/bin/bash
 
+if [ -z "${BASH_VERSION:-}" ]; then
+    if command -v bash >/dev/null 2>&1; then
+        exec bash "$0" "$@"
+    fi
+    echo "错误：deploy.sh 需要 Bash，请安装 Bash 后执行。" >&2
+    exit 1
+fi
+
 #===============================================================================
 # 脚本名称：deploy.sh
 # 功能：从 KubeFoundry Web 离线包一键部署生产服务
