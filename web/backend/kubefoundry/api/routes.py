@@ -11,6 +11,7 @@ from kubefoundry.installer.context import (
     render_cluster_yaml,
 )
 from kubefoundry.installer.plan import public_plan
+from kubefoundry.installer.node_test import start_node_test_job
 from kubefoundry.installer.precheck import start_precheck_job
 from kubefoundry.installer.runner import start_install_job
 from kubefoundry.store.db import get_db_path, init_db
@@ -111,6 +112,20 @@ def create_app():
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         return jsonify({"items": items}), 201
+
+    @app.route("/api/clusters/<int:cluster_id>/node-test", methods=["POST"])
+    def create_node_test(cluster_id):
+        if not repo().get_cluster(cluster_id):
+            return jsonify({"error": "cluster not found"}), 404
+        try:
+            job = start_node_test_job(cluster_id)
+        except ValueError as exc:
+            status = 409 if getattr(exc, "job_id", None) else 400
+            payload = {"error": str(exc)}
+            if getattr(exc, "job_id", None):
+                payload["job_id"] = exc.job_id
+            return jsonify(payload), status
+        return jsonify({"job_id": job["id"], "status": job["status"]}), 202
 
     @app.route("/api/clusters/<int:cluster_id>/ssh-credentials", methods=["PUT"])
     def upsert_ssh_credentials(cluster_id):

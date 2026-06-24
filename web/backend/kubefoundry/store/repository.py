@@ -259,6 +259,61 @@ class Repository(object):
                 ips[ip] = node["id"]
         return problems
 
+    def update_node_test_result(
+        self,
+        node_id,
+        status,
+        message,
+        os_type="",
+        os_version="",
+        arch="",
+        config_version=None,
+    ):
+        values = {
+            "node_test_status": status,
+            "node_test_message": message or "",
+            "node_tested_at": "datetime('now')",
+        }
+        sets = [
+            "node_test_status=?",
+            "node_test_message=?",
+            "node_tested_at=datetime('now')",
+        ]
+        params = [status, message or ""]
+        if os_type is not None:
+            sets.append("os_type=?")
+            params.append(os_type or "")
+        if os_version is not None:
+            sets.append("os_version=?")
+            params.append(os_version or "")
+        if arch is not None:
+            sets.append("arch=?")
+            params.append(arch or "")
+        if config_version is not None:
+            sets.append("node_test_config_version=?")
+            params.append(config_version)
+        params.append(node_id)
+        with self.conn:
+            self.conn.execute(
+                "UPDATE nodes SET %s WHERE id=?" % ", ".join(sets),
+                params,
+            )
+
+    def update_cluster_node_test_state(self, cluster_id, status, job_id=None, tested_at=None):
+        sets = ["node_test_status=?", "node_test_job_id=?", "updated_at=datetime('now')"]
+        params = [status, job_id]
+        if tested_at:
+            sets.append("node_tested_at=?")
+            params.append(tested_at)
+        elif status in ("success", "failed"):
+            sets.append("node_tested_at=datetime('now')")
+        params.append(cluster_id)
+        with self.conn:
+            self.conn.execute(
+                "UPDATE clusters SET %s WHERE id=?" % ", ".join(sets),
+                params,
+            )
+
     def get_ssh_credentials(self, cluster_id):
         return _row(self.conn.execute("SELECT * FROM ssh_credentials WHERE cluster_id=?", (cluster_id,)).fetchone())
 

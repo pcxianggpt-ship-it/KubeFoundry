@@ -112,3 +112,16 @@ def test_copy_nodes_creates_drafts_and_copies_password_ciphertext(client, repo):
     assert copied["ip"] == "192.168.123.139"
     assert copied["has_password"] is True
     assert repo.get_node_private(copied["id"])["login_password_encrypted"] == repo.get_node_private(node["id"])["login_password_encrypted"]
+
+
+def test_node_test_rejects_draft_nodes(client):
+    cluster = client.post("/api/clusters", json={"name": "demo"}).get_json()
+    node = client.post(
+        "/api/clusters/%s/nodes" % cluster["id"],
+        json={"hostname": "k8s1", "ip": "192.168.123.139", "role": "worker", "password": "Secret123!"},
+    ).get_json()
+    client.post("/api/clusters/%s/nodes/copy" % cluster["id"], json={"node_ids": [node["id"]]})
+
+    response = client.post("/api/clusters/%s/node-test" % cluster["id"])
+    assert response.status_code == 400
+    assert "草稿" in response.get_json()["error"]
