@@ -19,6 +19,8 @@ from kubefoundry.store.repository import Repository
 
 
 def start_install_job(cluster_id, selected_steps=None):
+    with Repository() as gate_repo:
+        gate_repo.require_node_test_ready(cluster_id)
     context = build_cluster_context(cluster_id)
     validate_cluster_context(context, require_worker=True, require_registry_node=True)
     plan = validate_selected_plan(selected_steps)

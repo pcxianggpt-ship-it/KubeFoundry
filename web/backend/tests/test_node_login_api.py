@@ -125,3 +125,22 @@ def test_node_test_rejects_draft_nodes(client):
     response = client.post("/api/clusters/%s/node-test" % cluster["id"])
     assert response.status_code == 400
     assert "草稿" in response.get_json()["error"]
+
+
+def test_precheck_requires_successful_current_node_test(client):
+    cluster = client.post("/api/clusters", json={"name": "demo"}).get_json()
+    client.post(
+        "/api/clusters/%s/nodes" % cluster["id"],
+        json={"hostname": "k8s1", "ip": "192.168.123.139", "role": "control_plane", "password": "Secret123!"},
+    )
+    response = client.post("/api/clusters/%s/precheck" % cluster["id"])
+    assert response.status_code == 400
+    assert "节点测试" in response.get_json()["error"]
+
+
+def test_context_uses_fixed_key_auth_and_no_install_mode(client):
+    cluster = client.post("/api/clusters", json={"name": "demo"}).get_json()
+    payload = client.get("/api/clusters/%s/context" % cluster["id"]).get_json()
+    assert "install_mode" not in payload["cluster"]
+    assert payload["ssh"]["username"] == "root"
+    assert payload["ssh"]["auth_type"] == "key"

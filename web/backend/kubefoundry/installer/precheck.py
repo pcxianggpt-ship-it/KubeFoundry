@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from kubefoundry.installer.context import build_cluster_context, write_job_snapshot
 from kubefoundry.installer.events import append_log, emit
+from kubefoundry.installer.node_test import normalize_arch, parse_os_release
 from kubefoundry.installer.ssh import run_ssh
 from kubefoundry.installer.validator import validate_cluster_context
 from kubefoundry.store.db import data_dir
@@ -19,6 +20,8 @@ echo "__KF__MEM=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/nul
 echo "__KF__DISK=$(df -Pm / 2>/dev/null | awk 'NR==2 {print $4}' || echo 0)"
 echo "__KF__SWAP=$(awk '/SwapTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)"
 echo "__KF__HOSTNAME=$(hostname 2>/dev/null || echo unknown)"
+echo "__KF__ARCH=$(uname -m 2>/dev/null || echo unknown)"
+cat /etc/os-release 2>/dev/null | sed 's/^/__KF__OS_RELEASE__/'
 for p in 6443 2379 2380 10250 10257 10259; do
   if command -v ss >/dev/null 2>&1; then
     ss -lnt 2>/dev/null | awk '{print $4}' | grep -Eq "[:.]${p}$" && echo "__KF__PORT_${p}=used" || echo "__KF__PORT_${p}=free"
@@ -30,6 +33,8 @@ done
 
 
 def start_precheck_job(cluster_id):
+    with Repository() as gate_repo:
+        gate_repo.require_node_test_ready(cluster_id)
     context = build_cluster_context(cluster_id)
     validate_cluster_context(context)
     job_dir = os.path.join(data_dir(), "jobs", "pending")
@@ -111,7 +116,22 @@ def _check_node(job_id, cluster_id, step_id, context, node, log_dir):
         return False
 
     values = _parse(out)
-    results = _build_results(values)
+    os_info = parse_os_release(_extract_os_release(out))
+    arch = normalize_arch(values.get("ARCH"))
+    drift_result = _build_system_drift_result(node, os_info, arch)
+    results = _build_results(values, os_info, arch)
+    if drift_result:
+        results.append(drift_result)
+        repo.update_cluster_node_test_state(cluster_id, "stale")
+    repo.update_node_test_result(
+        node["id"],
+        node.get("node_test_status") or "success",
+        node.get("node_test_message") or "",
+        os_type=os_info.get("os_type", ""),
+        os_version=os_info.get("os_version", ""),
+        arch=arch,
+        config_version=node.get("node_test_config_version"),
+    )
     ok = True
     for result in results:
         repo.add_precheck_result(cluster_id, job_id, node["id"], *result)
@@ -138,12 +158,54 @@ def _parse(text):
     return result
 
 
-def _build_results(values):
+def _extract_os_release(text):
+    lines = []
+    for line in (text or "").splitlines():
+        if line.startswith("__KF__OS_RELEASE__"):
+            lines.append(line.replace("__KF__OS_RELEASE__", "", 1))
+    return "\n".join(lines)
+
+
+def _build_system_drift_result(node, os_info, arch):
+    previous_os = node.get("os_type") or ""
+    previous_version = node.get("os_version") or ""
+    previous_arch = node.get("arch") or ""
+    previous_major = str(previous_version).split(".", 1)[0] if previous_version else ""
+    current_major = os_info.get("os_major") or ""
+    changed = False
+    details = []
+    if previous_os and os_info.get("os_type") and previous_os != os_info.get("os_type"):
+        changed = True
+        details.append("发行版 %s -> %s" % (previous_os, os_info.get("os_type")))
+    if previous_major and current_major and previous_major != current_major:
+        changed = True
+        details.append("主版本 %s -> %s" % (previous_major, current_major))
+    if previous_arch and arch and previous_arch != arch:
+        changed = True
+        details.append("架构 %s -> %s" % (previous_arch, arch))
+    if not changed:
+        return None
+    return (
+        "system_drift",
+        "系统信息变化",
+        "error",
+        "fail",
+        "节点系统信息与最近一次节点测试不一致",
+        "；".join(details),
+    )
+
+
+def _build_results(values, os_info=None, arch=""):
     results = []
     results.append(("ssh", "SSH 连通性", "error", "pass", "SSH 连接成功", ""))
     user_status = "pass" if values.get("USER") == "0" else "warning"
     results.append(("user", "用户权限", "warning", user_status, "root 用户" if user_status == "pass" else "非 root 用户", values.get("USER", "")))
-    results.append(("os", "操作系统版本", "info", "pass", values.get("OS", "unknown"), values.get("OS", "")))
+    os_message = "%s %s" % (
+        (os_info or {}).get("os_type") or "unknown",
+        (os_info or {}).get("os_version") or "",
+    )
+    results.append(("os", "操作系统版本", "info", "pass", os_message.strip(), values.get("OS", "")))
+    results.append(("arch", "系统架构", "info", "pass" if arch else "fail", arch or "unknown", ""))
     cpu = _int(values.get("CPU"))
     results.append(("cpu", "CPU", "error", "pass" if cpu >= 2 else "fail", "CPU 核数: %s" % cpu, "建议至少 2 核"))
     mem = _int(values.get("MEM"))

@@ -79,7 +79,7 @@ class ApiTestCase(unittest.TestCase):
         self.assertTrue(context["ecosystem"]["traefik"])
 
         yaml_data = context_to_yaml_data(context)
-        self.assertEqual(yaml_data["ssh"]["port"], 2222)
+        self.assertEqual(yaml_data["ssh"]["port"], 22)
 
         runtime_env = render_runtime_env(context, node)
         self.assertIn("export KF_CLUSTER_NAME=demo", runtime_env)

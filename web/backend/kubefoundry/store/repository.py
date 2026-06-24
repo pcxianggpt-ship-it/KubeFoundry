@@ -314,6 +314,35 @@ class Repository(object):
                 params,
             )
 
+    def validate_node_test_ready(self, cluster_id):
+        problems = self.validate_node_configuration(cluster_id)
+        cluster = self.get_cluster_private(cluster_id)
+        if not cluster:
+            problems.append({"node_id": None, "hostname": "cluster", "message": "集群不存在"})
+            return problems
+        current_version = cluster.get("node_config_version")
+        if cluster.get("node_test_status") != "success":
+            problems.append({"node_id": None, "hostname": "cluster", "message": "节点测试未成功"})
+        for node in self.list_nodes_private(cluster_id):
+            if node.get("node_test_status") != "success":
+                problems.append({"node_id": node["id"], "hostname": node.get("hostname"), "message": "节点测试未成功"})
+            if node.get("node_test_config_version") != current_version:
+                problems.append({"node_id": node["id"], "hostname": node.get("hostname"), "message": "节点测试结果已失效"})
+        active = self.find_active_job(cluster_id)
+        if active:
+            problems.append({"node_id": None, "hostname": "cluster", "message": "已有运行中的任务"})
+        return problems
+
+    def require_node_test_ready(self, cluster_id):
+        problems = self.validate_node_test_ready(cluster_id)
+        if problems:
+            raise ValueError(
+                "节点测试未就绪：%s" % "; ".join(
+                    "%s %s" % (item.get("hostname") or item.get("node_id") or "cluster", item.get("message"))
+                    for item in problems
+                )
+            )
+
     def get_ssh_credentials(self, cluster_id):
         return _row(self.conn.execute("SELECT * FROM ssh_credentials WHERE cluster_id=?", (cluster_id,)).fetchone())
 
