@@ -101,6 +101,17 @@ def create_app():
             return jsonify({"error": "node not found"}), 404
         return jsonify({"status": "ok"})
 
+    @app.route("/api/clusters/<int:cluster_id>/nodes/copy", methods=["POST"])
+    def copy_nodes(cluster_id):
+        if not repo().get_cluster(cluster_id):
+            return jsonify({"error": "cluster not found"}), 404
+        data = payload()
+        try:
+            items = repo().copy_nodes(cluster_id, data.get("node_ids") or [])
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"items": items}), 201
+
     @app.route("/api/clusters/<int:cluster_id>/ssh-credentials", methods=["PUT"])
     def upsert_ssh_credentials(cluster_id):
         if not repo().get_cluster(cluster_id):

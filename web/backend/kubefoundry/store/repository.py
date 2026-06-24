@@ -1,6 +1,7 @@
 import json
 import os
 
+from kubefoundry.security.credentials import encrypt_text
 from kubefoundry.store.db import connect
 
 
@@ -26,6 +27,7 @@ def _public_node(row):
         return None
     password = item.pop("login_password_encrypted", "") or ""
     item["has_password"] = bool(password)
+    item["is_draft"] = bool(item.get("is_draft"))
     item["ssh_user"] = "root"
     item["ssh_port"] = 22
     return item
@@ -140,7 +142,7 @@ class Repository(object):
         values = _pick(data, allowed)
         values["cluster_id"] = cluster_id
         if data.get("password"):
-            values["login_password_encrypted"] = data.get("password")
+            values["login_password_encrypted"] = encrypt_text(data.get("password"))
         if not values.get("hostname") or not values.get("ip"):
             raise ValueError("hostname and ip are required")
         if not values.get("role"):
@@ -162,7 +164,7 @@ class Repository(object):
         allowed = ["hostname", "ip", "ipv6", "role", "status"]
         values = _pick(data, allowed)
         if data.get("password"):
-            values["login_password_encrypted"] = data.get("password")
+            values["login_password_encrypted"] = encrypt_text(data.get("password"))
         if not values:
             return self.get_node(node_id)
         sets = ["%s=?" % key for key in values.keys()]
@@ -195,6 +197,67 @@ class Repository(object):
         with self.conn:
             self._mark_node_config_changed(cluster_id)
         return self.get_cluster(cluster_id)
+
+    def copy_nodes(self, cluster_id, node_ids):
+        if not node_ids:
+            raise ValueError("node_ids is required")
+        if len(node_ids) != len(set(node_ids)):
+            raise ValueError("node_ids must not contain duplicates")
+        copied_ids = []
+        with self.conn:
+            for node_id in node_ids:
+                node = self.get_node_private(node_id)
+                if not node or node["cluster_id"] != cluster_id:
+                    raise ValueError("node does not belong to cluster: %s" % node_id)
+                cur = self.conn.execute(
+                    "INSERT INTO nodes("
+                    "cluster_id, hostname, ip, ipv6, role, ssh_port, ssh_user, "
+                    "os_type, os_version, arch, login_password_encrypted, is_draft, "
+                    "node_test_status, node_test_message, status"
+                    ") VALUES(?, ?, ?, ?, ?, 22, 'root', ?, ?, ?, ?, 1, 'stale', '', ?)",
+                    (
+                        cluster_id,
+                        node.get("hostname") or "",
+                        node.get("ip") or "",
+                        node.get("ipv6") or "",
+                        node.get("role") or "worker",
+                        node.get("os_type") or "",
+                        node.get("os_version") or "",
+                        node.get("arch") or "",
+                        node.get("login_password_encrypted") or "",
+                        node.get("status") or "pending",
+                    ),
+                )
+                copied_ids.append(cur.lastrowid)
+            self._mark_node_config_changed(cluster_id)
+        return [self.get_node(node_id) for node_id in copied_ids]
+
+    def validate_node_configuration(self, cluster_id):
+        nodes = self.list_nodes_private(cluster_id)
+        problems = []
+        hostnames = {}
+        ips = {}
+        for node in nodes:
+            label = node.get("hostname") or ("node-%s" % node.get("id"))
+            if node.get("is_draft"):
+                problems.append({"node_id": node["id"], "hostname": label, "message": "存在未完成草稿"})
+            if not (node.get("hostname") or "").strip():
+                problems.append({"node_id": node["id"], "hostname": label, "message": "缺少主机名"})
+            if not (node.get("ip") or "").strip():
+                problems.append({"node_id": node["id"], "hostname": label, "message": "缺少 IP"})
+            if not (node.get("login_password_encrypted") or ""):
+                problems.append({"node_id": node["id"], "hostname": label, "message": "缺少登录密码"})
+            hostname = (node.get("hostname") or "").strip()
+            ip = (node.get("ip") or "").strip()
+            if hostname:
+                if hostname in hostnames:
+                    problems.append({"node_id": node["id"], "hostname": label, "message": "主机名重复"})
+                hostnames[hostname] = node["id"]
+            if ip:
+                if ip in ips:
+                    problems.append({"node_id": node["id"], "hostname": label, "message": "IP 重复"})
+                ips[ip] = node["id"]
+        return problems
 
     def get_ssh_credentials(self, cluster_id):
         return _row(self.conn.execute("SELECT * FROM ssh_credentials WHERE cluster_id=?", (cluster_id,)).fetchone())

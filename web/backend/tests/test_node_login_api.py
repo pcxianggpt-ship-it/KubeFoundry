@@ -81,3 +81,34 @@ def test_node_password_is_not_returned(client):
     assert node["arch"] == ""
     assert "password" not in node
     assert "login_password_encrypted" not in node
+
+
+def test_node_update_empty_password_keeps_existing_password(client, repo):
+    cluster = client.post("/api/clusters", json={"name": "demo"}).get_json()
+    node = client.post(
+        "/api/clusters/%s/nodes" % cluster["id"],
+        json={"hostname": "k8s1", "ip": "192.168.123.139", "role": "control_plane", "password": "Secret123!"},
+    ).get_json()
+    before = repo.get_node_private(node["id"])["login_password_encrypted"]
+
+    response = client.put("/api/nodes/%s" % node["id"], json={"hostname": "k8s1", "ip": "192.168.123.139", "role": "control_plane", "password": ""})
+    assert response.status_code == 200
+    after = repo.get_node_private(node["id"])["login_password_encrypted"]
+    assert after == before
+
+
+def test_copy_nodes_creates_drafts_and_copies_password_ciphertext(client, repo):
+    cluster = client.post("/api/clusters", json={"name": "demo"}).get_json()
+    node = client.post(
+        "/api/clusters/%s/nodes" % cluster["id"],
+        json={"hostname": "k8s1", "ip": "192.168.123.139", "role": "worker", "password": "Secret123!"},
+    ).get_json()
+
+    response = client.post("/api/clusters/%s/nodes/copy" % cluster["id"], json={"node_ids": [node["id"]]})
+    assert response.status_code == 201
+    copied = response.get_json()["items"][0]
+    assert copied["is_draft"] is True
+    assert copied["hostname"] == "k8s1"
+    assert copied["ip"] == "192.168.123.139"
+    assert copied["has_password"] is True
+    assert repo.get_node_private(copied["id"])["login_password_encrypted"] == repo.get_node_private(node["id"])["login_password_encrypted"]
