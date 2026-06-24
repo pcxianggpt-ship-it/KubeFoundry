@@ -54,7 +54,7 @@ RBAC
 
 ## 3. 里程碑
 
-当前状态：M1 至 M8 已完成。2026-06-20 至 2026-06-21 已完成 Kylin Linux 三节点真实环境安装，详细证据见 `doc/web-wizard-v0.1.0-acceptance.md`。
+当前状态：M1 至 M8 已完成。2026-06-20 至 2026-06-21 已完成 Kylin Linux 三节点真实环境安装，详细证据见 `doc/v0.1.0/web-wizard-v0.1.0-acceptance.md`。
 
 ### M1: 后端工程骨架
 
@@ -280,7 +280,7 @@ P2: 导入导出 cluster.yaml、历史任务列表
 交付内容：
 
 ```text
-doc/web-wizard-v0.1.0-usage.md
+doc/v0.1.0/web-wizard-v0.1.0-usage.md
 后端启动说明
 前端启动说明
 SQLite 初始化说明

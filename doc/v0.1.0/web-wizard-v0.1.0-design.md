@@ -138,12 +138,14 @@ description
 k8s_version
 pod_subnet
 service_subnet
-api_server_port
 registry_hostname
 registry_ip
 registry_port
-install_mode
 status
+node_config_version
+node_test_status
+node_tested_at
+node_test_job_id
 created_at
 updated_at
 ```
@@ -159,10 +161,15 @@ hostname
 ip
 ipv6
 role              # control_plane / worker / registry
-ssh_port
-ssh_user
 os_type
+os_version
 arch
+login_password_encrypted
+is_draft
+node_test_status
+node_tested_at
+node_test_message
+node_test_config_version
 status
 created_at
 updated_at
@@ -170,16 +177,14 @@ updated_at
 
 ### 5.3 SSH 凭据表 ssh_credentials
 
-MVP 阶段不建议明文长期保存密码。
+SSH 凭据表仅记录后端生成的集群密钥路径；页面不直接维护该表。
 
 ```text
 id
 cluster_id
-auth_type         # key / password
-username
-private_key_path
-password_encrypted
-sudo_password_encrypted
+auth_type         # 固定 key
+username          # 固定 root
+private_key_path  # 后端生成的集群私钥路径
 created_at
 updated_at
 ```
@@ -187,8 +192,9 @@ updated_at
 推荐策略：
 
 ```text
-私钥路径可以持久化。
-密码只在任务运行期间保存在内存，确需持久化时必须加密。
+节点登录密码加密保存到 nodes.login_password_encrypted。
+密码只用于首次测试和公钥分发，不出现在 API 响应、日志和任务快照中。
+后续预检查、SCP 和安装任务统一使用集群私钥。
 ```
 
 ### 5.4 路径和系统设置 settings
@@ -607,15 +613,16 @@ v0.1.0 页面建议：
 
 ```text
 1. 集群基础配置
-2. 节点配置
-3. SSH 配置
-4. 路径和安装介质配置
-5. 生态组件选择
-6. 环境预检查
-7. 配置确认
-8. 安装执行
-9. 安装结果
+2. 节点与登录配置
+3. 路径和安装介质配置
+4. 生态组件选择
+5. 环境预检查
+6. 配置确认
+7. 安装执行
+8. 安装结果
 ```
+
+集群基础配置不再提供安装模式、操作系统和架构输入；系统固定执行离线安装。节点与登录配置页录入主机名、IPv4、IPv6、角色和 `root` 登录密码，并提供“复制所选”和“测试全部节点”。测试全部节点会生成集群 SSH 密钥、分发公钥、识别操作系统和架构，并保存最近一次测试结果。存在草稿节点或测试结果失效时，预检查和安装入口必须禁用，后端也会拒绝请求。
 
 安装执行页至少展示：
 

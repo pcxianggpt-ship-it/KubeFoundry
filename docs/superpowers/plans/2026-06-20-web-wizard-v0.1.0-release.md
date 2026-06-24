@@ -36,7 +36,7 @@
 - `scripts/ci/check-lf.sh`：受控文本文件 LF 检查。
 - `scripts/ci/check-secrets.sh`：示例凭据和常见私钥内容检查。
 - `.github/workflows/ci.yml`：后端、前端、Bash、LF 和敏感信息检查。
-- `doc/web-wizard-v0.1.0-acceptance.md`：真实环境成功与失败路径验收记录模板。
+- `doc/v0.1.0/web-wizard-v0.1.0-acceptance.md`：真实环境成功与失败路径验收记录模板。
 
 ### 修改文件
 
@@ -50,7 +50,7 @@
 - `scripts/lib/exec_script.sh`：增加主控制节点和其他控制节点执行函数。
 - `scripts/main.sh`：修复控制节点目标范围和无效 dry-run。
 - `config/cluster.yaml`：清除明文密码示例。
-- `README.md`、`doc/web-wizard-v0.1.0-usage.md`、`doc/api.md`：同步发布范围、启动和接口行为。
+- `README.md`、`doc/v0.1.0/web-wizard-v0.1.0-usage.md`、`doc/api.md`：同步发布范围、启动和接口行为。
 - `.gitattributes`：维持文本文件 LF 规则。
 
 ## Task 1: 建立任务生命周期互斥与重启恢复
@@ -875,8 +875,8 @@ git commit -m "ci: verify backend frontend and shell"
 
 **Files:**
 
-- Create: `doc/web-wizard-v0.1.0-acceptance.md`
-- Modify: `doc/web-wizard-v0.1.0-usage.md`
+- Create: `doc/v0.1.0/web-wizard-v0.1.0-acceptance.md`
+- Modify: `doc/v0.1.0/web-wizard-v0.1.0-usage.md`
 
 - [ ] **Step 1: 记录测试环境**
 
@@ -961,7 +961,7 @@ jobs.status=failed
 - [ ] **Step 6: 提交**
 
 ```bash
-git add doc/web-wizard-v0.1.0-acceptance.md doc/web-wizard-v0.1.0-usage.md
+git add doc/v0.1.0/web-wizard-v0.1.0-acceptance.md doc/v0.1.0/web-wizard-v0.1.0-usage.md
 git commit -m "test(web): record v0.1.0 acceptance"
 ```
 
@@ -970,10 +970,10 @@ git commit -m "test(web): record v0.1.0 acceptance"
 **Files:**
 
 - Modify: `README.md`
-- Modify: `doc/web-wizard-v0.1.0-usage.md`
-- Modify: `doc/web-wizard-v0.1.0-dev-plan.md`
+- Modify: `doc/v0.1.0/web-wizard-v0.1.0-usage.md`
+- Modify: `doc/v0.1.0/web-wizard-v0.1.0-dev-plan.md`
 - Modify: `doc/api.md`
-- Modify: `doc/mvp-todolist.md`
+- Modify: `doc/v0.1.0/mvp-todolist.md`
 
 - [ ] **Step 1: 更新 README 的 Web Wizard 快速启动**
 
@@ -1016,7 +1016,7 @@ POST /api/clusters/{cluster_id}/install
 
 - [ ] **Step 3: 更新里程碑与发布清单状态**
 
-`doc/web-wizard-v0.1.0-dev-plan.md` 标记已完成里程碑；`doc/mvp-todolist.md` 只勾选已经由测试或真实环境证据证明完成的条目，不凭代码存在推断通过。
+`doc/v0.1.0/web-wizard-v0.1.0-dev-plan.md` 标记已完成里程碑；`doc/v0.1.0/mvp-todolist.md` 只勾选已经由测试或真实环境证据证明完成的条目，不凭代码存在推断通过。
 
 - [ ] **Step 4: 运行最终验证**
 
@@ -1053,7 +1053,7 @@ git status 仅包含本计划预期修改
 - [ ] **Step 5: 提交文档**
 
 ```bash
-git add README.md doc/web-wizard-v0.1.0-usage.md doc/web-wizard-v0.1.0-dev-plan.md doc/api.md doc/mvp-todolist.md
+git add README.md doc/v0.1.0/web-wizard-v0.1.0-usage.md doc/v0.1.0/web-wizard-v0.1.0-dev-plan.md doc/api.md doc/v0.1.0/mvp-todolist.md
 git commit -m "docs: finalize web wizard v0.1.0 release guide"
 ```
 

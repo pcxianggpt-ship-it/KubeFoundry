@@ -1,5 +1,53 @@
 # KubeFoundry Web Wizard v0.1.0 使用说明
 
+## 离线生产部署
+
+在可联网且已安装 Node.js、npm、Python 3 和 pip 的构建机上，进入项目根目录执行：
+
+```bash
+bash package.sh
+```
+
+生成的发布包位于：
+
+```text
+dist/kubefoundry-web-v0.1.0.tar.gz
+```
+
+将发布包和 `deploy.sh` 复制到目标 Linux 服务器。进入最终部署目录后执行：
+
+```bash
+sudo bash deploy.sh kubefoundry-web-v0.1.0.tar.gz
+```
+
+部署脚本以执行时的 `${PWD}` 为安装根目录：
+
+```text
+${PWD}/app
+${PWD}/data
+${PWD}/logs
+```
+
+服务默认监听 `0.0.0.0:10001`，访问地址为：
+
+```text
+http://<管理节点 IP>:10001/
+```
+
+目标服务器要求 Python 3.7 或更高版本，不需要 Node.js、npm 或互联网连接。部署目录会写入 systemd 服务的绝对路径，部署完成后不要移动或重命名该目录。
+
+重复执行部署脚本会更新应用文件，并保留 `${PWD}/data` 和 `${PWD}/logs`。
+
+常用维护命令：
+
+```bash
+sudo bash deploy.sh --status
+sudo bash deploy.sh --restart
+sudo bash deploy.sh --stop
+sudo bash deploy.sh --uninstall
+journalctl -u kubefoundry-web -f
+```
+
 ## 后端启动
 
 后端位于 `web/backend`，使用 Flask、SQLite 和 Python 标准库执行任务编排。
@@ -78,14 +126,13 @@ http://127.0.0.1:5000
 v0.1.0 前端提供基础向导能力：
 
 1. 集群基础配置
-2. 节点配置
-3. SSH 配置
-4. 路径配置
-5. 生态组件选择
-6. 预检查任务
-7. 配置 YAML 预览
-8. 安装任务
-9. 任务状态和 SSE 日志
+2. 节点与登录配置
+3. 路径配置
+4. 生态组件选择
+5. 预检查任务
+6. 配置 YAML 预览
+7. 安装任务
+8. 任务状态和 SSE 日志
 
 安装执行页会展示步骤状态、节点状态和节点级完整日志。预检查页会按节点展示 CPU、内存、磁盘、Swap、端口等检查结果。
 
@@ -126,7 +173,7 @@ ${install_media}/04.registry/
 
 Python 会在任务启动前验证这些路径，并按步骤分发到目标节点。`18-init-k8s-cluster` 使用 `kubeadm token create --print-join-command` 和 `kubeadm init phase upload-certs` 生成控制节点及工作节点 join 命令，保存为任务产物后自动分发给步骤 20 和 21。
 
-安装介质必须位于运行后端的 Linux 管理节点本地。管理节点还必须能够使用配置的 SSH 私钥免密登录所有目标节点。
+安装介质必须位于运行后端的 Linux 管理节点本地。节点配置页需要录入每台服务器的 `root` 登录密码；点击“测试全部节点”后，后端会为当前集群生成 SSH 密钥、分发公钥，并自动识别操作系统和架构。后续预检查和安装统一使用后端生成的集群私钥登录。
 
 最终步骤 `web-verify-cluster-health` 会等待最多 5 分钟，检查所有节点 Ready、Flannel 就绪以及系统 Pod 无失败状态。
 
@@ -142,6 +189,8 @@ GET    /api/clusters/{cluster_id}/nodes
 POST   /api/clusters/{cluster_id}/nodes
 PUT    /api/nodes/{node_id}
 DELETE /api/nodes/{node_id}
+POST   /api/clusters/{cluster_id}/nodes/copy
+POST   /api/clusters/{cluster_id}/node-test
 GET    /api/clusters/{cluster_id}/settings
 PUT    /api/clusters/{cluster_id}/settings
 POST   /api/clusters/{cluster_id}/precheck
@@ -156,9 +205,13 @@ GET    /api/job-step-nodes/{item_id}/log
 
 后端接口未启动时，页面会显示请求错误，但前端工程仍可启动和构建。
 
-## SSH 认证范围
+## 节点登录与 SSH 认证范围
 
-v0.1.0 仅支持 SSH 私钥认证，后端不会保存 SSH 密码或 sudo 密码。运行后端的管理节点必须能够使用配置的私钥登录目标节点。
+v0.1.0 节点登录用户固定为 `root`，SSH 端口固定为 `22`，页面不再配置默认用户、端口或私钥路径。
+
+节点密码用于首次连通性测试和公钥分发，后端加密保存到 SQLite，不会出现在 API 响应、日志、`cluster.yaml` 或任务快照中。每个集群使用独立 SSH 密钥，密钥由后端生成并保存到本地数据目录。
+
+节点配置页支持复制所选节点，复制结果会以草稿形式保存。存在草稿、缺少密码、主机名或 IP 重复、节点测试失败或测试结果失效时，预检查和安装都会被拒绝。
 
 ## 已验证环境
 
@@ -173,4 +226,4 @@ Flannel
 registry 2.8.3
 ```
 
-详细记录见 `doc/web-wizard-v0.1.0-acceptance.md`。
+详细记录见 `doc/v0.1.0/web-wizard-v0.1.0-acceptance.md`。

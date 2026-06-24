@@ -31,6 +31,28 @@ K8S 集群一键安装工具 - 基于 Bash 脚本，支持高可用集群部署�
 
 ## 快速开始
 
+### Web 离线生产部署
+
+在可联网的构建机上执行：
+
+```bash
+bash package.sh
+```
+
+脚本会完成前端测试与构建，收集后端源码和纯 Python 依赖，并生成：
+
+```text
+dist/kubefoundry-web-v0.1.0.tar.gz
+```
+
+将压缩包和 `deploy.sh` 复制到目标 Linux 服务器，在计划安装目录中执行：
+
+```bash
+sudo bash deploy.sh dist/kubefoundry-web-v0.1.0.tar.gz
+```
+
+服务默认监听 `10001`，应用安装在当前目录的 `app`，数据库位于当前目录的 `data`，日志位于当前目录的 `logs`。目标服务器只需提供 Python 3.7 或更高版本，无需安装 Node.js，也无需连接互联网。
+
 ### Web Wizard
 
 后端要求 Python 3.7：
@@ -49,7 +71,7 @@ npm ci
 npm run dev
 ```
 
-v0.1.0 仅支持 SSH 私钥认证，安装范围为 Kubernetes Phase 2、Flannel 和最终健康检查。安装介质必须位于运行后端的 Linux 管理节点本地。详细说明见 `doc/web-wizard-v0.1.0-usage.md`。
+v0.1.0 Web Wizard 固定离线安装，节点配置页录入 `root` 密码并通过“测试全部节点”生成集群 SSH 密钥、分发公钥和识别系统信息；后续预检查与安装使用集群私钥。安装范围为 Kubernetes Phase 2、Flannel 和最终健康检查。安装介质必须位于运行后端的 Linux 管理节点本地。详细说明见 `doc/v0.1.0/web-wizard-v0.1.0-usage.md`。
 
 ### 1. 克隆项目
 
