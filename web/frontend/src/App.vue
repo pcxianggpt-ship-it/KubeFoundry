@@ -53,9 +53,6 @@
                   <el-form-item label="Service 网段" prop="service_subnet">
                     <el-input v-model="clusterForm.service_subnet" placeholder="10.96.0.0/16" />
                   </el-form-item>
-                  <el-form-item label="安装模式">
-                    <el-segmented v-model="clusterForm.install_mode" :options="installModeOptions" />
-                  </el-form-item>
                   <el-form-item label="镜像仓库主机名">
                     <el-input v-model="clusterForm.registry_hostname" placeholder="registry" />
                   </el-form-item>
@@ -69,25 +66,45 @@
                 <el-form-item label="描述">
                   <el-input v-model="clusterForm.description" type="textarea" :rows="3" />
                 </el-form-item>
+                <el-alert title="当前版本仅支持离线安装。" type="info" show-icon :closable="false" />
               </el-form>
             </section>
 
             <section v-show="activeStep === 1" class="pane">
               <div class="pane-header">
                 <h3>节点配置</h3>
-                <el-button type="primary" :icon="Plus" @click="openNodeDialog()">添加节点</el-button>
+                <div class="pane-actions">
+                  <el-button :disabled="!selectedNodeIds.length" @click="copySelectedNodes">复制所选</el-button>
+                  <el-button type="success" :disabled="!selectedClusterId" :loading="actionLoading" @click="runNodeTest">测试全部节点</el-button>
+                  <el-button type="primary" :icon="Plus" @click="openNodeDialog()">添加节点</el-button>
+                </div>
               </div>
-              <el-table :data="nodes" empty-text="暂无节点" border>
+              <el-alert v-if="nodeConfigProblems.length" :title="nodeConfigProblems.join('；')" type="warning" show-icon :closable="false" class="node-warning" />
+              <el-table :data="nodes" empty-text="暂无节点" border @selection-change="handleNodeSelectionChange">
+                <el-table-column type="selection" width="48" />
                 <el-table-column prop="hostname" label="主机名" min-width="150" />
                 <el-table-column prop="ip" label="IP" min-width="140" />
+                <el-table-column prop="ipv6" label="IPv6" min-width="120" />
                 <el-table-column label="角色" width="150">
                   <template #default="{ row }">
                     <el-tag :type="roleTagType(row.role)">{{ roleText(row.role) }}</el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column prop="ssh_user" label="SSH 用户" width="120" />
-                <el-table-column prop="ssh_port" label="端口" width="90" />
+                <el-table-column label="密码" width="100">
+                  <template #default="{ row }">
+                    <el-tag :type="row.has_password ? 'success' : 'danger'">{{ row.has_password ? '已配置' : '未配置' }}</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="草稿" width="90">
+                  <template #default="{ row }">
+                    <el-tag :type="row.is_draft ? 'warning' : 'info'">{{ row.is_draft ? '草稿' : '正式' }}</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="os_type" label="操作系统" width="120" />
+                <el-table-column prop="os_version" label="系统版本" width="120" />
                 <el-table-column prop="arch" label="架构" width="110" />
+                <el-table-column prop="node_test_status" label="测试状态" width="120" />
+                <el-table-column prop="node_tested_at" label="测试时间" min-width="160" />
                 <el-table-column label="操作" width="150" fixed="right">
                   <template #default="{ row }">
                     <el-button :icon="Edit" circle @click="openNodeDialog(row)" />
@@ -98,26 +115,6 @@
             </section>
 
             <section v-show="activeStep === 2" class="pane">
-              <div class="pane-header">
-                <h3>SSH 配置</h3>
-                <el-tag type="warning">MVP</el-tag>
-              </div>
-              <el-form :model="sshForm" label-position="top">
-                <div class="form-grid">
-                  <el-form-item label="认证方式">
-                    <el-segmented v-model="sshForm.auth_type" :options="authTypeOptions" />
-                  </el-form-item>
-                  <el-form-item label="默认用户">
-                    <el-input v-model="sshForm.username" placeholder="root" />
-                  </el-form-item>
-                  <el-form-item label="私钥路径">
-                    <el-input v-model="sshForm.private_key_path" placeholder="/root/.ssh/id_rsa" />
-                  </el-form-item>
-                </div>
-              </el-form>
-            </section>
-
-            <section v-show="activeStep === 3" class="pane">
               <div class="pane-header">
                 <h3>路径配置</h3>
               </div>
@@ -139,7 +136,7 @@
               </el-form>
             </section>
 
-            <section v-show="activeStep === 4" class="pane">
+            <section v-show="activeStep === 3" class="pane">
               <div class="pane-header">
                 <h3>生态组件选择</h3>
                 <el-tag type="info">v0.2.0</el-tag>
@@ -161,10 +158,10 @@
               </div>
             </section>
 
-            <section v-show="activeStep === 5" class="pane">
+            <section v-show="activeStep === 4" class="pane">
               <div class="pane-header">
                 <h3>预检查</h3>
-                <el-button type="primary" :icon="CircleCheck" :loading="actionLoading" :disabled="!selectedClusterId" @click="runPrecheck">
+                <el-button type="primary" :icon="CircleCheck" :loading="actionLoading" :disabled="!selectedClusterId || nodeConfigProblems.length > 0" @click="runPrecheck">
                   开始预检查
                 </el-button>
               </div>
@@ -181,7 +178,7 @@
               </el-table>
             </section>
 
-            <section v-show="activeStep === 6" class="pane">
+            <section v-show="activeStep === 5" class="pane">
               <div class="pane-header">
                 <h3>配置确认</h3>
                 <div class="pane-actions">
@@ -192,10 +189,10 @@
               <pre class="yaml-preview">{{ yamlPreview }}</pre>
             </section>
 
-            <section v-show="activeStep === 7" class="pane">
+            <section v-show="activeStep === 6" class="pane">
               <div class="pane-header">
                 <h3>安装执行</h3>
-                <el-button type="danger" :icon="VideoPlay" :loading="actionLoading" :disabled="!selectedClusterId" @click="runInstall">
+                <el-button type="danger" :icon="VideoPlay" :loading="actionLoading" :disabled="!selectedClusterId || nodeConfigProblems.length > 0" @click="runInstall">
                   执行底座安装
                 </el-button>
               </div>
@@ -212,7 +209,7 @@
               <job-status-panel :job="currentJob" :steps="jobSteps" @open-node-log="loadNodeLog" />
             </section>
 
-            <section v-show="activeStep === 8" class="pane">
+            <section v-show="activeStep === 7" class="pane">
               <div class="pane-header">
                 <h3>安装结果</h3>
                 <el-button :icon="Refresh" :disabled="!currentJobId" @click="refreshJob">刷新任务</el-button>
@@ -268,20 +265,8 @@
                 <el-option label="镜像仓库" value="registry" />
               </el-select>
             </el-form-item>
-            <el-form-item label="SSH 用户" prop="ssh_user">
-              <el-input v-model="nodeForm.ssh_user" />
-            </el-form-item>
-            <el-form-item label="SSH 端口" prop="ssh_port">
-              <el-input-number v-model="nodeForm.ssh_port" :min="1" :max="65535" controls-position="right" />
-            </el-form-item>
-            <el-form-item label="操作系统">
-              <el-input v-model="nodeForm.os_type" placeholder="openEuler / CentOS / Kylin" />
-            </el-form-item>
-            <el-form-item label="架构">
-              <el-select v-model="nodeForm.arch">
-                <el-option label="amd64" value="amd64" />
-                <el-option label="arm64" value="arm64" />
-              </el-select>
+            <el-form-item label="登录密码" prop="password">
+              <el-input v-model="nodeForm.password" type="password" show-password :placeholder="editingNodeId ? '留空表示保留原密码' : '请输入 root 登录密码'" />
             </el-form-item>
           </div>
         </el-form>
@@ -342,6 +327,7 @@ import {
   VideoPlay
 } from '@element-plus/icons-vue';
 import {
+  copyNodes,
   createCluster,
   createNode,
   deleteNode,
@@ -359,11 +345,11 @@ import {
   listJobs,
   listNodes,
   startInstall,
+  startNodeTest,
   startPrecheck,
   updateCluster,
   updateNode,
-  updateClusterSettings,
-  upsertSshCredentials
+  updateClusterSettings
 } from './api/client';
 
 const JobStatusPanel = defineComponent({
@@ -427,7 +413,6 @@ const JobStatusPanel = defineComponent({
 const steps = [
   { key: 'cluster', title: '集群基础配置' },
   { key: 'nodes', title: '节点配置' },
-  { key: 'ssh', title: 'SSH 配置' },
   { key: 'paths', title: '路径配置' },
   { key: 'ecosystem', title: '生态组件选择' },
   { key: 'precheck', title: '预检查' },
@@ -436,8 +421,6 @@ const steps = [
   { key: 'result', title: '安装结果' }
 ];
 
-const installModeOptions = ['online', 'offline'];
-const authTypeOptions = ['key'];
 const ecosystemOptions = [
   { key: 'kubemate_ui', name: 'Kubemate UI', step: '31-install-kubemate-ui' },
   { key: 'nfs', name: 'NFS', step: '32-install-nfs' },
@@ -473,6 +456,7 @@ const yamlImportDialogVisible = ref(false);
 const yamlImportContent = ref('');
 const jobHistoryDialogVisible = ref(false);
 const editingNodeId = ref(null);
+const selectedNodeIds = ref([]);
 
 const clusterForm = reactive({
   name: 'k8s-cluster',
@@ -482,14 +466,7 @@ const clusterForm = reactive({
   service_subnet: '10.96.0.0/16',
   registry_hostname: 'registry',
   registry_ip: '',
-  registry_port: 5000,
-  install_mode: 'offline'
-});
-
-const sshForm = reactive({
-  auth_type: 'key',
-  username: 'root',
-  private_key_path: '/root/.ssh/id_rsa'
+  registry_port: 5000
 });
 
 const pathForm = reactive({
@@ -512,10 +489,7 @@ const emptyNodeForm = () => ({
   ip: '',
   ipv6: '',
   role: 'worker',
-  ssh_port: 22,
-  ssh_user: 'root',
-  os_type: '',
-  arch: 'amd64'
+  password: ''
 });
 
 const nodeForm = reactive(emptyNodeForm());
@@ -531,9 +505,42 @@ const nodeRules = {
   hostname: [{ required: true, message: '请输入主机名', trigger: 'blur' }],
   ip: [{ required: true, message: '请输入 IP 地址', trigger: 'blur' }],
   role: [{ required: true, message: '请选择节点角色', trigger: 'change' }],
-  ssh_user: [{ required: true, message: '请输入 SSH 用户', trigger: 'blur' }],
-  ssh_port: [{ required: true, message: '请输入 SSH 端口', trigger: 'blur' }]
+  password: [{
+    validator: (rule, value, callback) => {
+      if (!editingNodeId.value && !value) {
+        callback(new Error('请输入登录密码'));
+        return;
+      }
+      callback();
+    },
+    trigger: 'blur'
+  }]
 };
+
+const nodeConfigProblems = computed(() => {
+  const problems = [];
+  const hostnameMap = new Map();
+  const ipMap = new Map();
+  nodes.value.forEach((node) => {
+    const label = node.hostname || `节点 ${node.id}`;
+    if (node.is_draft) problems.push(`${label} 是草稿节点`);
+    if (!node.hostname) problems.push(`${label} 缺少主机名`);
+    if (!node.ip) problems.push(`${label} 缺少 IP`);
+    if (!node.has_password) problems.push(`${label} 缺少登录密码`);
+    if (node.hostname) {
+      if (hostnameMap.has(node.hostname)) problems.push(`${label} 主机名重复`);
+      hostnameMap.set(node.hostname, node.id);
+    }
+    if (node.ip) {
+      if (ipMap.has(node.ip)) problems.push(`${label} IP 重复`);
+      ipMap.set(node.ip, node.id);
+    }
+  });
+  if (clusterForm.node_test_status && clusterForm.node_test_status !== 'success') {
+    problems.push('节点配置已修改或节点测试未成功，请重新执行“测试全部节点”');
+  }
+  return problems;
+});
 
 onMounted(async () => {
   await loadSettings();
@@ -542,7 +549,7 @@ onMounted(async () => {
 });
 onBeforeUnmount(disconnectEvents);
 watch(activeStep, (step) => {
-  if (step === 6 && selectedClusterId.value) {
+  if (step === 5 && selectedClusterId.value) {
     loadConfigYaml();
   }
 });
@@ -584,15 +591,10 @@ async function handleClusterChange(clusterId) {
   if (cluster) {
     const clusterData = { ...cluster };
     delete clusterData.api_server_port;
+    delete clusterData.install_mode;
     delete clusterForm.api_server_port;
+    delete clusterForm.install_mode;
     Object.assign(clusterForm, clusterData);
-    if (cluster.ssh_credentials) {
-      Object.assign(sshForm, {
-        auth_type: cluster.ssh_credentials.auth_type || 'key',
-        username: cluster.ssh_credentials.username || 'root',
-        private_key_path: cluster.ssh_credentials.private_key_path || '/root/.ssh/id_rsa'
-      });
-    }
     await loadClusterNodes();
     await loadClusterSettings(clusterId);
     await loadConfigYaml();
@@ -645,11 +647,6 @@ async function saveCluster() {
       selectedClusterId.value ? await updateCluster(selectedClusterId.value, clusterForm) : await createCluster(clusterForm)
     );
     selectedClusterId.value = saved.id || selectedClusterId.value;
-    await upsertSshCredentials(selectedClusterId.value, {
-      auth_type: sshForm.auth_type,
-      username: sshForm.username,
-      private_key_path: sshForm.private_key_path
-    });
     await updateClusterSettings(selectedClusterId.value, {
       paths: { ...pathForm },
       ecosystem: { ...ecosystemForm }
@@ -672,6 +669,7 @@ function openNodeDialog(row) {
   }
   editingNodeId.value = row?.id || null;
   Object.assign(nodeForm, emptyNodeForm(), row || {});
+  nodeForm.password = '';
   nodeDialogVisible.value = true;
 }
 
@@ -686,6 +684,35 @@ async function saveNode() {
     await loadClusterNodes();
     nodeDialogVisible.value = false;
     ElMessage.success('节点已保存');
+  });
+}
+
+function handleNodeSelectionChange(selection) {
+  selectedNodeIds.value = selection.map((item) => item.id);
+}
+
+async function copySelectedNodes() {
+  if (!selectedClusterId.value || !selectedNodeIds.value.length) return;
+  await withAction(async () => {
+    await copyNodes(selectedClusterId.value, selectedNodeIds.value);
+    await loadClusterNodes();
+    selectedNodeIds.value = [];
+    ElMessage.success('已复制为草稿节点');
+  });
+}
+
+async function runNodeTest() {
+  if (!selectedClusterId.value) return;
+  await withAction(async () => {
+    const payload = normalizeItem(await startNodeTest(selectedClusterId.value));
+    currentJob.value = {
+      id: payload.job_id,
+      job_type: 'node_test',
+      status: payload.status
+    };
+    manualJobId.value = payload.job_id;
+    await refreshJob();
+    connectEvents();
   });
 }
 
@@ -704,7 +731,7 @@ async function runPrecheck() {
     const job = normalizeItem(await startPrecheck(selectedClusterId.value));
     currentJob.value = job;
     manualJobId.value = job.id;
-    activeStep.value = 5;
+    activeStep.value = 4;
     await refreshJob();
     connectEvents();
   });
@@ -727,7 +754,7 @@ async function runInstall() {
       const job = normalizeItem(await startInstall(selectedClusterId.value));
       currentJob.value = job;
       manualJobId.value = job.id;
-      activeStep.value = 7;
+      activeStep.value = 6;
       await refreshJob();
       connectEvents();
     });
@@ -735,7 +762,7 @@ async function runInstall() {
     if (error.status === 409 && error.jobId) {
       apiError.value = '';
       manualJobId.value = error.jobId;
-      activeStep.value = 8;
+      activeStep.value = 7;
       await refreshJob();
       connectEvents();
       ElMessage.warning('该集群已有安装任务，已切换到现有任务');
@@ -754,6 +781,9 @@ async function refreshJob() {
       precheckResults.value = normalizeList(await getPrecheckResults(currentJobId.value));
     } else {
       precheckResults.value = [];
+    }
+    if (['success', 'failed', 'canceled'].includes(currentJob.value?.status) && selectedClusterId.value) {
+      await handleClusterChange(selectedClusterId.value);
     }
   } catch (error) {
     apiError.value = error.message || String(error);
@@ -824,7 +854,7 @@ async function bindHistoryJob(job) {
   currentJob.value = job;
   manualJobId.value = job.id;
   jobHistoryDialogVisible.value = false;
-  activeStep.value = job.job_type === 'precheck' ? 5 : 8;
+  activeStep.value = job.job_type === 'precheck' ? 4 : 7;
   await refreshJob();
   if (!['success', 'failed', 'canceled'].includes(job.status)) {
     connectEvents();

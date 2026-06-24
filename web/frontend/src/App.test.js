@@ -19,10 +19,11 @@ import {
   listJobs,
   listNodes,
   startInstall,
+  startNodeTest,
   startPrecheck,
   updateCluster,
   updateClusterSettings,
-  upsertSshCredentials
+  copyNodes
 } from './api/client';
 
 
@@ -43,12 +44,13 @@ vi.mock('./api/client', () => ({
   listClusters: vi.fn(),
   listJobs: vi.fn(),
   listNodes: vi.fn(),
+  copyNodes: vi.fn(),
   startInstall: vi.fn(),
+  startNodeTest: vi.fn(),
   startPrecheck: vi.fn(),
   updateCluster: vi.fn(),
   updateClusterSettings: vi.fn(),
-  updateNode: vi.fn(),
-  upsertSshCredentials: vi.fn()
+  updateNode: vi.fn()
 }));
 
 
@@ -86,8 +88,9 @@ describe('Web wizard', () => {
     getClusterSettings.mockResolvedValue({});
     listNodes.mockResolvedValue({ items: [] });
     getClusterConfigYaml.mockResolvedValue('');
-    upsertSshCredentials.mockResolvedValue({});
     updateClusterSettings.mockResolvedValue({});
+    copyNodes.mockResolvedValue({ items: [] });
+    startNodeTest.mockResolvedValue({ job_id: 22, status: 'pending' });
   });
 
   it('marks ecosystem components as unavailable in v0.1.0', async () => {
@@ -98,6 +101,19 @@ describe('Web wizard', () => {
     const switches = wrapper.findAll('.component-row .el-switch');
     expect(switches.length).toBeGreaterThan(0);
     expect(switches.every((item) => item.classes().includes('is-disabled'))).toBe(true);
+  });
+
+  it('hides install mode and ssh step, then shows node login and test controls', async () => {
+    const wrapper = mountApp();
+    await flushPromises();
+
+    expect(wrapper.text()).not.toContain('安装模式');
+    expect(wrapper.text()).not.toContain('SSH 配置');
+    expect(wrapper.text()).not.toContain('SSH 用户');
+    expect(wrapper.text()).not.toContain('SSH 端口');
+    expect(wrapper.text()).not.toContain('私钥路径');
+    expect(wrapper.text()).toContain('测试全部节点');
+    expect(wrapper.text()).toContain('复制所选');
   });
 
   it('creates a cluster, adds a node, and starts precheck', async () => {
@@ -144,8 +160,7 @@ describe('Web wizard', () => {
       hostname: 'worker-1',
       ip: '10.0.0.11',
       role: 'worker',
-      ssh_user: 'root',
-      ssh_port: 22
+      password: 'Secret123!'
     });
     await wrapper.vm.saveNode();
     await wrapper.vm.runPrecheck();
@@ -153,10 +168,7 @@ describe('Web wizard', () => {
 
     expect(createCluster).toHaveBeenCalled();
     expect(createCluster.mock.calls[0][0]).not.toHaveProperty('api_server_port');
-    expect(upsertSshCredentials).toHaveBeenCalledWith(
-      7,
-      expect.objectContaining({ auth_type: 'key' })
-    );
+    expect(createCluster.mock.calls[0][0]).not.toHaveProperty('install_mode');
     expect(updateClusterSettings).toHaveBeenCalledWith(
       7,
       expect.objectContaining({ paths: expect.any(Object) })
@@ -207,7 +219,7 @@ describe('Web wizard', () => {
     await flushPromises();
 
     expect(wrapper.vm.manualJobId).toBe(42);
-    expect(wrapper.vm.activeStep).toBe(8);
+    expect(wrapper.vm.activeStep).toBe(7);
     expect(getJob).toHaveBeenCalledWith(42);
   });
 
@@ -247,7 +259,7 @@ describe('Web wizard', () => {
     await wrapper.vm.bindHistoryJob(job);
     await flushPromises();
 
-    expect(wrapper.vm.activeStep).toBe(5);
+    expect(wrapper.vm.activeStep).toBe(4);
     expect(wrapper.vm.manualJobId).toBe(31);
     expect(wrapper.vm.precheckResults).toHaveLength(1);
     expect(eventSources).toHaveLength(0);

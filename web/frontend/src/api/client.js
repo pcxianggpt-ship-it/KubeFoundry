@@ -82,6 +82,13 @@ export function deleteNode(nodeId) {
   });
 }
 
+export function copyNodes(clusterId, nodeIds) {
+  return request(`/api/clusters/${clusterId}/nodes/copy`, {
+    method: 'POST',
+    body: JSON.stringify({ node_ids: nodeIds })
+  });
+}
+
 export function upsertSshCredentials(clusterId, data) {
   return request(`/api/clusters/${clusterId}/ssh-credentials`, {
     method: 'PUT',
@@ -113,6 +120,12 @@ export function updateClusterSettings(clusterId, data) {
 
 export function startPrecheck(clusterId) {
   return request(`/api/clusters/${clusterId}/precheck`, {
+    method: 'POST'
+  });
+}
+
+export function startNodeTest(clusterId) {
+  return request(`/api/clusters/${clusterId}/node-test`, {
     method: 'POST'
   });
 }

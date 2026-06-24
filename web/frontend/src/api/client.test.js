@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { getJob, startInstall } from './client';
+import { copyNodes, getJob, startInstall, startNodeTest } from './client';
 
 
 describe('API client', () => {
@@ -42,5 +42,26 @@ describe('API client', () => {
       error: 'cluster already has an active install job',
       job_id: 42
     });
+  });
+
+  it('calls copy nodes and node test endpoints', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ items: [] })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 202,
+        text: async () => JSON.stringify({ job_id: 9, status: 'pending' })
+      });
+    vi.stubGlobal('fetch', fetch);
+
+    await copyNodes(1, [2, 3]);
+    expect(fetch).toHaveBeenCalledWith('/api/clusters/1/nodes/copy', expect.objectContaining({ method: 'POST' }));
+
+    await startNodeTest(1);
+    expect(fetch).toHaveBeenCalledWith('/api/clusters/1/node-test', expect.objectContaining({ method: 'POST' }));
   });
 });
