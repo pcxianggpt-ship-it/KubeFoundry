@@ -1,7 +1,7 @@
 import os
 import sqlite3
 
-SCHEMA_VERSION = "0.1.1"
+SCHEMA_VERSION = "0.1.2"
 
 
 def project_root():
@@ -59,11 +59,50 @@ def _migrate_schema(conn):
         row["name"]
         for row in conn.execute("PRAGMA table_info(clusters)").fetchall()
     ]
-    if "api_server_port" in cluster_columns:
-        _remove_api_server_port_column(conn)
+    if "api_server_port" in cluster_columns or "install_mode" in cluster_columns:
+        _rebuild_clusters_table(conn)
+        cluster_columns = [
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(clusters)").fetchall()
+        ]
+    _add_missing_columns(
+        conn,
+        "clusters",
+        cluster_columns,
+        {
+            "node_config_version": "INTEGER NOT NULL DEFAULT 1",
+            "node_test_status": "TEXT NOT NULL DEFAULT 'pending'",
+            "node_tested_at": "TEXT",
+            "node_test_job_id": "INTEGER",
+        },
+    )
+    node_columns = [
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(nodes)").fetchall()
+    ]
+    _add_missing_columns(
+        conn,
+        "nodes",
+        node_columns,
+        {
+            "login_password_encrypted": "TEXT NOT NULL DEFAULT ''",
+            "is_draft": "INTEGER NOT NULL DEFAULT 0",
+            "os_version": "TEXT NOT NULL DEFAULT ''",
+            "node_test_status": "TEXT NOT NULL DEFAULT 'pending'",
+            "node_tested_at": "TEXT",
+            "node_test_message": "TEXT NOT NULL DEFAULT ''",
+            "node_test_config_version": "INTEGER",
+        },
+    )
 
 
-def _remove_api_server_port_column(conn):
+def _add_missing_columns(conn, table, existing_columns, column_defs):
+    for name, definition in column_defs.items():
+        if name not in existing_columns:
+            conn.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, name, definition))
+
+
+def _rebuild_clusters_table(conn):
     conn.commit()
     conn.execute("PRAGMA foreign_keys = OFF")
     try:
@@ -83,20 +122,25 @@ CREATE TABLE clusters_without_api_server_port (
     registry_hostname TEXT DEFAULT 'registry',
     registry_ip TEXT DEFAULT '',
     registry_port INTEGER NOT NULL DEFAULT 5000,
-    install_mode TEXT DEFAULT 'online',
     status TEXT NOT NULL DEFAULT 'draft',
+    node_config_version INTEGER NOT NULL DEFAULT 1,
+    node_test_status TEXT NOT NULL DEFAULT 'pending',
+    node_tested_at TEXT,
+    node_test_job_id INTEGER,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 INSERT INTO clusters_without_api_server_port (
     id, name, description, k8s_version, pod_subnet, service_subnet,
-    registry_hostname, registry_ip, registry_port, install_mode, status,
+    registry_hostname, registry_ip, registry_port, status,
+    node_config_version, node_test_status, node_tested_at, node_test_job_id,
     created_at, updated_at
 )
 SELECT
     id, name, description, k8s_version, pod_subnet, service_subnet,
-    registry_hostname, registry_ip, registry_port, install_mode, status,
+    registry_hostname, registry_ip, registry_port, status,
+    1, 'pending', NULL, NULL,
     created_at, updated_at
 FROM clusters;
 
@@ -129,8 +173,11 @@ CREATE TABLE IF NOT EXISTS clusters (
     registry_hostname TEXT DEFAULT 'registry',
     registry_ip TEXT DEFAULT '',
     registry_port INTEGER NOT NULL DEFAULT 5000,
-    install_mode TEXT DEFAULT 'online',
     status TEXT NOT NULL DEFAULT 'draft',
+    node_config_version INTEGER NOT NULL DEFAULT 1,
+    node_test_status TEXT NOT NULL DEFAULT 'pending',
+    node_tested_at TEXT,
+    node_test_job_id INTEGER,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -145,7 +192,14 @@ CREATE TABLE IF NOT EXISTS nodes (
     ssh_port INTEGER NOT NULL DEFAULT 22,
     ssh_user TEXT NOT NULL DEFAULT 'root',
     os_type TEXT DEFAULT '',
-    arch TEXT DEFAULT 'amd64',
+    os_version TEXT NOT NULL DEFAULT '',
+    arch TEXT DEFAULT '',
+    login_password_encrypted TEXT NOT NULL DEFAULT '',
+    is_draft INTEGER NOT NULL DEFAULT 0,
+    node_test_status TEXT NOT NULL DEFAULT 'pending',
+    node_tested_at TEXT,
+    node_test_message TEXT NOT NULL DEFAULT '',
+    node_test_config_version INTEGER,
     status TEXT NOT NULL DEFAULT 'pending',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),

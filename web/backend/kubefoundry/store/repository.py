@@ -12,6 +12,29 @@ def _rows(rows):
     return [dict(item) for item in rows]
 
 
+def _public_cluster(row):
+    item = _row(row)
+    if item is None:
+        return None
+    item.pop("install_mode", None)
+    return item
+
+
+def _public_node(row):
+    item = _row(row)
+    if item is None:
+        return None
+    password = item.pop("login_password_encrypted", "") or ""
+    item["has_password"] = bool(password)
+    item["ssh_user"] = "root"
+    item["ssh_port"] = 22
+    return item
+
+
+def _public_nodes(rows):
+    return [_public_node(item) for item in rows]
+
+
 def _pick(data, allowed):
     result = {}
     for key in allowed:
@@ -40,16 +63,22 @@ class Repository(object):
         self.close()
 
     def list_clusters(self):
-        return _rows(self.conn.execute("SELECT * FROM clusters ORDER BY id DESC").fetchall())
+        return [
+            _public_cluster(row)
+            for row in self.conn.execute("SELECT * FROM clusters ORDER BY id DESC").fetchall()
+        ]
 
     def get_cluster(self, cluster_id):
+        return _public_cluster(self.conn.execute("SELECT * FROM clusters WHERE id=?", (cluster_id,)).fetchone())
+
+    def get_cluster_private(self, cluster_id):
         return _row(self.conn.execute("SELECT * FROM clusters WHERE id=?", (cluster_id,)).fetchone())
 
     def create_cluster(self, data):
         allowed = [
             "name", "description", "k8s_version", "pod_subnet", "service_subnet",
             "registry_hostname", "registry_ip", "registry_port",
-            "install_mode", "status",
+            "status",
         ]
         values = _pick(data, allowed)
         if not values.get("name"):
@@ -67,7 +96,7 @@ class Repository(object):
         allowed = [
             "name", "description", "k8s_version", "pod_subnet", "service_subnet",
             "registry_hostname", "registry_ip", "registry_port",
-            "install_mode", "status",
+            "status",
         ]
         values = _pick(data, allowed)
         if not values:
@@ -88,21 +117,30 @@ class Repository(object):
         return cur.rowcount > 0
 
     def list_nodes(self, cluster_id):
-        return _rows(
-            self.conn.execute(
-                "SELECT * FROM nodes WHERE cluster_id=? ORDER BY "
-                "CASE role WHEN 'control_plane' THEN 1 WHEN 'registry' THEN 2 WHEN 'worker' THEN 3 ELSE 4 END, id",
-                (cluster_id,),
-            ).fetchall()
-        )
+        return _public_nodes(self._list_node_rows(cluster_id))
+
+    def list_nodes_private(self, cluster_id):
+        return _rows(self._list_node_rows(cluster_id))
+
+    def _list_node_rows(self, cluster_id):
+        return self.conn.execute(
+            "SELECT * FROM nodes WHERE cluster_id=? ORDER BY "
+            "CASE role WHEN 'control_plane' THEN 1 WHEN 'registry' THEN 2 WHEN 'worker' THEN 3 ELSE 4 END, id",
+            (cluster_id,),
+        ).fetchall()
 
     def get_node(self, node_id):
+        return _public_node(self.conn.execute("SELECT * FROM nodes WHERE id=?", (node_id,)).fetchone())
+
+    def get_node_private(self, node_id):
         return _row(self.conn.execute("SELECT * FROM nodes WHERE id=?", (node_id,)).fetchone())
 
     def create_node(self, cluster_id, data):
-        allowed = ["hostname", "ip", "ipv6", "role", "ssh_port", "ssh_user", "os_type", "arch", "status"]
+        allowed = ["hostname", "ip", "ipv6", "role", "status"]
         values = _pick(data, allowed)
         values["cluster_id"] = cluster_id
+        if data.get("password"):
+            values["login_password_encrypted"] = data.get("password")
         if not values.get("hostname") or not values.get("ip"):
             raise ValueError("hostname and ip are required")
         if not values.get("role"):
@@ -114,11 +152,17 @@ class Repository(object):
                 "INSERT INTO nodes(%s) VALUES(%s)" % (",".join(columns), ",".join(marks)),
                 [values[k] for k in columns],
             )
+            self._mark_node_config_changed(cluster_id)
         return self.get_node(cur.lastrowid)
 
     def update_node(self, node_id, data):
-        allowed = ["hostname", "ip", "ipv6", "role", "ssh_port", "ssh_user", "os_type", "arch", "status"]
+        current = self.get_node_private(node_id)
+        if not current:
+            return None
+        allowed = ["hostname", "ip", "ipv6", "role", "status"]
         values = _pick(data, allowed)
+        if data.get("password"):
+            values["login_password_encrypted"] = data.get("password")
         if not values:
             return self.get_node(node_id)
         sets = ["%s=?" % key for key in values.keys()]
@@ -128,12 +172,29 @@ class Repository(object):
                 "UPDATE nodes SET %s, updated_at=datetime('now') WHERE id=?" % ",".join(sets),
                 params,
             )
+            self._mark_node_config_changed(current["cluster_id"])
         return self.get_node(node_id)
 
     def delete_node(self, node_id):
+        current = self.get_node_private(node_id)
         with self.conn:
             cur = self.conn.execute("DELETE FROM nodes WHERE id=?", (node_id,))
+            if current and cur.rowcount > 0:
+                self._mark_node_config_changed(current["cluster_id"])
         return cur.rowcount > 0
+
+    def _mark_node_config_changed(self, cluster_id):
+        self.conn.execute(
+            "UPDATE clusters SET node_config_version=node_config_version + 1, "
+            "node_test_status='stale', node_test_job_id=NULL, updated_at=datetime('now') "
+            "WHERE id=?",
+            (cluster_id,),
+        )
+
+    def mark_node_config_changed(self, cluster_id):
+        with self.conn:
+            self._mark_node_config_changed(cluster_id)
+        return self.get_cluster(cluster_id)
 
     def get_ssh_credentials(self, cluster_id):
         return _row(self.conn.execute("SELECT * FROM ssh_credentials WHERE cluster_id=?", (cluster_id,)).fetchone())
