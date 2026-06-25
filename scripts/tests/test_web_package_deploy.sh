@@ -38,7 +38,8 @@ for requirement in \
     "importlib-metadata==6.7.0" \
     "zipp==3.15.0" \
     "packaging==23.2" \
-    "typing_extensions==4.7.1"; do
+    "typing_extensions==4.7.1" \
+    "pyaes==1.6.1"; do
     grep -qx "${requirement}" "${PROJECT_ROOT}/web/backend/requirements.txt" ||
         fail "缺少 Python 3.7 兼容依赖锁定: ${requirement}"
 done
