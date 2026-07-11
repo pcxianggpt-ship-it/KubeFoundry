@@ -23,6 +23,8 @@
 
 核心接口：
 
+`POST /api/clusters` 保存集群时会按集群名称复用已有记录；同名集群已存在时更新并返回该集群，不再新增重复记录。
+
 ```text
 GET    /api/health
 GET    /api/clusters

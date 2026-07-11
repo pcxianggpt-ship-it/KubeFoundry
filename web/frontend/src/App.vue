@@ -84,6 +84,8 @@
                 <el-table-column type="selection" width="48" />
                 <el-table-column prop="hostname" label="主机名" min-width="150" />
                 <el-table-column prop="ip" label="IP" min-width="140" />
+                <el-table-column prop="ssh_user" label="SSH 用户" width="120" />
+                <el-table-column prop="ssh_port" label="SSH 端口" width="110" />
                 <el-table-column prop="ipv6" label="IPv6" min-width="120" />
                 <el-table-column label="角色" width="150">
                   <template #default="{ row }">
@@ -265,8 +267,14 @@
                 <el-option label="镜像仓库" value="registry" />
               </el-select>
             </el-form-item>
+            <el-form-item label="SSH 用户" prop="ssh_user">
+              <el-input v-model="nodeForm.ssh_user" />
+            </el-form-item>
+            <el-form-item label="SSH 端口" prop="ssh_port">
+              <el-input-number v-model="nodeForm.ssh_port" :min="1" :max="65535" controls-position="right" />
+            </el-form-item>
             <el-form-item label="登录密码" prop="password">
-              <el-input v-model="nodeForm.password" type="password" show-password :placeholder="editingNodeId ? '留空表示保留原密码' : '请输入 root 登录密码'" />
+              <el-input v-model="nodeForm.password" type="password" show-password :placeholder="nodePasswordPlaceholder" />
             </el-form-item>
           </div>
         </el-form>
@@ -489,7 +497,11 @@ const emptyNodeForm = () => ({
   ip: '',
   ipv6: '',
   role: 'worker',
-  password: ''
+  ssh_user: 'root',
+  ssh_port: 22,
+  password: '',
+  has_password: false,
+  is_draft: false
 });
 
 const nodeForm = reactive(emptyNodeForm());
@@ -505,6 +517,8 @@ const nodeRules = {
   hostname: [{ required: true, message: '请输入主机名', trigger: 'blur' }],
   ip: [{ required: true, message: '请输入 IP 地址', trigger: 'blur' }],
   role: [{ required: true, message: '请选择节点角色', trigger: 'change' }],
+  ssh_user: [{ required: true, message: '请输入 SSH 用户', trigger: 'blur' }],
+  ssh_port: [{ required: true, message: '请输入 SSH 端口', trigger: 'change' }],
   password: [{
     validator: (rule, value, callback) => {
       if (!editingNodeId.value && !value) {
@@ -542,6 +556,11 @@ const nodeConfigProblems = computed(() => {
   return problems;
 });
 
+const nodePasswordPlaceholder = computed(() => {
+  if (!editingNodeId.value) return '请输入登录密码';
+  return nodeForm.has_password ? '密码已保存，留空表示保留原密码' : '请输入登录密码';
+});
+
 onMounted(async () => {
   await loadSettings();
   await loadClusters();
@@ -563,6 +582,16 @@ function normalizeList(payload) {
 
 function normalizeItem(payload) {
   return payload && payload.data ? payload.data : payload;
+}
+
+function normalizeClusterName(name) {
+  return String(name || '').trim();
+}
+
+function findExistingClusterByName(name) {
+  const targetName = normalizeClusterName(name);
+  if (!targetName) return null;
+  return clusters.value.find((cluster) => normalizeClusterName(cluster.name) === targetName) || null;
 }
 
 async function withAction(fn) {
@@ -643,8 +672,13 @@ async function loadClusterSettings(clusterId) {
 async function saveCluster() {
   await clusterFormRef.value.validate();
   await withAction(async () => {
+    let targetClusterId = selectedClusterId.value;
+    if (!targetClusterId) {
+      await loadClusters();
+      targetClusterId = findExistingClusterByName(clusterForm.name)?.id || null;
+    }
     const saved = normalizeItem(
-      selectedClusterId.value ? await updateCluster(selectedClusterId.value, clusterForm) : await createCluster(clusterForm)
+      targetClusterId ? await updateCluster(targetClusterId, clusterForm) : await createCluster(clusterForm)
     );
     selectedClusterId.value = saved.id || selectedClusterId.value;
     await updateClusterSettings(selectedClusterId.value, {
@@ -652,6 +686,7 @@ async function saveCluster() {
       ecosystem: { ...ecosystemForm }
     });
     await loadClusters();
+    await loadClusterNodes();
     ElMessage.success('集群配置已保存');
     activeStep.value = Math.max(activeStep.value, 1);
   });
@@ -676,15 +711,34 @@ function openNodeDialog(row) {
 async function saveNode() {
   await nodeFormRef.value.validate();
   await withAction(async () => {
+    const payload = buildNodePayload();
     if (editingNodeId.value) {
-      await updateNode(editingNodeId.value, { ...nodeForm });
+      await updateNode(editingNodeId.value, payload);
     } else {
-      await createNode(selectedClusterId.value, { ...nodeForm });
+      await createNode(selectedClusterId.value, payload);
     }
     await loadClusterNodes();
     nodeDialogVisible.value = false;
     ElMessage.success('节点已保存');
   });
+}
+
+function buildNodePayload() {
+  const payload = {
+    hostname: nodeForm.hostname,
+    ip: nodeForm.ip,
+    ipv6: nodeForm.ipv6,
+    role: nodeForm.role,
+    ssh_user: nodeForm.ssh_user || 'root',
+    ssh_port: nodeForm.ssh_port || 22
+  };
+  if (editingNodeId.value) {
+    payload.is_draft = false;
+  }
+  if (nodeForm.password) {
+    payload.password = nodeForm.password;
+  }
+  return payload;
 }
 
 function handleNodeSelectionChange(selection) {

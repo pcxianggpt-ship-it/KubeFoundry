@@ -3,6 +3,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from kubefoundry.api.routes import create_app
 from kubefoundry.installer.context import (
@@ -10,6 +11,7 @@ from kubefoundry.installer.context import (
     context_to_yaml_data,
     import_cluster_yaml,
 )
+from kubefoundry.installer.node_test import run_password_ssh
 from kubefoundry.installer.plan import (
     STEP_PLAN,
     resolve_targets,
@@ -20,6 +22,16 @@ from kubefoundry.installer.runtime import render_runtime_env
 from kubefoundry.installer.validator import validate_cluster_context
 from kubefoundry.store.db import init_db
 from kubefoundry.store.repository import Repository
+
+
+class _FakeProcess(object):
+    def __init__(self, returncode=0, stdout="ok", stderr=""):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+    def communicate(self, timeout=None):
+        return self.stdout, self.stderr
 
 
 class ApiTestCase(unittest.TestCase):
@@ -79,7 +91,7 @@ class ApiTestCase(unittest.TestCase):
         self.assertTrue(context["ecosystem"]["traefik"])
 
         yaml_data = context_to_yaml_data(context)
-        self.assertEqual(yaml_data["ssh"]["port"], 22)
+        self.assertEqual(yaml_data["ssh"]["port"], 2222)
 
         runtime_env = render_runtime_env(context, node)
         self.assertIn("export KF_CLUSTER_NAME=demo", runtime_env)
@@ -87,6 +99,27 @@ class ApiTestCase(unittest.TestCase):
         self.assertIn('export K8S_HOME="${KF_K8S_HOME}"', runtime_env)
         self.assertIn("log_info()", runtime_env)
         self.assertIn("export -f log_info", runtime_env)
+
+    def test_create_cluster_reuses_existing_name(self):
+        first = self.client.post(
+            "/api/clusters",
+            json={"name": "k8s-cluster", "description": "first"},
+        )
+        self.assertEqual(first.status_code, 201)
+        cluster_id = first.get_json()["id"]
+
+        second = self.client.post(
+            "/api/clusters",
+            json={"name": "k8s-cluster", "description": "second"},
+        )
+        self.assertEqual(second.status_code, 201)
+
+        self.assertEqual(cluster_id, second.get_json()["id"])
+        self.assertEqual("second", second.get_json()["description"])
+
+        clusters = self.client.get("/api/clusters").get_json()["items"]
+        self.assertEqual(1, len(clusters))
+        self.assertEqual(cluster_id, clusters[0]["id"])
 
     def test_api_server_port_is_ignored_and_not_exported(self):
         with Repository() as repo:
@@ -264,6 +297,64 @@ class ApiTestCase(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual("yaml-imported", response.get_json()["cluster"]["name"])
+
+    def test_copied_node_becomes_formal_after_edit_and_keeps_password_marker(self):
+        cluster = self.client.post("/api/clusters", json={"name": "node-copy"}).get_json()
+        cluster_id = cluster["id"]
+        created = self.client.post(
+            "/api/clusters/%s/nodes" % cluster_id,
+            json={
+                "hostname": "worker-1",
+                "ip": "10.0.0.11",
+                "role": "worker",
+                "ssh_user": "admin",
+                "ssh_port": 2222,
+                "password": "Secret123!",
+            },
+        ).get_json()
+
+        self.assertTrue(created["has_password"])
+        self.assertEqual("admin", created["ssh_user"])
+        self.assertEqual(2222, created["ssh_port"])
+
+        copied = self.client.post(
+            "/api/clusters/%s/nodes/copy" % cluster_id,
+            json={"node_ids": [created["id"]]},
+        ).get_json()["items"][0]
+        self.assertTrue(copied["is_draft"])
+        self.assertTrue(copied["has_password"])
+
+        updated = self.client.put(
+            "/api/nodes/%s" % copied["id"],
+            json={
+                "hostname": "worker-2",
+                "ip": "10.0.0.12",
+                "role": "worker",
+                "ssh_user": "ops",
+                "ssh_port": 2200,
+            },
+        ).get_json()
+
+        self.assertFalse(updated["is_draft"])
+        self.assertTrue(updated["has_password"])
+        self.assertEqual("ops", updated["ssh_user"])
+        self.assertEqual(2200, updated["ssh_port"])
+
+    def test_password_ssh_uses_node_user_and_port(self):
+        process = _FakeProcess(returncode=0)
+        with patch("kubefoundry.installer.node_test.subprocess.Popen", return_value=process) as popen:
+            code, out, err = run_password_ssh(
+                {"ip": "10.0.0.12", "ssh_user": "admin", "ssh_port": 2222},
+                "Secret123!",
+                "echo ok",
+            )
+
+        self.assertEqual(0, code)
+        self.assertEqual("ok", out)
+        self.assertEqual("", err)
+        command = popen.call_args[0][0]
+        self.assertIn("2222", command)
+        self.assertIn("admin@10.0.0.12", command)
 
     def test_ssh_credentials_are_key_only_and_sanitized(self):
         cluster = self.client.post("/api/clusters", json={"name": "ssh"}).get_json()

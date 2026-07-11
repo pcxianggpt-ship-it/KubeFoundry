@@ -23,6 +23,7 @@ import {
   startPrecheck,
   updateCluster,
   updateClusterSettings,
+  updateNode,
   copyNodes
 } from './api/client';
 
@@ -109,9 +110,9 @@ describe('Web wizard', () => {
 
     expect(wrapper.text()).not.toContain('安装模式');
     expect(wrapper.text()).not.toContain('SSH 配置');
-    expect(wrapper.text()).not.toContain('SSH 用户');
-    expect(wrapper.text()).not.toContain('SSH 端口');
     expect(wrapper.text()).not.toContain('私钥路径');
+    expect(wrapper.text()).toContain('SSH 用户');
+    expect(wrapper.text()).toContain('SSH 端口');
     expect(wrapper.text()).toContain('测试全部节点');
     expect(wrapper.text()).toContain('复制所选');
   });
@@ -179,6 +180,75 @@ describe('Web wizard', () => {
     );
     expect(startPrecheck).toHaveBeenCalledWith(7);
     expect(wrapper.vm.manualJobId).toBe(21);
+  });
+
+  it('reuses an existing cluster with the same name when saving', async () => {
+    listClusters.mockResolvedValue({
+      items: [{ id: 7, name: 'k8s-cluster' }]
+    });
+    updateCluster.mockResolvedValue({ id: 7, name: 'k8s-cluster' });
+
+    const wrapper = mountApp();
+    await flushPromises();
+
+    await wrapper.vm.saveCluster();
+    await flushPromises();
+
+    expect(createCluster).not.toHaveBeenCalled();
+    expect(updateCluster).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({ name: 'k8s-cluster' })
+    );
+    expect(wrapper.vm.selectedClusterId).toBe(7);
+    expect(updateClusterSettings).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({ paths: expect.any(Object) })
+    );
+  });
+
+  it('edits a copied node as formal and keeps saved password without sending an empty password', async () => {
+    updateNode.mockResolvedValue({
+      id: 9,
+      hostname: 'worker-2',
+      ip: '10.0.0.12',
+      role: 'worker',
+      ssh_user: 'admin',
+      ssh_port: 2222,
+      has_password: true,
+      is_draft: false
+    });
+    const wrapper = mountApp();
+    await flushPromises();
+
+    wrapper.vm.selectedClusterId = 7;
+    wrapper.vm.openNodeDialog({
+      id: 9,
+      hostname: 'worker-1',
+      ip: '10.0.0.11',
+      role: 'worker',
+      ssh_user: 'admin',
+      ssh_port: 2222,
+      has_password: true,
+      is_draft: true
+    });
+    await flushPromises();
+
+    expect(wrapper.vm.nodePasswordPlaceholder).toContain('已保存');
+    wrapper.vm.nodeForm.hostname = 'worker-2';
+    wrapper.vm.nodeForm.ip = '10.0.0.12';
+    await wrapper.vm.saveNode();
+
+    expect(updateNode).toHaveBeenCalledWith(
+      9,
+      expect.objectContaining({
+        hostname: 'worker-2',
+        ip: '10.0.0.12',
+        ssh_user: 'admin',
+        ssh_port: 2222,
+        is_draft: false
+      })
+    );
+    expect(updateNode.mock.calls[0][1]).not.toHaveProperty('password');
   });
 
   it('drops a legacy API Server port returned by the backend', async () => {

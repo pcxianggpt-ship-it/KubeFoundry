@@ -114,17 +114,19 @@ def ensure_cluster_key(cluster_id):
 
 
 def run_password_ssh(node, password, command, timeout=60):
+    user = node.get("ssh_user") or "root"
+    port = str(node.get("ssh_port") or 22)
     cmd = [
         "sshpass",
         "-e",
         "ssh",
         "-p",
-        "22",
+        port,
         "-o",
         "ConnectTimeout=30",
         "-o",
         "StrictHostKeyChecking=no",
-        "root@%s" % node.get("ip"),
+        "%s@%s" % (user, node.get("ip")),
         command,
     ]
     env = os.environ.copy()
@@ -208,14 +210,14 @@ def _test_one_node(job_id, step_id, node, public_key, private_key, config_versio
         with open(public_key, "r", encoding="utf-8") as fh:
             public_key_text = fh.read().strip()
         setup_command = (
-            "mkdir -p /root/.ssh && chmod 700 /root/.ssh && "
-            "touch /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys && "
-            "grep -qxF %s /root/.ssh/authorized_keys || echo %s >> /root/.ssh/authorized_keys"
+            "mkdir -p ~/.ssh && chmod 700 ~/.ssh && "
+            "touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && "
+            "grep -qxF %s ~/.ssh/authorized_keys || echo %s >> ~/.ssh/authorized_keys"
             % (shell_quote(public_key_text), shell_quote(public_key_text))
         )
         code, out, err = run_password_ssh(node, password, setup_command, timeout=60)
         if code == 0:
-            context = {"ssh": {"username": "root", "private_key_path": private_key}}
+            context = {"ssh": {"username": node.get("ssh_user") or "root", "private_key_path": private_key}}
             from kubefoundry.installer.ssh import run_ssh
 
             code, out, err = run_ssh(node, context, OS_ARCH_COMMAND, timeout=60)

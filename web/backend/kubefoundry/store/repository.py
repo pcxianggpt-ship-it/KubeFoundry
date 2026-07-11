@@ -28,8 +28,6 @@ def _public_node(row):
     password = item.pop("login_password_encrypted", "") or ""
     item["has_password"] = bool(password)
     item["is_draft"] = bool(item.get("is_draft"))
-    item["ssh_user"] = "root"
-    item["ssh_port"] = 22
     return item
 
 
@@ -43,6 +41,10 @@ def _pick(data, allowed):
         if key in data and data.get(key) is not None:
             result[key] = data.get(key)
     return result
+
+
+def _normalize_cluster_name(name):
+    return (name or "").strip()
 
 
 class Repository(object):
@@ -76,6 +78,17 @@ class Repository(object):
     def get_cluster_private(self, cluster_id):
         return _row(self.conn.execute("SELECT * FROM clusters WHERE id=?", (cluster_id,)).fetchone())
 
+    def find_cluster_by_name(self, name):
+        cluster_name = _normalize_cluster_name(name)
+        if not cluster_name:
+            return None
+        return _public_cluster(
+            self.conn.execute(
+                "SELECT * FROM clusters WHERE name=? ORDER BY id LIMIT 1",
+                (cluster_name,),
+            ).fetchone()
+        )
+
     def create_cluster(self, data):
         allowed = [
             "name", "description", "k8s_version", "pod_subnet", "service_subnet",
@@ -83,8 +96,12 @@ class Repository(object):
             "status",
         ]
         values = _pick(data, allowed)
+        values["name"] = _normalize_cluster_name(values.get("name"))
         if not values.get("name"):
             values["name"] = "k8s-cluster"
+        existing = self.find_cluster_by_name(values.get("name"))
+        if existing:
+            return self.update_cluster(existing["id"], values)
         columns = list(values.keys())
         marks = ["?"] * len(columns)
         with self.conn:
@@ -138,7 +155,7 @@ class Repository(object):
         return _row(self.conn.execute("SELECT * FROM nodes WHERE id=?", (node_id,)).fetchone())
 
     def create_node(self, cluster_id, data):
-        allowed = ["hostname", "ip", "ipv6", "role", "status"]
+        allowed = ["hostname", "ip", "ipv6", "role", "ssh_port", "ssh_user", "status"]
         values = _pick(data, allowed)
         values["cluster_id"] = cluster_id
         if data.get("password"):
@@ -161,10 +178,12 @@ class Repository(object):
         current = self.get_node_private(node_id)
         if not current:
             return None
-        allowed = ["hostname", "ip", "ipv6", "role", "status"]
+        allowed = ["hostname", "ip", "ipv6", "role", "ssh_port", "ssh_user", "status"]
         values = _pick(data, allowed)
         if data.get("password"):
             values["login_password_encrypted"] = encrypt_text(data.get("password"))
+        if current.get("is_draft") and values:
+            values["is_draft"] = 0
         if not values:
             return self.get_node(node_id)
         sets = ["%s=?" % key for key in values.keys()]
