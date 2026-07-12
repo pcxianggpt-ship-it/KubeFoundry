@@ -16,6 +16,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.crypto.SecretKey;
 import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -25,8 +26,20 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class MasterKeyProviderTest {
 
+    private static final Set<PosixFilePermission> OWNER_READ_WRITE_EXECUTE = Set.of(
+            PosixFilePermission.OWNER_READ,
+            PosixFilePermission.OWNER_WRITE,
+            PosixFilePermission.OWNER_EXECUTE);
+
     @TempDir
     Path temporaryDirectory;
+
+    @BeforeEach
+    void prepareSecureDataDirectory() throws IOException {
+        if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+            Files.setPosixFilePermissions(temporaryDirectory, OWNER_READ_WRITE_EXECUTE);
+        }
+    }
 
     @Test
     void createsAndReusesBase64Encoded256BitMasterKey() throws IOException {
@@ -47,6 +60,7 @@ class MasterKeyProviderTest {
         assumePosixFileSystem();
         Path keyFile = temporaryDirectory.resolve("secrets").resolve("master.key");
         Files.createDirectories(keyFile.getParent());
+        Files.setPosixFilePermissions(keyFile.getParent(), OWNER_READ_WRITE_EXECUTE);
         Files.writeString(keyFile, Base64.getEncoder().encodeToString(new byte[31]));
         MasterKeyProvider provider = new MasterKeyProvider();
 
@@ -60,6 +74,7 @@ class MasterKeyProviderTest {
         assumePosixFileSystem();
         Path keyFile = temporaryDirectory.resolve("secrets").resolve("master.key");
         Files.createDirectories(keyFile.getParent());
+        Files.setPosixFilePermissions(keyFile.getParent(), OWNER_READ_WRITE_EXECUTE);
         Files.writeString(keyFile, Base64.getEncoder().encodeToString(new byte[32]));
         Files.setPosixFilePermissions(keyFile, Set.of(
                 PosixFilePermission.OWNER_READ,
@@ -91,6 +106,8 @@ class MasterKeyProviderTest {
                 .containsExactlyInAnyOrder(
                         PosixFilePermission.OWNER_READ,
                         PosixFilePermission.OWNER_WRITE);
+        assertThat(Files.getPosixFilePermissions(temporaryDirectory.resolve("secrets")))
+                .containsExactlyInAnyOrderElementsOf(OWNER_READ_WRITE_EXECUTE);
     }
 
     @Test
@@ -111,6 +128,7 @@ class MasterKeyProviderTest {
         Path targetKey = temporaryDirectory.resolve("target.key");
         writeValidKey(targetKey, (byte) 1);
         Files.createDirectory(temporaryDirectory.resolve("secrets"));
+        Files.setPosixFilePermissions(temporaryDirectory.resolve("secrets"), OWNER_READ_WRITE_EXECUTE);
         Files.createSymbolicLink(masterKeyFile(), targetKey);
 
         assertThatThrownBy(() -> new MasterKeyProvider().loadOrCreate(temporaryDirectory))
@@ -122,6 +140,7 @@ class MasterKeyProviderTest {
         assumePosixFileSystem();
         Path keyFile = masterKeyFile();
         Files.createDirectories(keyFile.getParent());
+        Files.setPosixFilePermissions(keyFile.getParent(), OWNER_READ_WRITE_EXECUTE);
         writeValidKey(keyFile, (byte) 1);
         Path replacement = temporaryDirectory.resolve("replacement.key");
         writeValidKey(replacement, (byte) 2);
@@ -137,6 +156,7 @@ class MasterKeyProviderTest {
     void rejectsMasterKeyWhenFileIdentityIsUnavailable() throws IOException {
         assumePosixFileSystem();
         Files.createDirectories(masterKeyFile().getParent());
+        Files.setPosixFilePermissions(masterKeyFile().getParent(), OWNER_READ_WRITE_EXECUTE);
         writeValidKey(masterKeyFile(), (byte) 1);
 
         MasterKeyProvider provider = new MasterKeyProvider(
@@ -155,7 +175,7 @@ class MasterKeyProviderTest {
         MasterKeyProvider provider = new MasterKeyProvider(
                 view -> {
                     PosixFileAttributes attributes = view.readAttributes();
-                    if (attributeReads.getAndIncrement() == 0) {
+                    if (attributeReads.getAndIncrement() == 1) {
                         return attributesWith(attributes, attributes.fileKey(), Set.of(
                                 PosixFilePermission.OWNER_READ,
                                 PosixFilePermission.OWNER_WRITE,
@@ -189,6 +209,80 @@ class MasterKeyProviderTest {
         assertThatThrownBy(() -> provider.loadOrCreate(temporaryDirectory))
                 .isInstanceOf(MasterKeyPermissionException.class);
         assertThat(masterKeyFile()).doesNotExist();
+    }
+
+    @Test
+    void rejectsDataDirectoryWithGroupPermissions() throws IOException {
+        assumePosixFileSystem();
+        Files.setPosixFilePermissions(temporaryDirectory, Set.of(
+                PosixFilePermission.OWNER_READ,
+                PosixFilePermission.OWNER_WRITE,
+                PosixFilePermission.OWNER_EXECUTE,
+                PosixFilePermission.GROUP_READ));
+
+        assertThatThrownBy(() -> new MasterKeyProvider().loadOrCreate(temporaryDirectory))
+                .isInstanceOf(MasterKeyPermissionException.class)
+                .hasMessageContaining("dataDir")
+                .hasMessageContaining("chmod 700");
+    }
+
+    @Test
+    void rejectsSecretsDirectoryWithGroupPermissions() throws IOException {
+        assumePosixFileSystem();
+        Path secretsDirectory = temporaryDirectory.resolve("secrets");
+        Files.createDirectory(secretsDirectory);
+        Files.setPosixFilePermissions(secretsDirectory, Set.of(
+                PosixFilePermission.OWNER_READ,
+                PosixFilePermission.OWNER_WRITE,
+                PosixFilePermission.OWNER_EXECUTE,
+                PosixFilePermission.GROUP_READ));
+
+        assertThatThrownBy(() -> new MasterKeyProvider().loadOrCreate(temporaryDirectory))
+                .isInstanceOf(MasterKeyPermissionException.class)
+                .hasMessageContaining("secrets")
+                .hasMessageContaining("chmod 700");
+    }
+
+    @Test
+    void rejectsDirectoryNotOwnedByCurrentServiceAccount() {
+        assumePosixFileSystem();
+        MasterKeyProvider provider = new MasterKeyProvider(
+                PosixFileAttributeView::readAttributes,
+                path -> { },
+                () -> () -> "other-service-account");
+
+        assertThatThrownBy(() -> provider.loadOrCreate(temporaryDirectory))
+                .isInstanceOf(MasterKeyPermissionException.class)
+                .hasMessageContaining("所有者");
+    }
+
+    @Test
+    void doesNotDeleteReplacementWhenNewMasterKeyIdentityChangesDuringCleanup() throws IOException {
+        assumePosixFileSystem();
+        Path replacement = temporaryDirectory.resolve("replacement.key");
+        writeValidKey(replacement, (byte) 9);
+        AtomicInteger attributeReads = new AtomicInteger();
+        MasterKeyProvider provider = new MasterKeyProvider(
+                view -> {
+                    PosixFileAttributes attributes = view.readAttributes();
+                    if (attributeReads.getAndIncrement() == 0) {
+                        return attributesWith(attributes, attributes.fileKey(), Set.of(
+                                PosixFilePermission.OWNER_READ,
+                                PosixFilePermission.OWNER_WRITE,
+                                PosixFilePermission.GROUP_READ));
+                    }
+                    if (attributeReads.get() == 2) {
+                        Files.move(replacement, masterKeyFile(),
+                                StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                    return view.readAttributes();
+                },
+                path -> { });
+
+        assertThatThrownBy(() -> provider.loadOrCreate(temporaryDirectory))
+                .isInstanceOf(MasterKeyPermissionException.class);
+        assertThat(masterKeyFile()).exists();
+        assertThat(replacement).doesNotExist();
     }
 
     private Path masterKeyFile() {
