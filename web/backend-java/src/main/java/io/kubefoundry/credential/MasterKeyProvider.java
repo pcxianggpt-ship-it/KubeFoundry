@@ -12,9 +12,7 @@ import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.nio.file.SecureDirectoryStream;
 import java.nio.file.StandardOpenOption;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileAttribute;
-import java.nio.file.attribute.FileTime;
 import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFileAttributes;
 import java.nio.file.attribute.PosixFilePermission;
@@ -48,16 +46,23 @@ public final class MasterKeyProvider {
             StandardOpenOption.CREATE_NEW,
             StandardOpenOption.WRITE);
 
+    private final PosixAttributeReader posixAttributeReader;
     private final BeforeExistingKeyOpen beforeExistingKeyOpen;
 
     public MasterKeyProvider() {
-        this(keyFile -> { });
+        this(PosixFileAttributeView::readAttributes, keyFile -> { });
     }
 
     MasterKeyProvider(BeforeExistingKeyOpen beforeExistingKeyOpen) {
-        if (beforeExistingKeyOpen == null) {
+        this(PosixFileAttributeView::readAttributes, beforeExistingKeyOpen);
+    }
+
+    MasterKeyProvider(
+            PosixAttributeReader posixAttributeReader, BeforeExistingKeyOpen beforeExistingKeyOpen) {
+        if (posixAttributeReader == null || beforeExistingKeyOpen == null) {
             throw new IllegalArgumentException("打开前操作不能为空");
         }
+        this.posixAttributeReader = posixAttributeReader;
         this.beforeExistingKeyOpen = beforeExistingKeyOpen;
     }
 
@@ -68,10 +73,10 @@ public final class MasterKeyProvider {
 
         try {
             Files.createDirectories(dataDir);
-            if (Files.getFileAttributeView(dataDir, PosixFileAttributeView.class) != null) {
-                return loadOrCreatePosix(dataDir);
+            if (Files.getFileAttributeView(dataDir, PosixFileAttributeView.class) == null) {
+                throw unsupportedFileSystem();
             }
-            return loadOrCreateNonPosix(dataDir);
+            return loadOrCreatePosix(dataDir);
         } catch (MasterKeyPermissionException | IllegalStateException exception) {
             throw exception;
         } catch (IOException exception) {
@@ -82,7 +87,7 @@ public final class MasterKeyProvider {
     private SecretKey loadOrCreatePosix(Path dataDir) throws IOException {
         try (DirectoryStream<Path> dataDirectory = Files.newDirectoryStream(dataDir)) {
             if (!(dataDirectory instanceof SecureDirectoryStream<Path> secureDataDirectory)) {
-                throw new IllegalStateException("当前 POSIX 文件系统不支持安全目录访问");
+                throw unsupportedFileSystem();
             }
             try (SecureDirectoryStream<Path> secretsDirectory =
                          openOrCreateSecureSecretsDirectory(secureDataDirectory, dataDir)) {
@@ -114,14 +119,24 @@ public final class MasterKeyProvider {
     private SecretKey createPosixKey(SecureDirectoryStream<Path> secretsDirectory) throws IOException {
         byte[] keyBytes = new byte[KEY_LENGTH_BYTES];
         byte[] encodedKey = null;
+        boolean created = false;
+        boolean permissionsVerified = false;
         try {
             new java.security.SecureRandom().nextBytes(keyBytes);
             encodedKey = Base64.getEncoder().encode(keyBytes);
             try (SeekableByteChannel channel = secretsDirectory.newByteChannel(
                     MASTER_KEY_FILE, CREATE_OPTIONS, OWNER_READ_WRITE_ATTRIBUTE)) {
+                created = true;
+                verifyNewKeyPermissions(secretsDirectory);
+                permissionsVerified = true;
                 writeFully(channel, encodedKey);
             }
             return new SecretKeySpec(keyBytes, ALGORITHM);
+        } catch (IOException | RuntimeException exception) {
+            if (created && !permissionsVerified) {
+                deleteEmptyNewKey(secretsDirectory, exception);
+            }
+            throw exception;
         } finally {
             clear(encodedKey);
             clear(keyBytes);
@@ -136,65 +151,10 @@ public final class MasterKeyProvider {
             throw new IllegalStateException("无法读取主密钥文件属性");
         }
 
-        ExistingKeyIdentity before = validateExistingPosixKey(view.readAttributes());
+        ExistingKeyIdentity before = validateExistingPosixKey(posixAttributeReader.read(view));
         beforeExistingKeyOpen.run(keyFileForVerification);
         try (SeekableByteChannel channel = secretsDirectory.newByteChannel(MASTER_KEY_FILE, READ_OPTIONS)) {
-            ExistingKeyIdentity after = validateExistingPosixKey(view.readAttributes());
-            if (!before.sameFileAs(after)) {
-                throw new IllegalStateException("主密钥文件身份在安全打开期间发生变化");
-            }
-            return decodeKey(channel);
-        }
-    }
-
-    private SecretKey loadOrCreateNonPosix(Path dataDir) throws IOException {
-        Path secretsDirectory = dataDir.resolve(SECRETS_DIRECTORY);
-        ensureNonPosixSecretsDirectory(secretsDirectory);
-        Path keyFile = secretsDirectory.resolve(MASTER_KEY_FILE);
-        try {
-            return createNonPosixKey(keyFile);
-        } catch (FileAlreadyExistsException exception) {
-            return readExistingNonPosixKey(keyFile);
-        }
-    }
-
-    private void ensureNonPosixSecretsDirectory(Path secretsDirectory) throws IOException {
-        if (Files.notExists(secretsDirectory, LinkOption.NOFOLLOW_LINKS)) {
-            try {
-                Files.createDirectory(secretsDirectory);
-            } catch (FileAlreadyExistsException ignored) {
-                // Validate the component below after a concurrent creator wins the race.
-            }
-        }
-        if (Files.isSymbolicLink(secretsDirectory)
-                || !Files.isDirectory(secretsDirectory, LinkOption.NOFOLLOW_LINKS)) {
-            throw new IllegalStateException("secrets 目录不能是符号链接且必须为目录");
-        }
-    }
-
-    private SecretKey createNonPosixKey(Path keyFile) throws IOException {
-        byte[] keyBytes = new byte[KEY_LENGTH_BYTES];
-        byte[] encodedKey = null;
-        try {
-            new java.security.SecureRandom().nextBytes(keyBytes);
-            encodedKey = Base64.getEncoder().encode(keyBytes);
-            try (SeekableByteChannel channel = Files.newByteChannel(keyFile, CREATE_OPTIONS)) {
-                writeFully(channel, encodedKey);
-            }
-            return new SecretKeySpec(keyBytes, ALGORITHM);
-        } finally {
-            clear(encodedKey);
-            clear(keyBytes);
-        }
-    }
-
-    private SecretKey readExistingNonPosixKey(Path keyFile) throws IOException {
-        ExistingKeyIdentity before = validateExistingKey(Files.readAttributes(
-                keyFile, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS));
-        beforeExistingKeyOpen.run(keyFile);
-        try (SeekableByteChannel channel = Files.newByteChannel(keyFile, READ_OPTIONS)) {
-            ExistingKeyIdentity after = validateExistingKey(Files.readAttributes(
-                    keyFile, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS));
+            ExistingKeyIdentity after = validateExistingPosixKey(posixAttributeReader.read(view));
             if (!before.sameFileAs(after)) {
                 throw new IllegalStateException("主密钥文件身份在安全打开期间发生变化");
             }
@@ -213,11 +173,41 @@ public final class MasterKeyProvider {
         return identity;
     }
 
-    private ExistingKeyIdentity validateExistingKey(BasicFileAttributes attributes) {
+    private ExistingKeyIdentity validateExistingKey(PosixFileAttributes attributes) {
         if (attributes.isSymbolicLink() || !attributes.isRegularFile()) {
             throw new IllegalStateException("主密钥文件不能是符号链接且必须为普通文件");
         }
-        return new ExistingKeyIdentity(attributes.fileKey(), attributes.size(), attributes.lastModifiedTime());
+        if (attributes.fileKey() == null) {
+            throw new IllegalStateException("无法可靠确认主密钥文件身份");
+        }
+        return new ExistingKeyIdentity(attributes.fileKey());
+    }
+
+    private void verifyNewKeyPermissions(SecureDirectoryStream<Path> secretsDirectory) throws IOException {
+        PosixFileAttributeView view = secretsDirectory.getFileAttributeView(
+                MASTER_KEY_FILE, PosixFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
+        if (view == null) {
+            throw new MasterKeyPermissionException("无法读取新建主密钥文件权限");
+        }
+
+        PosixFileAttributes beforeAttributes = posixAttributeReader.read(view);
+        ExistingKeyIdentity before = validateExistingKey(beforeAttributes);
+        if (!OWNER_READ_WRITE.equals(beforeAttributes.permissions())) {
+            view.setPermissions(OWNER_READ_WRITE);
+        }
+        PosixFileAttributes afterAttributes = posixAttributeReader.read(view);
+        ExistingKeyIdentity after = validateExistingKey(afterAttributes);
+        if (!before.sameFileAs(after) || !OWNER_READ_WRITE.equals(afterAttributes.permissions())) {
+            throw new MasterKeyPermissionException("新建主密钥文件权限无法安全设置为 chmod 600");
+        }
+    }
+
+    private void deleteEmptyNewKey(SecureDirectoryStream<Path> secretsDirectory, Exception original) {
+        try {
+            secretsDirectory.deleteFile(MASTER_KEY_FILE);
+        } catch (IOException deletionFailure) {
+            original.addSuppressed(deletionFailure);
+        }
     }
 
     private SecretKey decodeKey(SeekableByteChannel channel) throws IOException {
@@ -270,6 +260,10 @@ public final class MasterKeyProvider {
         return new IllegalStateException("主密钥文件内容无效");
     }
 
+    private static IllegalStateException unsupportedFileSystem() {
+        return new IllegalStateException("主密钥仅支持具备 POSIX 权限和 SecureDirectoryStream 的文件系统");
+    }
+
     private static void clear(byte[] bytes) {
         if (bytes != null) {
             Arrays.fill(bytes, (byte) 0);
@@ -281,12 +275,14 @@ public final class MasterKeyProvider {
         void run(Path keyFile) throws IOException;
     }
 
-    private record ExistingKeyIdentity(Object fileKey, long size, FileTime lastModifiedTime) {
+    @FunctionalInterface
+    interface PosixAttributeReader {
+        PosixFileAttributes read(PosixFileAttributeView view) throws IOException;
+    }
+
+    private record ExistingKeyIdentity(Object fileKey) {
         private boolean sameFileAs(ExistingKeyIdentity other) {
-            if (fileKey != null && other.fileKey != null) {
-                return Objects.equals(fileKey, other.fileKey);
-            }
-            return size == other.size && Objects.equals(lastModifiedTime, other.lastModifiedTime);
+            return Objects.equals(fileKey, other.fileKey);
         }
     }
 }

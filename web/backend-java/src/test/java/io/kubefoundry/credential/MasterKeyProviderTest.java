@@ -5,9 +5,15 @@ import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.GroupPrincipal;
+import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFileAttributes;
 import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.UserPrincipal;
+import java.nio.file.attribute.FileTime;
 import java.util.Base64;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import javax.crypto.SecretKey;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -24,6 +30,7 @@ class MasterKeyProviderTest {
 
     @Test
     void createsAndReusesBase64Encoded256BitMasterKey() throws IOException {
+        assumePosixFileSystem();
         MasterKeyProvider provider = new MasterKeyProvider();
 
         SecretKey created = provider.loadOrCreate(temporaryDirectory);
@@ -37,6 +44,7 @@ class MasterKeyProviderTest {
 
     @Test
     void rejectsInvalidMasterKeyFileAndNullDataDirectory() throws IOException {
+        assumePosixFileSystem();
         Path keyFile = temporaryDirectory.resolve("secrets").resolve("master.key");
         Files.createDirectories(keyFile.getParent());
         Files.writeString(keyFile, Base64.getEncoder().encodeToString(new byte[31]));
@@ -62,6 +70,15 @@ class MasterKeyProviderTest {
                 .isInstanceOf(MasterKeyPermissionException.class)
                 .hasMessageContaining("chmod 600")
                 .hasMessageContaining("主密钥");
+    }
+
+    @Test
+    void failsClosedWhenPosixPermissionsAreUnavailable() {
+        Assumptions.assumeFalse(FileSystems.getDefault().supportedFileAttributeViews().contains("posix"));
+
+        assertThatThrownBy(() -> new MasterKeyProvider().loadOrCreate(temporaryDirectory))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("仅支持具备 POSIX 权限和 SecureDirectoryStream 的文件系统");
     }
 
     @Test
@@ -116,6 +133,64 @@ class MasterKeyProviderTest {
                 .isInstanceOf(IllegalStateException.class);
     }
 
+    @Test
+    void rejectsMasterKeyWhenFileIdentityIsUnavailable() throws IOException {
+        assumePosixFileSystem();
+        Files.createDirectories(masterKeyFile().getParent());
+        writeValidKey(masterKeyFile(), (byte) 1);
+
+        MasterKeyProvider provider = new MasterKeyProvider(
+                view -> attributesWith(view.readAttributes(), null, null),
+                path -> { });
+
+        assertThatThrownBy(() -> provider.loadOrCreate(temporaryDirectory))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("无法可靠确认主密钥文件身份");
+    }
+
+    @Test
+    void correctsNewMasterKeyPermissionsBeforeWriting() throws IOException {
+        assumePosixFileSystem();
+        AtomicInteger attributeReads = new AtomicInteger();
+        MasterKeyProvider provider = new MasterKeyProvider(
+                view -> {
+                    PosixFileAttributes attributes = view.readAttributes();
+                    if (attributeReads.getAndIncrement() == 0) {
+                        return attributesWith(attributes, attributes.fileKey(), Set.of(
+                                PosixFilePermission.OWNER_READ,
+                                PosixFilePermission.OWNER_WRITE,
+                                PosixFilePermission.GROUP_READ));
+                    }
+                    return attributes;
+                },
+                path -> { });
+
+        provider.loadOrCreate(temporaryDirectory);
+
+        assertThat(Files.getPosixFilePermissions(masterKeyFile()))
+                .containsExactlyInAnyOrder(
+                        PosixFilePermission.OWNER_READ,
+                        PosixFilePermission.OWNER_WRITE);
+    }
+
+    @Test
+    void deletesEmptyMasterKeyWhenPermissionCorrectionCannotBeVerified() {
+        assumePosixFileSystem();
+        MasterKeyProvider provider = new MasterKeyProvider(
+                view -> {
+                    PosixFileAttributes attributes = view.readAttributes();
+                    return attributesWith(attributes, attributes.fileKey(), Set.of(
+                            PosixFilePermission.OWNER_READ,
+                            PosixFilePermission.OWNER_WRITE,
+                            PosixFilePermission.GROUP_READ));
+                },
+                path -> { });
+
+        assertThatThrownBy(() -> provider.loadOrCreate(temporaryDirectory))
+                .isInstanceOf(MasterKeyPermissionException.class);
+        assertThat(masterKeyFile()).doesNotExist();
+    }
+
     private Path masterKeyFile() {
         return temporaryDirectory.resolve("secrets").resolve("master.key");
     }
@@ -131,5 +206,70 @@ class MasterKeyProviderTest {
         Files.setPosixFilePermissions(path, Set.of(
                 PosixFilePermission.OWNER_READ,
                 PosixFilePermission.OWNER_WRITE));
+    }
+
+    private static PosixFileAttributes attributesWith(
+            PosixFileAttributes delegate, Object fileKey, Set<PosixFilePermission> permissions) {
+        return new PosixFileAttributes() {
+            @Override
+            public FileTime lastModifiedTime() {
+                return delegate.lastModifiedTime();
+            }
+
+            @Override
+            public FileTime lastAccessTime() {
+                return delegate.lastAccessTime();
+            }
+
+            @Override
+            public FileTime creationTime() {
+                return delegate.creationTime();
+            }
+
+            @Override
+            public boolean isRegularFile() {
+                return delegate.isRegularFile();
+            }
+
+            @Override
+            public boolean isDirectory() {
+                return delegate.isDirectory();
+            }
+
+            @Override
+            public boolean isSymbolicLink() {
+                return delegate.isSymbolicLink();
+            }
+
+            @Override
+            public boolean isOther() {
+                return delegate.isOther();
+            }
+
+            @Override
+            public long size() {
+                return delegate.size();
+            }
+
+            @Override
+            public Object fileKey() {
+                return fileKey;
+            }
+
+            @Override
+            public UserPrincipal owner() {
+                return delegate.owner();
+            }
+
+            @Override
+            public GroupPrincipal group() {
+                return delegate.group();
+            }
+
+            @Override
+            public Set<PosixFilePermission> permissions() {
+                return permissions == null ? delegate.permissions() : permissions;
+            }
+        };
     }
 }
