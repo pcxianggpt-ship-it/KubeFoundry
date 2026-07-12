@@ -88,6 +88,10 @@ class ApiTestCase(unittest.TestCase):
 
         context = build_cluster_context(cluster_id)
         self.assertEqual(context["paths"]["k8s_home"], "/opt/k8s")
+        self.assertEqual(
+            context["paths"]["kubeadm_100y"],
+            "/opt/media/01.rpm_package/kubeadm-v1.30.14-100y-amd64",
+        )
         self.assertTrue(context["ecosystem"]["traefik"])
 
         yaml_data = context_to_yaml_data(context)

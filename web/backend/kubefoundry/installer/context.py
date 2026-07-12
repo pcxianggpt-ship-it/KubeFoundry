@@ -53,7 +53,7 @@ def build_cluster_context(cluster_id):
         "install_media": "/root/kube-media",
         "arch": "amd64",
         "repo_source": "${install_media}/01.rpm_package/k8srepo_kylinos_sp3_${arch}.tar.gz",
-        "kubeadm_100y": "${install_media}/01.rpm_package/kubeadm-${k8s_version}-100y-${arch}",
+        "kubeadm_100y": "${install_media}/01.rpm_package/kubeadm-v${k8s_version}-100y-${arch}",
         "container_runtime": "${install_media}/02.container_runtime",
         "registry_install": "${install_media}/04.registry",
         "flannel_config": "${install_media}/03.setup_file/kube-flannel.yml",

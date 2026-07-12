@@ -104,6 +104,33 @@ describe('Web wizard', () => {
     expect(switches.every((item) => item.classes().includes('is-disabled'))).toBe(true);
   });
 
+  it('shows install targets and execution modes in Chinese', async () => {
+    getInstallPlan.mockResolvedValue({
+      items: [
+        {
+          order: 1,
+          name: '替换 kubeadm',
+          target_scope: 'primary_control_plane',
+          mode: 'serial'
+        },
+        {
+          order: 2,
+          name: '添加工作节点',
+          target_scope: 'workers',
+          mode: 'parallel'
+        }
+      ]
+    });
+
+    const wrapper = mountApp();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('主控制节点');
+    expect(wrapper.text()).toContain('工作节点');
+    expect(wrapper.text()).toContain('串行');
+    expect(wrapper.text()).toContain('并行');
+  });
+
   it('hides install mode and ssh step, then shows node login and test controls', async () => {
     const wrapper = mountApp();
     await flushPromises();

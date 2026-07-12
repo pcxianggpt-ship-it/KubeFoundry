@@ -201,10 +201,14 @@
               <el-table :data="installPlan" class="install-plan-table" border>
                 <el-table-column prop="order" label="#" width="56" />
                 <el-table-column prop="name" label="步骤" min-width="190" />
-                <el-table-column prop="target_scope" label="目标" min-width="150" />
+                <el-table-column label="目标" min-width="180">
+                  <template #default="{ row }">
+                    {{ installTargetText(row.target_scope) }}
+                  </template>
+                </el-table-column>
                 <el-table-column label="执行方式" width="110">
                   <template #default="{ row }">
-                    <el-tag :type="row.mode === 'parallel' ? 'success' : 'info'">{{ row.mode }}</el-tag>
+                    <el-tag :type="row.mode === 'parallel' ? 'success' : 'info'">{{ installModeText(row.mode) }}</el-tag>
                   </template>
                 </el-table-column>
               </el-table>
@@ -979,6 +983,26 @@ function roleText(role) {
     worker: '工作节点',
     registry: '镜像仓库'
   }[role] || role;
+}
+
+function installTargetText(targetScope) {
+  return {
+    primary_control_plane: '主控制节点',
+    all_nodes: '所有节点',
+    all_k8s_nodes: '所有 Kubernetes 节点',
+    control_plane: '控制节点',
+    non_primary_k8s_nodes: '非主控 Kubernetes 节点',
+    registry: '镜像仓库节点',
+    other_control_planes: '其他控制节点',
+    workers: '工作节点'
+  }[targetScope] || targetScope;
+}
+
+function installModeText(mode) {
+  return {
+    serial: '串行',
+    parallel: '并行'
+  }[mode] || mode;
 }
 
 function roleTagType(role) {
