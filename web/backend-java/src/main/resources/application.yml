@@ -3,3 +3,16 @@ server:
 
 kubefoundry:
   data-dir: ${KF_DATA_DIR:data}
+
+spring:
+  datasource:
+    url: jdbc:h2:file:${KF_DATA_DIR:data}/kubefoundry;MODE=PostgreSQL
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  flyway:
+    enabled: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false

@@ -7,3 +7,4 @@ data/clusters/
 logs/
 web/frontend/node_modules/
 web/frontend/dist/
+web/backend-java/target/
