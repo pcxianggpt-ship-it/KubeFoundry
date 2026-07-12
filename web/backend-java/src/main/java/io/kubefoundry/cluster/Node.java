@@ -93,6 +93,7 @@ public class Node {
     public int getSshPort() { return sshPort; }
     public boolean isDraft() { return draft; }
     public String getNodeTestStatus() { return nodeTestStatus; }
+    public String getHostFingerprint() { return hostFingerprint; }
     public String getStatus() { return status; }
     public boolean hasPassword() { return passwordCiphertext != null && !passwordCiphertext.isBlank(); }
 
@@ -130,6 +131,13 @@ public class Node {
         osVersion = null;
         architecture = null;
         nodeTestMessage = null;
+    }
+
+    public void recordHostFingerprint(String fingerprint) {
+        if (fingerprint == null || fingerprint.isBlank()) {
+            throw new IllegalArgumentException("主机指纹不能为空");
+        }
+        hostFingerprint = fingerprint;
     }
 
     public void copyCredentialFrom(Node source) {
