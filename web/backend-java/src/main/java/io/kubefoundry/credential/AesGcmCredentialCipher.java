@@ -49,10 +49,7 @@ public final class AesGcmCredentialCipher {
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
             cipher.init(Cipher.ENCRYPT_MODE, masterKey, new GCMParameterSpec(TAG_LENGTH_BITS, iv));
             ciphertext = cipher.doFinal(plaintextBytes);
-            return new EncryptedCredential(
-                    Base64.getEncoder().encodeToString(ciphertext),
-                    Base64.getEncoder().encodeToString(iv),
-                    VERSION);
+            return new EncryptedCredential(encodeBase64(ciphertext), encodeBase64(iv), VERSION);
         } catch (GeneralSecurityException exception) {
             throw new IllegalStateException("无法加密凭据", exception);
         } finally {
@@ -74,8 +71,8 @@ public final class AesGcmCredentialCipher {
         byte[] iv = null;
         byte[] plaintextBytes = null;
         try {
-            ciphertext = Base64.getDecoder().decode(credential.ciphertext());
-            iv = Base64.getDecoder().decode(credential.iv());
+            ciphertext = decodeBase64(credential.ciphertext());
+            iv = decodeBase64(credential.iv());
             if (iv.length != IV_LENGTH_BYTES) {
                 throw new CredentialDecryptionException();
             }
@@ -129,6 +126,24 @@ public final class AesGcmCredentialCipher {
             if (decoded.hasArray()) {
                 Arrays.fill(decoded.array(), '\0');
             }
+        }
+    }
+
+    private static String encodeBase64(byte[] bytes) {
+        byte[] encoded = Base64.getEncoder().encode(bytes);
+        try {
+            return new String(encoded, StandardCharsets.US_ASCII);
+        } finally {
+            clear(encoded);
+        }
+    }
+
+    private static byte[] decodeBase64(String encodedValue) {
+        byte[] encoded = encodedValue.getBytes(StandardCharsets.US_ASCII);
+        try {
+            return Base64.getDecoder().decode(encoded);
+        } finally {
+            clear(encoded);
         }
     }
 
