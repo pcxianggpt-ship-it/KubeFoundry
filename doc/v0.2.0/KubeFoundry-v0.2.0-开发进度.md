@@ -16,3 +16,10 @@
 - 迁移：V1 创建 clusters、nodes、cluster_settings、ssh_keys、jobs、job_steps、job_step_nodes 和 events 业务表，使用 Flyway 默认历史表。
 - 约束：状态字段使用 `varchar`，业务表包含创建和更新时间；日志仅保存路径，集群和任务关联使用外键级联删除。
 - 验证：SchemaMigrationTest 覆盖迁移表、Flyway V1、nodes.cluster_id 外键、events.id 自增和测试不写入 data 目录。
+
+## 任务 3：凭据加密与主密钥管理
+
+- 状态：已完成，待合并。
+- 凭据加密：使用 Java 标准库 AES-256-GCM，每条凭据使用独立的 12 字节随机 IV 和 128 位认证标签；密文与 IV 以 Base64 保存，当前格式版本为 1。
+- 主密钥：首次使用时在 `${KF_DATA_DIR:data}/secrets/master.key` 创建 256 位 AES 主密钥，后续调用复用；密钥文件使用 Base64，不写入 H2。
+- 权限与安全：POSIX 环境的新建文件设置为 `rw-------`，已有文件权限过宽时拒绝加载并提示 `chmod 600`；非 POSIX 环境跳过权限校验，解密失败不暴露敏感值，临时字节数组在使用后覆盖。
