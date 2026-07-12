@@ -3,6 +3,10 @@ server:
 
 kubefoundry:
   data-dir: ${KF_DATA_DIR:data}
+  jobs:
+    workers: ${KF_JOB_WORKERS:5}
+    queue-capacity: ${KF_JOB_QUEUE_CAPACITY:100}
+    heartbeat-ms: ${KF_SSE_HEARTBEAT_MS:15000}
 
 spring:
   datasource:
