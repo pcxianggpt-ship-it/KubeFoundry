@@ -1,0 +1,5 @@
+server:
+  port: "10001"
+
+kubefoundry:
+  data-dir: ${KF_DATA_DIR:data}
