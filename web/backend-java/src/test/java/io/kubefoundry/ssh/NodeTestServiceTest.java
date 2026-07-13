@@ -7,13 +7,24 @@ import io.kubefoundry.cluster.Node;
 import io.kubefoundry.cluster.NodeRepository;
 import io.kubefoundry.credential.AesGcmCredentialCipher;
 import io.kubefoundry.job.JobEvent;
+import io.kubefoundry.job.EventService;
 import io.kubefoundry.job.JobEventRepository;
 import io.kubefoundry.job.JobExecutor;
+import io.kubefoundry.job.JobRepository;
+import io.kubefoundry.job.JobService;
 import java.security.KeyPairGenerator;
 import java.security.spec.ECGenParameterSpec;
+import java.util.Base64;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javax.crypto.spec.SecretKeySpec;
+import org.springframework.beans.factory.ObjectProvider;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,20 +32,31 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(properties = {
         "spring.datasource.url=jdbc:h2:mem:node-test-service;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
         "spring.jpa.hibernate.ddl-auto=validate"
 })
 @Import(NodeTestServiceTest.TestCredentialConfiguration.class)
+@AutoConfigureMockMvc
 class NodeTestServiceTest {
 
     @Autowired
@@ -55,6 +77,12 @@ class NodeTestServiceTest {
     @Autowired
     JobEventRepository events;
 
+    @Autowired
+    JobRepository jobs;
+
+    @Autowired
+    MockMvc mvc;
+
     @MockBean
     NodeTestRunner runner;
 
@@ -62,14 +90,16 @@ class NodeTestServiceTest {
     ClusterKeyService clusterKeys;
 
     Cluster cluster;
+    ClusterKeyMaterial clusterKey;
 
     @BeforeEach
     void setUp() throws Exception {
         cluster = clusters.save(new Cluster("node-test-" + System.nanoTime()));
         KeyPairGenerator generator = KeyPairGenerator.getInstance("EC");
         generator.initialize(new ECGenParameterSpec("secp256r1"));
-        when(clusterKeys.getOrCreate(cluster.getId())).thenReturn(
-                new ClusterKeyMaterial("ecdsa-sha2-nistp256 test", generator.generateKeyPair()));
+        clusterKey = new ClusterKeyMaterial(
+                "ecdsa-sha2-nistp256 test", generator.generateKeyPair());
+        when(clusterKeys.getOrCreate(cluster.getId())).thenReturn(clusterKey);
     }
 
     @AfterEach
@@ -86,7 +116,7 @@ class NodeTestServiceTest {
             reporter.report("key_installing");
             reporter.report("key_verifying");
             return new NodeProbe("kylin", "V10", "arm64");
-        }).when(runner).test(any(), any(), any(), any());
+        }).when(runner).test(any(), any(), any(), any(), anyLong());
 
         long jobId = service.startClusterTest(cluster.getId(), false);
         assertThat(executor.awaitIdle(5, TimeUnit.SECONDS)).isTrue();
@@ -114,7 +144,7 @@ class NodeTestServiceTest {
             reporter.report("key_installing");
             reporter.report("key_verifying");
             return new NodeProbe("kylin", "V10", "amd64");
-        }).when(runner).test(any(), any(), any(), any());
+        }).when(runner).test(any(), any(), any(), any(), anyLong());
 
         service.startClusterTest(cluster.getId(), false);
         assertThat(executor.awaitIdle(5, TimeUnit.SECONDS)).isTrue();
@@ -128,7 +158,7 @@ class NodeTestServiceTest {
             reporter.report("key_installing");
             reporter.report("key_verifying");
             return new NodeProbe("kylin", "V10", "amd64");
-        }).when(runner).test(any(), any(), any(), any());
+        }).when(runner).test(any(), any(), any(), any(), anyLong());
         long retryJobId = service.startClusterTest(cluster.getId(), true);
         assertThat(executor.awaitIdle(5, TimeUnit.SECONDS)).isTrue();
 
@@ -138,6 +168,221 @@ class NodeTestServiceTest {
                 .filter(event -> "node.status".equals(event.getType()))
                 .map(event -> ((Number) event.getPayload().get("node_id")).longValue()))
                 .containsOnly(bad.getId());
+    }
+
+    @Test
+    void concurrentStartsCreateOneJobAndReturnCurrentJobId() throws Exception {
+        Node node = createNode("node-concurrent", "10.0.0.4", "Concurrent-Password");
+        CountDownLatch callersReady = new CountDownLatch(2);
+        CountDownLatch callersMayStart = new CountDownLatch(1);
+        CountDownLatch runnerStarted = new CountDownLatch(1);
+        CountDownLatch runnerMayFinish = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            runnerStarted.countDown();
+            assertThat(runnerMayFinish.await(5, TimeUnit.SECONDS)).isTrue();
+            return new NodeProbe("kylin", "V10", "amd64");
+        }).when(runner).test(any(), any(), any(), any(), anyLong());
+
+        ExecutorService callers = Executors.newFixedThreadPool(2);
+        try {
+            CompletableFuture<Long> first = CompletableFuture.supplyAsync(
+                    () -> startAfterGate(callersReady, callersMayStart,
+                            () -> service.startClusterTest(cluster.getId(), false)), callers);
+            CompletableFuture<Long> second = CompletableFuture.supplyAsync(
+                    () -> startAfterGate(callersReady, callersMayStart,
+                            () -> service.startNodeTest(node.getId())), callers);
+            assertThat(callersReady.await(5, TimeUnit.SECONDS)).isTrue();
+            callersMayStart.countDown();
+
+            List<CompletableFuture<Long>> calls = List.of(first, second);
+            List<Long> created = calls.stream().filter(call -> {
+                try {
+                    call.get(5, TimeUnit.SECONDS);
+                    return true;
+                } catch (Exception ignored) {
+                    return false;
+                }
+            }).map(call -> {
+                try {
+                    return call.get();
+                } catch (Exception exception) {
+                    throw new AssertionError(exception);
+                }
+            }).toList();
+            assertThat(created).hasSize(1);
+            long currentJobId = created.get(0);
+            CompletableFuture<Long> rejected = first.isCompletedExceptionally() ? first : second;
+            assertThatThrownBy(rejected::join)
+                    .isInstanceOf(CompletionException.class)
+                    .cause().isInstanceOf(NodeTestService.ActiveNodeTestException.class)
+                    .extracting(throwable -> ((NodeTestService.ActiveNodeTestException) throwable).jobId())
+                    .isEqualTo(currentJobId);
+            assertThat(jobs.findByClusterIdOrderByIdDesc(cluster.getId())).hasSize(1);
+            assertThat(runnerStarted.await(5, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            runnerMayFinish.countDown();
+            assertThat(executor.awaitIdle(5, TimeUnit.SECONDS)).isTrue();
+            callers.shutdownNow();
+        }
+    }
+
+    @Test
+    void concurrentStartsForDifferentClustersDoNotBlockEachOther() throws Exception {
+        ClusterRepository testClusters = mock(ClusterRepository.class);
+        NodeRepository testNodes = mock(NodeRepository.class);
+        JobRepository testJobs = mock(JobRepository.class);
+        JobService testJobService = mock(JobService.class);
+        ClusterKeyService testKeys = mock(ClusterKeyService.class);
+        EventService testEvents = mock(EventService.class);
+        NodeTestRunner testRunner = mock(NodeTestRunner.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<AesGcmCredentialCipher> testCipherProvider = mock(ObjectProvider.class);
+        Cluster firstCluster = mock(Cluster.class);
+        Cluster secondCluster = mock(Cluster.class);
+        Node firstNode = mock(Node.class);
+        Node secondNode = mock(Node.class);
+        CountDownLatch firstSubmitEntered = new CountDownLatch(1);
+        CountDownLatch releaseFirstSubmit = new CountDownLatch(1);
+
+        when(firstCluster.getId()).thenReturn(1L);
+        when(secondCluster.getId()).thenReturn(2L);
+        when(firstNode.getId()).thenReturn(11L);
+        when(secondNode.getId()).thenReturn(22L);
+        when(firstNode.getCluster()).thenReturn(firstCluster);
+        when(secondNode.getCluster()).thenReturn(secondCluster);
+        when(firstNode.getIp()).thenReturn("10.0.0.11");
+        when(secondNode.getIp()).thenReturn("10.0.0.22");
+        when(firstNode.getHostname()).thenReturn("first-node");
+        when(secondNode.getHostname()).thenReturn("second-node");
+        when(firstNode.hasPassword()).thenReturn(true);
+        when(secondNode.hasPassword()).thenReturn(true);
+        when(testClusters.findById(1L)).thenReturn(Optional.of(firstCluster));
+        when(testClusters.findById(2L)).thenReturn(Optional.of(secondCluster));
+        when(testNodes.findByClusterIdOrderById(1L)).thenReturn(List.of(firstNode));
+        when(testNodes.findByClusterIdOrderById(2L)).thenReturn(List.of(secondNode));
+        when(testJobs.findFirstByClusterIdAndTypeAndStatusInOrderByIdDesc(
+                anyLong(), any(), any())).thenReturn(Optional.empty());
+        when(testKeys.getOrCreate(anyLong())).thenReturn(testKey());
+        when(testJobService.submit(any())).thenAnswer(invocation -> {
+            JobService.JobDefinition definition = invocation.getArgument(0);
+            if (definition.clusterId() == 1L) {
+                firstSubmitEntered.countDown();
+                assertThat(releaseFirstSubmit.await(5, TimeUnit.SECONDS)).isTrue();
+                return 101L;
+            }
+            return 202L;
+        });
+        NodeTestService testService = new NodeTestService(
+                testClusters, testNodes, testJobs, testJobService, testEvents,
+                testKeys, testRunner, testCipherProvider);
+        ExecutorService callers = Executors.newFixedThreadPool(2);
+        try {
+            CompletableFuture<Long> first = CompletableFuture.supplyAsync(
+                    () -> testService.startClusterTest(1L, false), callers);
+            assertThat(firstSubmitEntered.await(5, TimeUnit.SECONDS)).isTrue();
+
+            CompletableFuture<Long> second = CompletableFuture.supplyAsync(
+                    () -> testService.startClusterTest(2L, false), callers);
+            assertThat(second.get(1, TimeUnit.SECONDS)).isEqualTo(202L);
+            releaseFirstSubmit.countDown();
+            assertThat(first.get(5, TimeUnit.SECONDS)).isEqualTo(101L);
+        } finally {
+            releaseFirstSubmit.countDown();
+            callers.shutdownNow();
+        }
+    }
+
+    @Test
+    void concurrentAggregateUpdatesRemainConsistentWithAllNodes() throws Exception {
+        Node successful = createNode("node-success", "10.0.0.5", "Success-Password");
+        Node failed = createNode("node-failed", "10.0.0.6", "Failed-Password");
+        successful.completeNodeTest("kylin", "V10", "amd64");
+        failed.failNodeTest("expected failure");
+        nodes.saveAllAndFlush(List.of(successful, failed));
+        cluster.markNodeTestStatus("running");
+        clusters.saveAndFlush(cluster);
+
+        ExecutorService callers = Executors.newFixedThreadPool(2);
+        try {
+            CompletableFuture<Integer> first = CompletableFuture.supplyAsync(
+                    () -> clusters.refreshNodeTestAggregate(cluster.getId()), callers);
+            CompletableFuture<Integer> second = CompletableFuture.supplyAsync(
+                    () -> clusters.refreshNodeTestAggregate(cluster.getId()), callers);
+            assertThat(first.get(5, TimeUnit.SECONDS)).isEqualTo(1);
+            assertThat(second.get(5, TimeUnit.SECONDS)).isEqualTo(1);
+        } finally {
+            callers.shutdownNow();
+        }
+
+        assertThat(clusters.findById(cluster.getId()).orElseThrow().getNodeTestStatus())
+                .isEqualTo("failed");
+    }
+
+    @Test
+    void configurationChangeDuringTestPreventsOldResultFromBeingStored() throws Exception {
+        Node node = createNode("node-stale", "10.0.0.7", "Stale-Password");
+        CountDownLatch runnerStarted = new CountDownLatch(1);
+        CountDownLatch runnerMayFinish = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            NodeTestRunner.PhaseReporter reporter = invocation.getArgument(3);
+            reporter.report("password_connecting");
+            runnerStarted.countDown();
+            assertThat(runnerMayFinish.await(5, TimeUnit.SECONDS)).isTrue();
+            return new NodeProbe("old-os", "old-version", "old-arch");
+        }).when(runner).test(any(), any(), any(), any(), anyLong());
+
+        service.startNodeTest(node.getId());
+        assertThat(runnerStarted.await(5, TimeUnit.SECONDS)).isTrue();
+        clusterService.updateNode(node.getId(), new ClusterService.NodeRequest(
+                null, "10.0.0.70", null, null, "admin", 2222, null));
+        runnerMayFinish.countDown();
+        assertThat(executor.awaitIdle(5, TimeUnit.SECONDS)).isTrue();
+
+        Node stored = nodes.findById(node.getId()).orElseThrow();
+        assertThat(stored.getNodeTestStatus()).isEqualTo("stale");
+        assertThat(stored.getHostFingerprint()).isNull();
+        assertThat(stored.getOsType()).isNull();
+        assertThat(stored.getOsVersion()).isNull();
+        assertThat(stored.getArchitecture()).isNull();
+    }
+
+    @Test
+    void singleNodeTestMarksClusterRunningImmediately() throws Exception {
+        Node node = createNode("node-single", "10.0.0.8", "Single-Password");
+        doAnswer(invocation -> {
+            Thread.sleep(500);
+            return new NodeProbe("kylin", "V10", "amd64");
+        }).when(runner).test(any(), any(), any(), any(), anyLong());
+
+        service.startNodeTest(node.getId());
+
+        assertThat(clusters.findById(cluster.getId()).orElseThrow().getNodeTestStatus())
+                .isEqualTo("running");
+        assertThat(executor.awaitIdle(5, TimeUnit.SECONDS)).isTrue();
+    }
+
+    @Test
+    void authenticationMaterialNeverAppearsInNodeApiOrSse() throws Exception {
+        Node node = createNode("node-secret", "10.0.0.9", "Api-Sse-Secret");
+        String ciphertext = node.encryptedPassword().ciphertext();
+        String privateKey = Base64.getEncoder().encodeToString(clusterKey.keyPair().getPrivate().getEncoded());
+        doAnswer(invocation -> {
+            NodeTestRunner.PhaseReporter reporter = invocation.getArgument(3);
+            reporter.report("password_connecting");
+            throw new IllegalStateException("认证失败 Api-Sse-Secret");
+        }).when(runner).test(any(), any(), any(), any(), anyLong());
+
+        long jobId = service.startNodeTest(node.getId());
+        assertThat(executor.awaitIdle(5, TimeUnit.SECONDS)).isTrue();
+        String apiBody = mvc.perform(get("/api/clusters/{id}/nodes", cluster.getId()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        MvcResult started = mvc.perform(get("/api/jobs/{jobId}/events", jobId))
+                .andExpect(request().asyncStarted()).andReturn();
+        String sseBody = mvc.perform(asyncDispatch(started))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+
+        assertThat(apiBody).doesNotContain("Api-Sse-Secret", ciphertext, privateKey);
+        assertThat(sseBody).doesNotContain("Api-Sse-Secret", ciphertext, privateKey);
     }
 
     private Node createNode(String hostname, String ip, String password) {
@@ -153,6 +398,28 @@ class NodeTestServiceTest {
                 .map(JobEvent::getPayload)
                 .map(payload -> (String) payload.get("status"))
                 .toList();
+    }
+
+    private static long startAfterGate(
+            CountDownLatch callersReady,
+            CountDownLatch callersMayStart,
+            java.util.function.LongSupplier start) {
+        callersReady.countDown();
+        try {
+            if (!callersMayStart.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("concurrent start gate timed out");
+            }
+            return start.getAsLong();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("concurrent start gate interrupted", exception);
+        }
+    }
+
+    private static ClusterKeyMaterial testKey() throws Exception {
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("EC");
+        generator.initialize(new ECGenParameterSpec("secp256r1"));
+        return new ClusterKeyMaterial("ecdsa-sha2-nistp256 test", generator.generateKeyPair());
     }
 
     @TestConfiguration

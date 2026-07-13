@@ -13,6 +13,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
@@ -29,6 +31,7 @@ public class NodeTestService {
     private final ClusterKeyService clusterKeys;
     private final NodeTestRunner runner;
     private final ObjectProvider<AesGcmCredentialCipher> cipherProvider;
+    private final ConcurrentMap<Long, Object> admissionLocks = new ConcurrentHashMap<>();
 
     public NodeTestService(
             ClusterRepository clusters,
@@ -50,64 +53,86 @@ public class NodeTestService {
     }
 
     public long startClusterTest(long clusterId, boolean failedOnly) {
-        Cluster cluster = requireCluster(clusterId);
-        rejectActiveJob(clusterId);
-        List<Node> selected = nodes.findByClusterIdOrderById(clusterId);
-        if (failedOnly) {
-            selected = selected.stream()
-                    .filter(node -> "failed".equals(node.getNodeTestStatus()))
-                    .toList();
-        }
-        validateNodes(selected, failedOnly);
         ClusterKeyMaterial key = clusterKeys.getOrCreate(clusterId);
-        cluster.markNodeTestStatus("running");
-        clusters.save(cluster);
-        try {
-            return submit(clusterId, selected, key);
-        } catch (RuntimeException exception) {
-            cluster.markNodeTestStatus("failed");
-            clusters.save(cluster);
-            throw exception;
+        synchronized (admissionLockFor(clusterId)) {
+            Cluster cluster = requireCluster(clusterId);
+            rejectActiveJob(clusterId);
+            List<Node> selected = nodes.findByClusterIdOrderById(clusterId);
+            if (failedOnly) {
+                selected = selected.stream()
+                        .filter(node -> "failed".equals(node.getNodeTestStatus()))
+                        .toList();
+            }
+            validateNodes(selected, failedOnly);
+            clusters.updateNodeTestStatus(clusterId, "running");
+            try {
+                return submit(clusterId, selected, key, cluster.getNodeConfigVersion());
+            } catch (RuntimeException exception) {
+                clusters.updateNodeTestStatus(clusterId, "failed");
+                throw exception;
+            }
         }
     }
 
     public long startNodeTest(long nodeId) {
-        Node node = nodes.findById(nodeId)
+        Node initial = nodes.findById(nodeId)
                 .orElseThrow(() -> new IllegalArgumentException("节点不存在: " + nodeId));
-        long clusterId = node.getCluster().getId();
-        rejectActiveJob(clusterId);
-        validateNodes(List.of(node), false);
+        long clusterId = initial.getCluster().getId();
         ClusterKeyMaterial key = clusterKeys.getOrCreate(clusterId);
-        return submit(clusterId, List.of(node), key);
+        synchronized (admissionLockFor(clusterId)) {
+            Node node = nodes.findById(nodeId)
+                    .orElseThrow(() -> new IllegalArgumentException("节点不存在: " + nodeId));
+            Cluster cluster = requireCluster(clusterId);
+            rejectActiveJob(clusterId);
+            validateNodes(List.of(node), false);
+            clusters.updateNodeTestStatus(clusterId, "running");
+            try {
+                return submit(clusterId, List.of(node), key, cluster.getNodeConfigVersion());
+            } catch (RuntimeException exception) {
+                clusters.updateNodeTestStatus(clusterId, "failed");
+                throw exception;
+            }
+        }
     }
 
-    private long submit(long clusterId, List<Node> selected, ClusterKeyMaterial key) {
+    private long submit(
+            long clusterId, List<Node> selected, ClusterKeyMaterial key, long expectedConfigVersion) {
         List<JobService.NodeOperation> operations = selected.stream()
                 .map(node -> new JobService.NodeOperation(node.getId(), jobId ->
-                        testOne(jobId, node.getId(), key)))
+                        testOne(jobId, node.getId(), key, expectedConfigVersion)))
                 .toList();
         return jobService.submit(new JobService.JobDefinition(clusterId, "node_test", List.of(
                 new JobService.StepDefinition("测试 SSH 连通性并识别系统", 1, operations))));
     }
 
-    private void testOne(long jobId, long nodeId, ClusterKeyMaterial key) throws Exception {
+    private void testOne(
+            long jobId, long nodeId, ClusterKeyMaterial key, long expectedConfigVersion)
+            throws Exception {
         Node node = nodes.findById(nodeId).orElseThrow();
         EncryptedCredential encrypted = node.encryptedPassword();
         char[] password = null;
         try {
             password = cipherProvider.getObject().decrypt(encrypted);
             NodeProbe probe = runner.test(node, password, key,
-                    phase -> updatePhase(jobId, nodeId, phase));
+                    phase -> updatePhase(jobId, nodeId, expectedConfigVersion, phase),
+                    expectedConfigVersion);
+            if (nodes.completeTestIfConfigurationUnchanged(
+                    nodeId, expectedConfigVersion,
+                    probe.osType(), probe.osVersion(), probe.architecture()) != 1) {
+                throw new NodeConfigurationChangedException(nodeId);
+            }
             Node completed = nodes.findById(nodeId).orElseThrow();
-            completed.completeNodeTest(probe.osType(), probe.osVersion(), probe.architecture());
-            nodes.save(completed);
             publishNodeStatus(jobId, completed, "success");
             updateClusterAggregate(completed.getCluster().getId());
+        } catch (NodeConfigurationChangedException exception) {
+            throw exception;
         } catch (Exception exception) {
             String message = truncate(redact(exception.getMessage(), password), 1000);
+            if (nodes.failTestIfConfigurationUnchanged(
+                    nodeId, expectedConfigVersion, message) != 1) {
+                throw new NodeConfigurationChangedException(nodeId);
+            }
             Node failed = nodes.findById(nodeId).orElseThrow();
-            failed.failNodeTest(message);
-            nodes.save(failed);
             publishNodeStatus(jobId, failed, "failed");
             updateClusterAggregate(failed.getCluster().getId());
             throw new IllegalStateException(message);
@@ -116,13 +141,16 @@ public class NodeTestService {
         }
     }
 
-    private void updatePhase(long jobId, long nodeId, String phase) {
+    private void updatePhase(
+            long jobId, long nodeId, long expectedConfigVersion, String phase) {
         if (!List.of("password_connecting", "key_installing", "key_verifying").contains(phase)) {
             throw new IllegalArgumentException("未知节点测试阶段: " + phase);
         }
+        if (nodes.updateTestPhaseIfConfigurationUnchanged(
+                nodeId, expectedConfigVersion, phase) != 1) {
+            throw new NodeConfigurationChangedException(nodeId);
+        }
         Node node = nodes.findById(nodeId).orElseThrow();
-        node.markNodeTestPhase(phase);
-        nodes.save(node);
         publishNodeStatus(jobId, node, phase);
     }
 
@@ -134,18 +162,11 @@ public class NodeTestService {
     }
 
     private void updateClusterAggregate(long clusterId) {
-        List<Node> clusterNodes = nodes.findByClusterIdOrderById(clusterId);
-        String status;
-        if (clusterNodes.stream().anyMatch(node -> "failed".equals(node.getNodeTestStatus()))) {
-            status = "failed";
-        } else if (clusterNodes.stream().allMatch(node -> "success".equals(node.getNodeTestStatus()))) {
-            status = "success";
-        } else {
-            status = "running";
-        }
-        Cluster cluster = requireCluster(clusterId);
-        cluster.markNodeTestStatus(status);
-        clusters.save(cluster);
+        clusters.refreshNodeTestAggregate(clusterId);
+    }
+
+    private Object admissionLockFor(long clusterId) {
+        return admissionLocks.computeIfAbsent(clusterId, ignored -> new Object());
     }
 
     private void rejectActiveJob(long clusterId) {
