@@ -1,3 +1,5 @@
+import { containsSensitiveError, safeErrorMessage } from '../utils/redaction';
+
 const JSON_HEADERS = {
   'Content-Type': 'application/json'
 };
@@ -22,14 +24,14 @@ async function request(path, options = {}) {
   }
 
   if (!response.ok) {
-    const message =
+    const rawMessage =
       payload && (payload.error || payload.message)
         ? payload.error || payload.message
         : `请求失败：${response.status}`;
-    const error = new Error(message);
+    const error = new Error(safeErrorMessage({ message: rawMessage }));
     error.status = response.status;
-    error.payload = payload;
     error.jobId = payload && payload.job_id;
+    error.payload = containsSensitiveError(rawMessage) ? null : payload;
     throw error;
   }
 
