@@ -29,6 +29,7 @@ class SchemaMigrationTest {
             "clusters",
             "nodes",
             "cluster_settings",
+            "app_settings",
             "ssh_keys",
             "jobs",
             "job_steps",
@@ -131,6 +132,15 @@ class SchemaMigrationTest {
             assertThat(columnExists(metadata, "PRECHECK_RESULTS", "STATUS")).isTrue();
             assertThat(successfulMigration(connection, "4")).isTrue();
             assertThat(successfulMigration(connection, "5")).isTrue();
+        }
+    }
+
+    @Test
+    void createsPersistentApplicationSettingsInV6() throws SQLException {
+        try (Connection connection = openConnection()) {
+            assertThat(successfulMigration(connection, "6")).isTrue();
+            assertThat(columnExists(connection.getMetaData(), "APP_SETTINGS", "SETTING_KEY")).isTrue();
+            assertThat(columnExists(connection.getMetaData(), "APP_SETTINGS", "SETTING_VALUE")).isTrue();
         }
     }
 

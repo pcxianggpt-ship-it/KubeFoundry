@@ -16,6 +16,7 @@ import java.security.KeyPairGenerator;
 import java.security.spec.ECGenParameterSpec;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory;
 import org.apache.sshd.common.keyprovider.KeyPairProvider;
@@ -27,6 +28,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -142,6 +144,104 @@ class RemoteStepRunnerTest {
 
         assertThat(outcome.success()).isTrue();
         assertThat(remoteRoot.resolve("tmp/runtime/bin/tools/containerd")).hasContent("binary");
+    }
+
+    @Test
+    void usesTheSamePrimaryControlPlaneByIdForArgumentsAndVerifyPlaceholders() throws Exception {
+        ReflectionTestUtils.setField(node, "id", 20L);
+        node.update("a-control", null, null, null, null, null);
+        Node primary = RuntimeEnvRendererTest.node(
+                cluster, "z-control", "10.0.0.10", "control_plane", "amd64");
+        ReflectionTestUtils.setField(primary, "id", 10L);
+        Path script = temporaryDirectory.resolve("primary.sh");
+        Files.writeString(script, "#!/bin/bash\n", StandardCharsets.UTF_8);
+        InstallStep step = InstallStep.script("primary", "主控参数", "test", "control_plane", script,
+                "serial", 1, true, List.of(),
+                List.of(new InstallStep.Argument(null, "primary_control_ip")), List.of(),
+                "test {primary_control_ip} = {primary_control_ip}");
+
+        JobService.NodeOutcome outcome = runner().run(42L, cluster, List.of(node, primary), node, step);
+
+        assertThat(outcome.success()).isTrue();
+        assertThat(commands.get(1)).contains("10.0.0.10").doesNotContain("10.0.0.20");
+    }
+
+    @Test
+    void retriesTransientClusterHealthFailuresWithoutWaitingInTests() {
+        AtomicInteger attempts = new AtomicInteger();
+        RemoteStepRunner runner = healthRunner(attempts, List.of(
+                new RemoteStepRunner.CommandOutcome(1, "", "temporary", "health.log"),
+                healthyHealthOutput()));
+        InstallStep step = InstallStep.builtin("health", "健康", "verify", "primary_control_plane",
+                "cluster_health", "serial", 1, true, "");
+
+        JobService.NodeOutcome outcome = runner.run(1L, cluster, List.of(node), node, step);
+
+        assertThat(outcome.success()).isTrue();
+        assertThat(attempts).hasValue(2);
+    }
+
+    @Test
+    void failsClusterHealthAfterTheConfiguredFinalAttempt() {
+        AtomicInteger attempts = new AtomicInteger();
+        RemoteStepRunner runner = healthRunner(attempts, List.of(
+                new RemoteStepRunner.CommandOutcome(0,
+                        "cp-a NotReady\n__KF_PODS__\nkube-flannel flannel 0/1 Pending\n", "", "health.log")));
+        InstallStep step = InstallStep.builtin("health", "健康", "verify", "primary_control_plane",
+                "cluster_health", "serial", 1, true, "");
+
+        JobService.NodeOutcome outcome = runner.run(1L, cluster, List.of(node), node, step);
+
+        assertThat(outcome.success()).isFalse();
+        assertThat(attempts).hasValue(3);
+    }
+
+    @Test
+    void writesRegistryAliasForExternalRegistryWithSafelyQuotedHostsLines() throws Exception {
+        cluster.update(null, null, null, null, null,
+                "registry'; touch /tmp/pwn; #", "10.0.0.9", null, null);
+        InstallStep step = InstallStep.builtin("hostname", "主机名", "k8s_base", "all_nodes",
+                "setup_hostname", "serial", 1, true, "");
+
+        JobService.NodeOutcome outcome = runner().run(42L, cluster, List.of(node), node, step);
+
+        assertThat(outcome.success()).isTrue();
+        String script = Files.readString(remoteRoot.resolve("tmp/kubefoundry/42/step.sh"));
+        assertThat(script).contains("registry'\"'\"'; touch /tmp/pwn; #");
+        assertThat(script).contains("printf '%s\\n'");
+        assertThat(script).doesNotContain("cat >> /etc/hosts <<");
+    }
+
+    @Test
+    void writesNodeAndRegistryNamesWhenTheyShareTheSameIp() throws Exception {
+        cluster.update(null, null, null, null, null, "registry-alias", "127.0.0.1", null, null);
+        InstallStep step = InstallStep.builtin("hostname", "主机名", "k8s_base", "all_nodes",
+                "setup_hostname", "serial", 1, true, "");
+
+        JobService.NodeOutcome outcome = runner().run(42L, cluster, List.of(node), node, step);
+
+        assertThat(outcome.success()).isTrue();
+        assertThat(Files.readString(remoteRoot.resolve("tmp/kubefoundry/42/step.sh")))
+                .contains("'127.0.0.1    cp-a registry-alias'");
+    }
+
+    private RemoteStepRunner healthRunner(
+            AtomicInteger attempts, List<RemoteStepRunner.CommandOutcome> outcomes) {
+        return new RemoteStepRunner(null, null, new RuntimeEnvRenderer(), temporaryDirectory.resolve("data"),
+                new RemoteStepRunner.ClusterHealthRetryPolicy(3, Duration.ofSeconds(10), duration -> { })) {
+            @Override
+            public CommandOutcome runCommandCapture(
+                    long jobId, Cluster targetCluster, Node target, String stepKey, String command,
+                    Duration timeout) {
+                int index = attempts.getAndIncrement();
+                return outcomes.get(Math.min(index, outcomes.size() - 1));
+            }
+        };
+    }
+
+    private static RemoteStepRunner.CommandOutcome healthyHealthOutput() {
+        return new RemoteStepRunner.CommandOutcome(0,
+                "cp-a Ready\n__KF_PODS__\nkube-flannel flannel 1/1 Running\n", "", "health.log");
     }
 
     private RemoteStepRunner runner() {

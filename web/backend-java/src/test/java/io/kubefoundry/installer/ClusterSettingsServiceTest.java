@@ -13,6 +13,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest(properties = {
         "spring.datasource.url=jdbc:h2:mem:cluster-settings;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
@@ -34,6 +35,7 @@ class ClusterSettingsServiceTest {
 
     @AfterEach
     void cleanUp() {
+        jdbc.update("delete from app_settings");
         clusters.deleteAll();
     }
 
@@ -87,6 +89,46 @@ class ClusterSettingsServiceTest {
         assertThat(rendered).doesNotContainIgnoringCase("password")
                 .doesNotContainIgnoringCase("private_key")
                 .doesNotContainIgnoringCase("ciphertext");
+    }
+
+    @Test
+    void persistsGlobalSettingsAndMergesThemWithClusterOverrides() {
+        Cluster cluster = clusters.saveAndFlush(new Cluster("global-settings"));
+        Node node = nodes.saveAndFlush(node(cluster, "cp-a", "10.0.0.1", "control_plane", "amd64"));
+
+        settings.updateGlobalSettings(Map.of("paths", Map.of("k8s_home", "/srv/k8s")));
+        settings.updateClusterSettings(cluster.getId(),
+                Map.of("paths", Map.of("install_media", "/mnt/media")));
+
+        assertThat(group(settings.getGlobalSettings(), "paths"))
+                .containsEntry("k8s_home", "/srv/k8s");
+        assertThat(group(settings.getClusterSettings(cluster.getId()), "paths"))
+                .containsEntry("k8s_home", "/srv/k8s")
+                .containsEntry("install_media", "/mnt/media");
+        assertThat(settings.runtimeSettings(cluster, node).k8sHome()).isEqualTo("/srv/k8s");
+        assertThat(jdbc.queryForObject("select count(*) from app_settings", Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void rejectsSensitiveAndUnknownSettingsAtAnyDepthAndNeverReturnsThem() {
+        Cluster cluster = clusters.saveAndFlush(new Cluster("settings-validation"));
+
+        assertThatThrownBy(() -> settings.updateGlobalSettings(Map.of(
+                "paths", Map.of("password", "leak"))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("password");
+        assertThatThrownBy(() -> settings.updateClusterSettings(cluster.getId(), Map.of(
+                "unknown", Map.of("value", "no"))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("unknown");
+        assertThatThrownBy(() -> settings.updateClusterSettings(cluster.getId(), Map.of(
+                "advanced", Map.of("nested", Map.of("token", "leak")))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("token");
+
+        jdbc.update("insert into app_settings (setting_key, setting_value) values (?, ?)",
+                "secret", "leak");
+        assertThat(settings.getGlobalSettings()).doesNotContainKey("secret");
     }
 
     @SuppressWarnings("unchecked")

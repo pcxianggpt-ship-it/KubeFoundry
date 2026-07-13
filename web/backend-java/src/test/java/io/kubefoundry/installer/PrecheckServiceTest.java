@@ -8,6 +8,7 @@ import io.kubefoundry.job.JobEvent;
 import io.kubefoundry.job.JobEventRepository;
 import io.kubefoundry.job.JobExecutor;
 import io.kubefoundry.job.JobRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
@@ -49,6 +50,9 @@ class PrecheckServiceTest {
 
     @Autowired
     JobEventRepository events;
+
+    @Autowired
+    InstallService installs;
 
     @MockBean
     RemoteStepRunner runner;
@@ -118,6 +122,11 @@ class PrecheckServiceTest {
                 .filteredOn(result -> "fail".equals(result.getStatus()))
                 .extracting(PrecheckResult::getCheckKey)
                 .contains("cpu", "memory", "bash", "ports", "system_drift");
+        assertThat(nodes.findById(node.getId()).orElseThrow().getNodeTestStatus()).isEqualTo("stale");
+        assertThat(clusters.findById(cluster.getId()).orElseThrow().getNodeTestStatus()).isEqualTo("stale");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> installs.start(cluster.getId(), List.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("stale");
     }
 
     private static String healthyOutput(String overrides) {

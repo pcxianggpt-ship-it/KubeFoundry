@@ -121,7 +121,7 @@ public class InstallPlanFactory {
     public List<Node> resolveTargets(InstallStep step, Cluster cluster, List<Node> configuredNodes) {
         List<Node> nodes = uniqueSorted(configuredNodes);
         List<Node> controls = filter(nodes, node -> "control_plane".equals(node.getRole()));
-        Node primary = controls.isEmpty() ? null : controls.get(0);
+        Node primary = PrimaryControlPlaneSelector.select(nodes);
         String registryIp = cluster == null ? "" : cluster.getRegistryIp();
         return switch (step.targetScope()) {
             case "all_nodes" -> nodes;
@@ -135,7 +135,8 @@ public class InstallPlanFactory {
             case "registry" -> filter(nodes, node -> "registry".equals(node.getRole())
                     || (!registryIp.isBlank() && registryIp.equals(node.getIp())));
             case "primary_control_plane" -> primary == null ? List.of() : List.of(primary);
-            case "other_control_planes" -> controls.size() < 2 ? List.of() : controls.subList(1, controls.size());
+            case "other_control_planes" -> filter(controls,
+                    node -> primary == null || !node.getId().equals(primary.getId()));
             default -> List.of();
         };
     }

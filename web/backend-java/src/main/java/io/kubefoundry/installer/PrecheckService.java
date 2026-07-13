@@ -111,6 +111,12 @@ public class PrecheckService {
         Map<String, String> values = parseMarkers(command.stdout());
         OsInfo os = parseOsRelease(command.stdout(), values.get("OS"));
         List<PrecheckCheck> checks = buildChecks(node, values, os);
+        if (checks.stream().anyMatch(check -> "system_drift".equals(check.key())
+                && "fail".equals(check.status()))) {
+            node.markTestStale(false);
+            nodes.saveAndFlush(node);
+            clusters.markNodeConfigurationChanged(cluster.getId());
+        }
         boolean failed = false;
         for (PrecheckCheck check : checks) {
             persist(jobId, cluster, job, node, check);

@@ -45,7 +45,7 @@ public class InstallerController {
 
     @PutMapping("/settings")
     public Map<String, Object> updateSettings(@RequestBody(required = false) Map<String, Object> request) {
-        return request == null ? settings.getGlobalSettings() : request;
+        return request == null ? settings.getGlobalSettings() : settings.updateGlobalSettings(request);
     }
 
     @GetMapping("/clusters/{clusterId}/settings")

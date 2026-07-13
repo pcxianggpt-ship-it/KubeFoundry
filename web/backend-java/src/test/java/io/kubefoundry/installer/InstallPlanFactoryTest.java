@@ -104,6 +104,22 @@ class InstallPlanFactoryTest {
     }
 
     @Test
+    void usesTheFirstControlPlaneByNodeIdForPrimaryAndOtherControlTargets() {
+        Cluster cluster = new Cluster("multi-control");
+        Node laterByName = node(cluster, 20L, "a-control", "10.0.0.20", "control_plane");
+        Node primaryById = node(cluster, 10L, "z-control", "10.0.0.10", "control_plane");
+        Node worker = node(cluster, 30L, "worker-a", "10.0.0.30", "worker");
+        InstallPlan plan = factory.create();
+
+        assertThat(factory.resolveTargets(plan.require("18-init-k8s-cluster"), cluster,
+                List.of(laterByName, worker, primaryById)))
+                .extracting(Node::getHostname).containsExactly("z-control");
+        assertThat(factory.resolveTargets(plan.require("20-add-control-nodes"), cluster,
+                List.of(laterByName, worker, primaryById)))
+                .extracting(Node::getHostname).containsExactly("a-control");
+    }
+
+    @Test
     void rejectsUnknownSelectionAndMissingArtifactProducer() {
         assertThatThrownBy(() -> factory.select(List.of("missing")))
                 .isInstanceOf(IllegalArgumentException.class)

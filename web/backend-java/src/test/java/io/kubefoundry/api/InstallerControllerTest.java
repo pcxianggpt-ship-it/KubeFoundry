@@ -115,6 +115,15 @@ class InstallerControllerTest {
                 .andExpect(jsonPath("$.env.containerd_root")
                         .value("/data/k8s_install/containerd-data"));
 
+        mvc.perform(put("/api/settings")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"paths\":{\"k8s_home\":\"/srv/k8s\"}}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paths.k8s_home").value("/srv/k8s"));
+        mvc.perform(get("/api/settings"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paths.k8s_home").value("/srv/k8s"));
+
         mvc.perform(put("/api/clusters/{id}/settings", cluster.getId())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""

@@ -9,6 +9,7 @@ import io.kubefoundry.cluster.ClusterService.ResourceNotFoundException;
 import io.kubefoundry.cluster.Node;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,20 +20,30 @@ public class ClusterSettingsService {
 
     private final ClusterRepository clusters;
     private final ClusterSettingRepository settings;
+    private final AppSettingRepository appSettings;
     private final ObjectMapper objectMapper;
 
     public ClusterSettingsService(
             ClusterRepository clusters,
             ClusterSettingRepository settings,
+            AppSettingRepository appSettings,
             ObjectMapper objectMapper) {
         this.clusters = clusters;
         this.settings = settings;
+        this.appSettings = appSettings;
         this.objectMapper = objectMapper;
     }
 
     @Transactional(readOnly = true)
     public Map<String, Object> getGlobalSettings() {
-        return publicSettings(defaults());
+        return publicSettings(globalSettings());
+    }
+
+    @Transactional
+    public Map<String, Object> updateGlobalSettings(Map<String, Object> incoming) {
+        validateIncoming(incoming);
+        saveAppSettings(incoming);
+        return publicSettings(globalSettings());
     }
 
     @Transactional(readOnly = true)
@@ -45,8 +56,8 @@ public class ClusterSettingsService {
     public Map<String, Object> updateClusterSettings(long clusterId, Map<String, Object> incoming) {
         Cluster cluster = requireCluster(clusterId);
         if (incoming == null) return mergedSettings(clusterId);
+        validateIncoming(incoming);
         for (Map.Entry<String, Object> entry : incoming.entrySet()) {
-            if (entry.getKey() == null || entry.getKey().isBlank()) continue;
             String serialized = serialize(entry.getValue());
             ClusterSetting setting = settings.findByClusterIdAndKey(clusterId, entry.getKey())
                     .orElseGet(() -> new ClusterSetting(cluster, entry.getKey(), serialized));
@@ -87,24 +98,110 @@ public class ClusterSettingsService {
     }
 
     private Map<String, Object> mergedSettings(long clusterId) {
-        Map<String, Object> result = defaults();
+        Map<String, Object> result = globalSettings();
         for (ClusterSetting setting : settings.findByClusterIdOrderByKey(clusterId)) {
-            Object decoded = decode(setting.getValue());
-            if (decoded instanceof Map<?, ?> decodedMap
-                    && result.get(setting.getKey()) instanceof Map<?, ?> currentMap) {
-                Map<String, Object> merged = new LinkedHashMap<>();
-                currentMap.forEach((key, value) -> {
-                    if (key != null) merged.put(key.toString(), value);
-                });
-                decodedMap.forEach((key, value) -> {
-                    if (key != null) merged.put(key.toString(), value);
-                });
-                result.put(setting.getKey(), merged);
-            } else {
-                result.put(setting.getKey(), decoded);
-            }
+            mergeStoredSetting(result, setting.getKey(), decode(setting.getValue()));
         }
         return result;
+    }
+
+    private Map<String, Object> globalSettings() {
+        Map<String, Object> result = defaults();
+        for (AppSetting setting : appSettings.findAllByOrderByKeyAsc()) {
+            mergeStoredSetting(result, setting.getKey(), decode(setting.getValue()));
+        }
+        return result;
+    }
+
+    private void saveAppSettings(Map<String, Object> incoming) {
+        for (Map.Entry<String, Object> entry : incoming.entrySet()) {
+            String serialized = serialize(entry.getValue());
+            AppSetting setting = appSettings.findById(entry.getKey())
+                    .orElseGet(() -> new AppSetting(entry.getKey(), serialized));
+            setting.updateValue(serialized);
+            appSettings.save(setting);
+        }
+        appSettings.flush();
+    }
+
+    private void mergeStoredSetting(Map<String, Object> target, String key, Object value) {
+        if (!allowedGroups().contains(key) || !(value instanceof Map<?, ?> raw)) return;
+        Map<String, Object> permitted;
+        try {
+            permitted = permittedGroup(key, raw);
+        } catch (IllegalArgumentException ignored) {
+            return;
+        }
+        if (permitted.isEmpty()) return;
+        Map<String, Object> merged = group(target, key);
+        merged.putAll(permitted);
+        target.put(key, merged);
+    }
+
+    private static void validateIncoming(Map<String, Object> incoming) {
+        if (incoming == null) throw new IllegalArgumentException("设置内容不能为空");
+        for (Map.Entry<String, Object> entry : incoming.entrySet()) {
+            String key = entry.getKey();
+            rejectSensitiveKey(key);
+            rejectSensitiveKeys(entry.getValue());
+            if (!allowedGroups().contains(key)) {
+                throw new IllegalArgumentException("不允许的设置项: " + key);
+            }
+            if (!(entry.getValue() instanceof Map<?, ?> raw)) {
+                throw new IllegalArgumentException("设置分组必须是对象: " + key);
+            }
+            Map<String, Object> permitted = permittedGroup(key, raw);
+            if (permitted.size() != raw.size()) {
+                throw new IllegalArgumentException("设置包含未知或无效子项: " + key);
+            }
+        }
+    }
+
+    private static Map<String, Object> permittedGroup(String group, Map<?, ?> raw) {
+        Map<String, Object> permitted = new LinkedHashMap<>();
+        Set<String> allowed = allowedKeys(group);
+        for (Map.Entry<?, ?> entry : raw.entrySet()) {
+            if (!(entry.getKey() instanceof String key)) continue;
+            rejectSensitiveKey(key);
+            if (!allowed.contains(key)) continue;
+            Object value = entry.getValue();
+            boolean valid = "advanced".equals(group)
+                    ? value instanceof Boolean
+                    : value instanceof String;
+            if (valid) permitted.put(key, value);
+        }
+        return permitted;
+    }
+
+    private static Set<String> allowedGroups() {
+        return Set.of("paths", "env", "advanced");
+    }
+
+    private static Set<String> allowedKeys(String group) {
+        return switch (group) {
+            case "paths" -> Set.of("k8s_home", "install_media", "arch", "repo_source",
+                    "kubeadm_100y", "container_runtime", "registry_install", "flannel_config");
+            case "env" -> Set.of("kubelet_root", "containerd_root", "etcd_data_dir");
+            case "advanced" -> Set.of("enable_ipv6_dual_stack");
+            default -> Set.of();
+        };
+    }
+
+    private static void rejectSensitiveKey(String key) {
+        String value = key == null ? "" : key.toLowerCase(java.util.Locale.ROOT);
+        for (String forbidden : Set.of("password", "passphrase", "private_key", "secret", "token", "credential")) {
+            if (value.contains(forbidden)) {
+                throw new IllegalArgumentException("不允许敏感设置项: " + key);
+            }
+        }
+    }
+
+    private static void rejectSensitiveKeys(Object value) {
+        if (!(value instanceof Map<?, ?> map)) return;
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            if (entry.getKey() instanceof String key) rejectSensitiveKey(key);
+            rejectSensitiveKeys(entry.getValue());
+        }
     }
 
     private Map<String, Object> defaults() {

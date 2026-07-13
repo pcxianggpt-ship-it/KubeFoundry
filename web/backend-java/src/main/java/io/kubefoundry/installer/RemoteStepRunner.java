@@ -31,6 +31,7 @@ public class RemoteStepRunner {
     private final RemoteSessionProvider sessions;
     private final RuntimeEnvRenderer runtimeRenderer;
     private final Path dataDirectory;
+    private final ClusterHealthRetryPolicy clusterHealthRetryPolicy;
 
     @Autowired
     public RemoteStepRunner(
@@ -46,10 +47,21 @@ public class RemoteStepRunner {
             RemoteSessionProvider sessions,
             RuntimeEnvRenderer runtimeRenderer,
             Path dataDirectory) {
+        this(ssh, sessions, runtimeRenderer, dataDirectory, ClusterHealthRetryPolicy.defaults());
+    }
+
+    public RemoteStepRunner(
+            SshService ssh,
+            RemoteSessionProvider sessions,
+            RuntimeEnvRenderer runtimeRenderer,
+            Path dataDirectory,
+            ClusterHealthRetryPolicy clusterHealthRetryPolicy) {
         this.ssh = ssh;
         this.sessions = sessions;
         this.runtimeRenderer = runtimeRenderer;
         this.dataDirectory = dataDirectory.toAbsolutePath().normalize();
+        this.clusterHealthRetryPolicy = clusterHealthRetryPolicy == null
+                ? ClusterHealthRetryPolicy.defaults() : clusterHealthRetryPolicy;
     }
 
     public JobService.NodeOutcome run(
@@ -178,15 +190,30 @@ public class RemoteStepRunner {
         String command = "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get nodes --no-headers "
                 + "&& printf '\\n__KF_PODS__\\n' "
                 + "&& KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -A --no-headers";
-        CommandOutcome result = runCommandCapture(jobId, cluster, node, stepKey, command,
-                Duration.ofSeconds(120));
-        if (result.exitCode() != 0) {
-            return new JobService.NodeOutcome(false, result.exitCode(),
-                    "集群健康检查命令失败，退出码: " + result.exitCode(), result.logPath());
+        CommandOutcome last = null;
+        String message = "集群健康检查失败";
+        for (int attempt = 1; attempt <= clusterHealthRetryPolicy.attempts(); attempt++) {
+            last = runCommandCapture(jobId, cluster, node, stepKey, command, Duration.ofSeconds(120));
+            if (last.exitCode() == 0) {
+                HealthResult health = evaluateClusterHealth(nodes, last.stdout());
+                if (health.ok()) {
+                    return new JobService.NodeOutcome(true, 0, health.message(), last.logPath());
+                }
+                message = health.message();
+            } else {
+                message = "集群健康检查命令失败，退出码: " + last.exitCode();
+            }
+            if (attempt < clusterHealthRetryPolicy.attempts()) {
+                try {
+                    clusterHealthRetryPolicy.waiter().waitFor(clusterHealthRetryPolicy.interval());
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    return new JobService.NodeOutcome(false, 1, "集群健康检查已中断", last.logPath());
+                }
+            }
         }
-        HealthResult health = evaluateClusterHealth(nodes, result.stdout());
-        return new JobService.NodeOutcome(health.ok(), health.ok() ? 0 : 1,
-                health.message(), result.logPath());
+        int exitCode = last != null && last.exitCode() != 0 ? last.exitCode() : 1;
+        return new JobService.NodeOutcome(false, exitCode, message, last == null ? "" : last.logPath());
     }
 
     private void createRemoteDirectories(
@@ -275,18 +302,34 @@ public class RemoteStepRunner {
         StringBuilder script = new StringBuilder("#!/bin/bash\nset -e\n")
                 .append("hostnamectl set-hostname \"$KF_NODE_HOSTNAME\"\n")
                 .append("sed -i '/^# >>>KubeFoundry>>>$/,/^# <<<KubeFoundry<<</d' /etc/hosts\n")
-                .append("cat >> /etc/hosts <<'KF_HOSTS_EOF'\n# >>>KubeFoundry>>>\n");
-        nodes.stream().sorted(java.util.Comparator.comparing(Node::getHostname)).forEach(item ->
-                script.append(item.getIp()).append("    ").append(item.getHostname()).append('\n'));
-        script.append("# <<<KubeFoundry<<<\nKF_HOSTS_EOF\n")
+                .append("{\n  printf '%s\\n' '# >>>KubeFoundry>>>'\n");
+        Map<String, java.util.LinkedHashSet<String>> aliases = new java.util.TreeMap<>();
+        nodes.stream().sorted(java.util.Comparator.comparing(Node::getHostname,
+                java.util.Comparator.nullsLast(String::compareTo))).forEach(item -> addHostAlias(
+                aliases, item.getIp(), item.getHostname()));
+        addHostAlias(aliases, cluster.getRegistryIp(), cluster.getRegistryHostname());
+        aliases.forEach((ip, hostnames) -> script.append("  printf '%s\\n' ")
+                .append(RuntimeEnvRenderer.shellQuote(ip + "    " + String.join(" ", hostnames)))
+                .append('\n'));
+        script.append("  printf '%s\\n' '# <<<KubeFoundry<<<'\n} >> /etc/hosts\n")
                 .append("log_success \"主机名和 hosts 配置完成\"\n");
         return script.toString();
     }
 
+    private static void addHostAlias(
+            Map<String, java.util.LinkedHashSet<String>> aliases, String ip, String hostname) {
+        if (ip == null || ip.isBlank() || hostname == null || hostname.isBlank()) return;
+        aliases.computeIfAbsent(hostsToken(ip), ignored -> new java.util.LinkedHashSet<>())
+                .add(hostsToken(hostname));
+    }
+
+    private static String hostsToken(String value) {
+        return value.trim().replace("\r", "").replace("\n", "");
+    }
+
     private static String resolveArgument(InstallStep.Argument argument, List<Node> nodes) {
         if (argument.literal() != null) return argument.literal();
-        Node primary = nodes.stream().filter(item -> "control_plane".equals(item.getRole()))
-                .sorted(java.util.Comparator.comparing(Node::getHostname)).findFirst().orElse(null);
+        Node primary = PrimaryControlPlaneSelector.select(nodes);
         if (primary == null) return "";
         return switch (argument.contextKey()) {
             case "primary_control_ip" -> primary.getIp();
@@ -296,8 +339,8 @@ public class RemoteStepRunner {
     }
 
     private static String formatVerify(String command, Node node, List<Node> nodes) {
-        Node primary = nodes.stream().filter(item -> "control_plane".equals(item.getRole()))
-                .sorted(java.util.Comparator.comparing(Node::getHostname)).findFirst().orElse(node);
+        Node primary = PrimaryControlPlaneSelector.select(nodes);
+        if (primary == null) primary = node;
         return command
                 .replace("{node_hostname}", RuntimeEnvRenderer.shellQuote(node.getHostname()))
                 .replace("{node_ip}", RuntimeEnvRenderer.shellQuote(node.getIp()))
@@ -393,6 +436,23 @@ public class RemoteStepRunner {
             stderr = stderr == null ? "" : stderr;
             logPath = logPath == null ? "" : logPath;
         }
+    }
+
+    public record ClusterHealthRetryPolicy(int attempts, Duration interval, Waiter waiter) {
+        public ClusterHealthRetryPolicy {
+            attempts = Math.min(30, Math.max(1, attempts));
+            interval = interval == null || interval.isNegative() ? Duration.ZERO : interval;
+            waiter = waiter == null ? duration -> Thread.sleep(duration.toMillis()) : waiter;
+        }
+
+        static ClusterHealthRetryPolicy defaults() {
+            return new ClusterHealthRetryPolicy(30, Duration.ofSeconds(10), null);
+        }
+    }
+
+    @FunctionalInterface
+    public interface Waiter {
+        void waitFor(Duration duration) throws InterruptedException;
     }
 
     public static final class RuntimePaths {

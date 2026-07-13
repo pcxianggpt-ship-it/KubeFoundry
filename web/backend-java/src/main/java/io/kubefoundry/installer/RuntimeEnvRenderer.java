@@ -2,7 +2,6 @@ package io.kubefoundry.installer;
 
 import io.kubefoundry.cluster.Cluster;
 import io.kubefoundry.cluster.Node;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -16,12 +15,7 @@ public class RuntimeEnvRenderer {
     }
 
     public String render(Cluster cluster, List<Node> nodes, Node node, RuntimeSettings settings) {
-        Node primary = nodes.stream()
-                .filter(item -> "control_plane".equals(item.getRole()))
-                .sorted(Comparator.comparing(Node::getId, Comparator.nullsLast(Long::compareTo))
-                        .thenComparing(Node::getHostname, Comparator.nullsLast(String::compareTo))
-                        .thenComparing(Node::getIp, Comparator.nullsLast(String::compareTo)))
-                .findFirst().orElse(null);
+        Node primary = PrimaryControlPlaneSelector.select(nodes);
         Map<String, String> values = new TreeMap<>();
         values.put("KF_ARCH", value(node.getArchitecture(), "amd64"));
         values.put("KF_CLUSTER_NAME", cluster.getName());

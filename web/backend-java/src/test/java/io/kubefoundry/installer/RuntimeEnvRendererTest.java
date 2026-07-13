@@ -4,6 +4,7 @@ import io.kubefoundry.cluster.Cluster;
 import io.kubefoundry.cluster.Node;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -29,6 +30,24 @@ class RuntimeEnvRendererTest {
         assertThat(rendered).contains("log_info()", "log_success()", "log_error()");
         assertThat(rendered).doesNotContainIgnoringCase("password");
         assertThat(rendered).doesNotContainIgnoringCase("private_key");
+    }
+
+    @Test
+    void usesTheFirstControlPlaneByNodeIdForPrimaryEnvironmentVariables() {
+        Cluster cluster = new Cluster("multi-control");
+        Node laterByName = node(cluster, "a-control", "10.0.0.20", "control_plane", "amd64");
+        Node primaryById = node(cluster, "z-control", "10.0.0.10", "control_plane", "amd64");
+        Node worker = node(cluster, "worker-a", "10.0.0.30", "worker", "amd64");
+        ReflectionTestUtils.setField(laterByName, "id", 20L);
+        ReflectionTestUtils.setField(primaryById, "id", 10L);
+        ReflectionTestUtils.setField(worker, "id", 30L);
+
+        String rendered = new RuntimeEnvRenderer().render(
+                cluster, List.of(laterByName, worker, primaryById), worker);
+
+        assertThat(rendered).contains(
+                "export KF_PRIMARY_CONTROL_HOSTNAME='z-control'",
+                "export KF_PRIMARY_CONTROL_IP='10.0.0.10'");
     }
 
     static Node node(
