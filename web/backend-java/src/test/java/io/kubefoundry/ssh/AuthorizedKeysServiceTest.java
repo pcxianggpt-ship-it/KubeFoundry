@@ -1,5 +1,6 @@
 package io.kubefoundry.ssh;
 
+import java.lang.reflect.Field;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -35,10 +36,19 @@ class AuthorizedKeysServiceTest {
     }
 
     @Test
-    void parsesOsReleaseAndNormalizesArchitecture() {
-        NodeProbe probe = JavaSshNodeTestRunner.parseProbe(
-                "ID=kylin\nVERSION_ID=V10\n__KF_ARCH=aarch64\n");
+    void probeCommandCollectsRemoteHostnameOsReleaseAndArchitecture() throws Exception {
+        Field commandField = JavaSshNodeTestRunner.class.getDeclaredField("PROBE_COMMAND");
+        commandField.setAccessible(true);
 
-        assertThat(probe).isEqualTo(new NodeProbe("kylin", "V10", "arm64"));
+        assertThat((String) commandField.get(null))
+                .contains("hostname", "/etc/os-release", "uname -m", "__KF_HOSTNAME=");
+    }
+
+    @Test
+    void parsesHostnameOsReleaseAndNormalizesArchitecture() {
+        NodeProbe probe = JavaSshNodeTestRunner.parseProbe(
+                "__KF_HOSTNAME=remote-node\nID=kylin\nVERSION_ID=V10\n__KF_ARCH=aarch64\n");
+
+        assertThat(probe).isEqualTo(new NodeProbe("remote-node", "kylin", "V10", "arm64"));
     }
 }

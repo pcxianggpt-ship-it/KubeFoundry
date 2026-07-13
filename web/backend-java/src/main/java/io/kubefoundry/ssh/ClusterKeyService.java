@@ -28,6 +28,8 @@ import java.util.Base64;
 import java.util.Collections;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.function.Supplier;
 import org.apache.sshd.common.config.keys.PublicKeyEntry;
 import org.apache.sshd.common.util.security.SecurityUtils;
@@ -53,6 +55,7 @@ public class ClusterKeyService {
     private final Supplier<AesGcmCredentialCipher> cipherSupplier;
     private final ObjectMapper objectMapper;
     private final Path dataDirectory;
+    private final ConcurrentMap<Long, Object> clusterLocks = new ConcurrentHashMap<>();
 
     @Autowired
     public ClusterKeyService(
@@ -86,10 +89,12 @@ public class ClusterKeyService {
         this.dataDirectory = dataDirectory.toAbsolutePath().normalize();
     }
 
-    public synchronized ClusterKeyMaterial getOrCreate(long clusterId) {
-        return sshKeys.findByClusterIdAndName(clusterId, KEY_NAME)
-                .map(this::load)
-                .orElseGet(() -> create(clusterId));
+    public ClusterKeyMaterial getOrCreate(long clusterId) {
+        synchronized (clusterLocks.computeIfAbsent(clusterId, ignored -> new Object())) {
+            return sshKeys.findByClusterIdAndName(clusterId, KEY_NAME)
+                    .map(this::load)
+                    .orElseGet(() -> create(clusterId));
+        }
     }
 
     private ClusterKeyMaterial create(long clusterId) {

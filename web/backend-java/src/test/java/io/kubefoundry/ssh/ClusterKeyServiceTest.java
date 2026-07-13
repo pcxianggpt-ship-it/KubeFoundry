@@ -8,6 +8,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.crypto.spec.SecretKeySpec;
 import org.apache.sshd.common.config.keys.KeyUtils;
 import org.junit.jupiter.api.Test;
@@ -17,6 +22,10 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @DataJpaTest
 class ClusterKeyServiceTest {
@@ -65,10 +74,81 @@ class ClusterKeyServiceTest {
                 .hasRootCauseMessage("集群私钥引用超出数据目录");
     }
 
+    @Test
+    void getOrCreateForDifferentClustersDoesNotShareALock() throws Exception {
+        ClusterRepository testClusters = mock(ClusterRepository.class);
+        SshKeyRepository testKeys = mock(SshKeyRepository.class);
+        Cluster firstCluster = new Cluster("first-key-lock");
+        Cluster secondCluster = new Cluster("second-key-lock");
+        CountDownLatch firstClusterLookupEntered = new CountDownLatch(1);
+        CountDownLatch releaseFirstClusterLookup = new CountDownLatch(1);
+        when(testKeys.findByClusterIdAndName(any(Long.class), any(String.class)))
+                .thenReturn(Optional.empty());
+        when(testClusters.findById(1L)).thenAnswer(invocation -> {
+            firstClusterLookupEntered.countDown();
+            assertThat(releaseFirstClusterLookup.await(5, TimeUnit.SECONDS)).isTrue();
+            return Optional.of(firstCluster);
+        });
+        when(testClusters.findById(2L)).thenReturn(Optional.of(secondCluster));
+        when(testKeys.saveAndFlush(any(SshKey.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        ClusterKeyService service = newService(testClusters, testKeys);
+
+        CompletableFuture<ClusterKeyMaterial> first = CompletableFuture.supplyAsync(
+                () -> service.getOrCreate(1L));
+        assertThat(firstClusterLookupEntered.await(5, TimeUnit.SECONDS)).isTrue();
+        CompletableFuture<ClusterKeyMaterial> second = CompletableFuture.supplyAsync(
+                () -> service.getOrCreate(2L));
+        boolean secondCompletedBeforeRelease;
+        try {
+            second.get(1, TimeUnit.SECONDS);
+            secondCompletedBeforeRelease = true;
+        } catch (java.util.concurrent.TimeoutException exception) {
+            secondCompletedBeforeRelease = false;
+        } finally {
+            releaseFirstClusterLookup.countDown();
+        }
+        assertThat(first.get(5, TimeUnit.SECONDS)).isNotNull();
+        assertThat(second.get(5, TimeUnit.SECONDS)).isNotNull();
+        assertThat(secondCompletedBeforeRelease).isTrue();
+    }
+
+    @Test
+    void concurrentGetOrCreateForSameClusterCreatesOneKey() throws Exception {
+        ClusterRepository testClusters = mock(ClusterRepository.class);
+        SshKeyRepository testKeys = mock(SshKeyRepository.class);
+        Cluster testCluster = new Cluster("same-key-lock");
+        AtomicReference<SshKey> stored = new AtomicReference<>();
+        when(testKeys.findByClusterIdAndName(1L, "cluster-default"))
+                .thenAnswer(invocation -> Optional.ofNullable(stored.get()));
+        when(testClusters.findById(1L)).thenReturn(Optional.of(testCluster));
+        when(testKeys.saveAndFlush(any(SshKey.class))).thenAnswer(invocation -> {
+            SshKey created = invocation.getArgument(0);
+            stored.set(created);
+            return created;
+        });
+        ClusterKeyService service = newService(testClusters, testKeys);
+
+        CompletableFuture<ClusterKeyMaterial> first = CompletableFuture.supplyAsync(
+                () -> service.getOrCreate(1L));
+        CompletableFuture<ClusterKeyMaterial> second = CompletableFuture.supplyAsync(
+                () -> service.getOrCreate(1L));
+
+        assertThat(KeyUtils.compareKeyPairs(
+                first.get(5, TimeUnit.SECONDS).keyPair(),
+                second.get(5, TimeUnit.SECONDS).keyPair())).isTrue();
+        verify(testKeys).saveAndFlush(any(SshKey.class));
+    }
+
     private ClusterKeyService newService() {
+        return newService(clusters, sshKeys);
+    }
+
+    private ClusterKeyService newService(
+            ClusterRepository clusterRepository, SshKeyRepository keyRepository) {
         return new ClusterKeyService(
-                clusters,
-                sshKeys,
+                clusterRepository,
+                keyRepository,
                 new AesGcmCredentialCipher(new SecretKeySpec(new byte[32], "AES")),
                 new ObjectMapper(),
                 dataDirectory);

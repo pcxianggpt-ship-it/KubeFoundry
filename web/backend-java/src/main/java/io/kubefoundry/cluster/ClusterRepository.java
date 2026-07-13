@@ -18,9 +18,13 @@ public interface ClusterRepository extends JpaRepository<Cluster, Long> {
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional
-    @Query("update Cluster cluster set cluster.nodeTestStatus = :status where cluster.id = :clusterId")
-    int updateNodeTestStatus(
-            @Param("clusterId") long clusterId, @Param("status") String status);
+    @Query("update Cluster cluster set cluster.nodeTestStatus = :status "
+            + "where cluster.id = :clusterId "
+            + "and cluster.nodeConfigVersion = :expectedVersion")
+    int updateNodeTestStatusIfConfigurationUnchanged(
+            @Param("clusterId") long clusterId,
+            @Param("expectedVersion") long expectedVersion,
+            @Param("status") String status);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional
@@ -41,6 +45,9 @@ public interface ClusterRepository extends JpaRepository<Cluster, Long> {
                    else 'running'
                end
              where id = :clusterId
+               and node_config_version = :expectedVersion
             """, nativeQuery = true)
-    int refreshNodeTestAggregate(@Param("clusterId") long clusterId);
+    int refreshNodeTestAggregate(
+            @Param("clusterId") long clusterId,
+            @Param("expectedVersion") long expectedVersion);
 }

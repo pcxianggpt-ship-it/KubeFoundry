@@ -11,10 +11,12 @@ import io.kubefoundry.job.JobRepository;
 import io.kubefoundry.job.JobService;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
@@ -64,11 +66,16 @@ public class NodeTestService {
                         .toList();
             }
             validateNodes(selected, failedOnly);
-            clusters.updateNodeTestStatus(clusterId, "running");
+            long expectedConfigVersion = cluster.getNodeConfigVersion();
+            if (clusters.updateNodeTestStatusIfConfigurationUnchanged(
+                    clusterId, expectedConfigVersion, "running") != 1) {
+                throw NodeConfigurationChangedException.forCluster(clusterId);
+            }
             try {
-                return submit(clusterId, selected, key, cluster.getNodeConfigVersion());
+                return submit(clusterId, selected, key, expectedConfigVersion);
             } catch (RuntimeException exception) {
-                clusters.updateNodeTestStatus(clusterId, "failed");
+                clusters.updateNodeTestStatusIfConfigurationUnchanged(
+                        clusterId, expectedConfigVersion, "failed");
                 throw exception;
             }
         }
@@ -85,11 +92,16 @@ public class NodeTestService {
             Cluster cluster = requireCluster(clusterId);
             rejectActiveJob(clusterId);
             validateNodes(List.of(node), false);
-            clusters.updateNodeTestStatus(clusterId, "running");
+            long expectedConfigVersion = cluster.getNodeConfigVersion();
+            if (clusters.updateNodeTestStatusIfConfigurationUnchanged(
+                    clusterId, expectedConfigVersion, "running") != 1) {
+                throw NodeConfigurationChangedException.forCluster(clusterId);
+            }
             try {
-                return submit(clusterId, List.of(node), key, cluster.getNodeConfigVersion());
+                return submit(clusterId, List.of(node), key, expectedConfigVersion);
             } catch (RuntimeException exception) {
-                clusters.updateNodeTestStatus(clusterId, "failed");
+                clusters.updateNodeTestStatusIfConfigurationUnchanged(
+                        clusterId, expectedConfigVersion, "failed");
                 throw exception;
             }
         }
@@ -111,10 +123,14 @@ public class NodeTestService {
         Node node = nodes.findById(nodeId).orElseThrow();
         EncryptedCredential encrypted = node.encryptedPassword();
         char[] password = null;
+        AtomicReference<String> currentPhase = new AtomicReference<>("credential_decrypting");
         try {
             password = cipherProvider.getObject().decrypt(encrypted);
             NodeProbe probe = runner.test(node, password, key,
-                    phase -> updatePhase(jobId, nodeId, expectedConfigVersion, phase),
+                    phase -> {
+                        currentPhase.set(phase);
+                        updatePhase(jobId, nodeId, expectedConfigVersion, phase);
+                    },
                     expectedConfigVersion);
             if (nodes.completeTestIfConfigurationUnchanged(
                     nodeId, expectedConfigVersion,
@@ -123,19 +139,25 @@ public class NodeTestService {
             }
             Node completed = nodes.findById(nodeId).orElseThrow();
             publishNodeStatus(jobId, completed, "success");
-            updateClusterAggregate(completed.getCluster().getId());
+            updateClusterAggregate(
+                    completed.getCluster().getId(), nodeId, expectedConfigVersion);
         } catch (NodeConfigurationChangedException exception) {
             throw exception;
         } catch (Exception exception) {
-            String message = truncate(redact(exception.getMessage(), password), 1000);
+            String reason = redactAuthenticationMaterial(
+                    exception.getMessage(), password, encrypted, key);
+            String message = truncate(String.format(
+                    "节点 %s (ID: %d) 在%s（%s）失败: %s",
+                    displayName(node), nodeId, phaseName(currentPhase.get()),
+                    currentPhase.get(), reason), 1000);
             if (nodes.failTestIfConfigurationUnchanged(
                     nodeId, expectedConfigVersion, message) != 1) {
                 throw new NodeConfigurationChangedException(nodeId);
             }
             Node failed = nodes.findById(nodeId).orElseThrow();
             publishNodeStatus(jobId, failed, "failed");
-            updateClusterAggregate(failed.getCluster().getId());
-            throw new IllegalStateException(message);
+            updateClusterAggregate(failed.getCluster().getId(), nodeId, expectedConfigVersion);
+            throw new IllegalStateException(message, exception);
         } finally {
             if (password != null) Arrays.fill(password, '\0');
         }
@@ -161,8 +183,11 @@ public class NodeTestService {
                 "status", status));
     }
 
-    private void updateClusterAggregate(long clusterId) {
-        clusters.refreshNodeTestAggregate(clusterId);
+    private void updateClusterAggregate(
+            long clusterId, long nodeId, long expectedConfigVersion) {
+        if (clusters.refreshNodeTestAggregate(clusterId, expectedConfigVersion) != 1) {
+            throw new NodeConfigurationChangedException(nodeId);
+        }
     }
 
     private Object admissionLockFor(long clusterId) {
@@ -210,6 +235,61 @@ public class NodeTestService {
         return result.toString();
     }
 
+    private static String redactAuthenticationMaterial(
+            String value,
+            char[] password,
+            EncryptedCredential encrypted,
+            ClusterKeyMaterial key) {
+        String result = redact(value, password);
+        char[] ciphertext = encrypted == null ? null : encrypted.ciphertext().toCharArray();
+        try {
+            result = redact(result, ciphertext);
+        } finally {
+            if (ciphertext != null) Arrays.fill(ciphertext, '\0');
+        }
+
+        byte[] privateKey = key.keyPair().getPrivate().getEncoded();
+        byte[] encodedPrivateKey = null;
+        try {
+            encodedPrivateKey = Base64.getEncoder().encode(privateKey);
+            return redactAscii(result, encodedPrivateKey);
+        } finally {
+            if (privateKey != null) Arrays.fill(privateKey, (byte) 0);
+            if (encodedPrivateKey != null) Arrays.fill(encodedPrivateKey, (byte) 0);
+        }
+    }
+
+    private static String redactAscii(String value, byte[] secret) {
+        if (secret == null || secret.length == 0) return value;
+        StringBuilder result = new StringBuilder(value.length());
+        int index = 0;
+        while (index < value.length()) {
+            if (matchesAscii(value, index, secret)) {
+                result.append("***");
+                index += secret.length;
+            } else {
+                result.append(value.charAt(index++));
+            }
+        }
+        return result.toString();
+    }
+
+    private static String displayName(Node node) {
+        return node.getHostname() == null || node.getHostname().isBlank()
+                ? String.valueOf(node.getId())
+                : node.getHostname();
+    }
+
+    private static String phaseName(String phase) {
+        return switch (phase) {
+            case "credential_decrypting" -> "凭据解密阶段";
+            case "password_connecting" -> "密码连接阶段";
+            case "key_installing" -> "密钥安装阶段";
+            case "key_verifying" -> "密钥验证阶段";
+            default -> "节点测试阶段";
+        };
+    }
+
     private static String truncate(String value, int maximumLength) {
         return value.length() <= maximumLength ? value : value.substring(0, maximumLength);
     }
@@ -218,6 +298,14 @@ public class NodeTestService {
         if (offset + secret.length > value.length()) return false;
         for (int index = 0; index < secret.length; index++) {
             if (value.charAt(offset + index) != secret[index]) return false;
+        }
+        return true;
+    }
+
+    private static boolean matchesAscii(String value, int offset, byte[] secret) {
+        if (offset + secret.length > value.length()) return false;
+        for (int index = 0; index < secret.length; index++) {
+            if (value.charAt(offset + index) != (char) (secret[index] & 0xff)) return false;
         }
         return true;
     }

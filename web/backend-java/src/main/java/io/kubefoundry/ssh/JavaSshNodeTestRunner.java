@@ -14,7 +14,8 @@ public class JavaSshNodeTestRunner implements NodeTestRunner {
     private static final Duration AUTHENTICATION_TIMEOUT = Duration.ofSeconds(30);
     private static final Duration COMMAND_TIMEOUT = Duration.ofSeconds(60);
     private static final String PROBE_COMMAND =
-            "cat /etc/os-release; printf '__KF_ARCH=%s\\n' \"$(uname -m)\"";
+            "printf '__KF_HOSTNAME=%s\\n' \"$(hostname)\"; "
+            + "cat /etc/os-release; printf '__KF_ARCH=%s\\n' \"$(uname -m)\"";
 
     private final HostFingerprintVerifier fingerprints;
     private final AuthorizedKeysService authorizedKeys;
@@ -62,10 +63,13 @@ public class JavaSshNodeTestRunner implements NodeTestRunner {
 
     static NodeProbe parseProbe(String output) {
         Map<String, String> values = new HashMap<>();
+        String remoteHostname = "";
         String architecture = "";
         for (String rawLine : output.split("\\R")) {
             String line = rawLine.trim();
-            if (line.startsWith("__KF_ARCH=")) {
+            if (line.startsWith("__KF_HOSTNAME=")) {
+                remoteHostname = line.substring("__KF_HOSTNAME=".length()).trim();
+            } else if (line.startsWith("__KF_ARCH=")) {
                 architecture = normalizeArchitecture(line.substring("__KF_ARCH=".length()).trim());
             } else if (!line.isEmpty() && !line.startsWith("#") && line.contains("=")) {
                 int separator = line.indexOf('=');
@@ -74,7 +78,7 @@ public class JavaSshNodeTestRunner implements NodeTestRunner {
         }
         String osType = values.getOrDefault("ID", "");
         String osVersion = values.getOrDefault("VERSION_ID", values.getOrDefault("VERSION", ""));
-        return new NodeProbe(osType, osVersion, architecture);
+        return new NodeProbe(remoteHostname, osType, osVersion, architecture);
     }
 
     private static String normalizeArchitecture(String value) {
