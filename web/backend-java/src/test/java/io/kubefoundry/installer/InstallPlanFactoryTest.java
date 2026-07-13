@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -19,7 +20,7 @@ class InstallPlanFactoryTest {
     private final InstallPlanFactory factory = new InstallPlanFactory(Path.of("D:/repo"));
 
     @Test
-    void mapsAllThirteenPythonStepsInOrder() {
+    void mapsAllFourteenPythonStepsInOrder() {
         InstallPlan plan = factory.create();
 
         assertThat(plan.steps()).extracting(InstallStep::key).containsExactly(
@@ -35,8 +36,11 @@ class InstallPlanFactoryTest {
                 "19-modify-cert-expiry",
                 "20-add-control-nodes",
                 "21-add-worker-nodes",
-                "22-install-cni-flannel");
-        assertThat(plan.steps()).hasSize(13);
+                "22-install-cni-flannel",
+                "web-verify-cluster-health");
+        assertThat(plan.steps()).hasSize(14);
+        assertThat(plan.require("web-verify-cluster-health").builtin())
+                .isEqualTo("cluster_health");
 
         InstallStep dependencies = plan.require("13-install-k8s-deps");
         InstallStep containerd = plan.require("16-install-containerd");
@@ -75,25 +79,28 @@ class InstallPlanFactoryTest {
     }
 
     @Test
-    void resolvesTargetsFromJavaRolesWithStablePrimaryAndDeduplication() {
+    void resolvesTargetsByRepositoryIdOrderWithRegistryIpAndStableDeduplication() {
         Cluster cluster = new Cluster("target-test");
-        Node cpB = node(cluster, "cp-b", "10.0.0.2", "control_plane");
-        Node worker = node(cluster, "worker-a", "10.0.0.3", "worker");
-        Node duplicateWorker = node(cluster, "worker-copy", "10.0.0.3", "worker");
-        Node cpA = node(cluster, "cp-a", "10.0.0.1", "control_plane");
-        Node registry = node(cluster, "registry", "10.0.0.4", "registry");
+        cluster.update(null, null, null, null, null, null, "10.0.0.3", null, null);
+        Node cpB = node(cluster, 1L, "cp-b", "10.0.0.2", "control_plane");
+        Node worker = node(cluster, 2L, "worker-a", "10.0.0.3", "worker");
+        Node duplicateWorker = node(cluster, 3L, "worker-copy", "10.0.0.3", "worker");
+        Node cpA = node(cluster, 4L, "cp-a", "10.0.0.1", "control_plane");
+        Node registry = node(cluster, 5L, "registry", "10.0.0.4", "registry");
         List<Node> nodes = List.of(cpB, worker, duplicateWorker, cpA, registry);
         InstallPlan plan = factory.create();
 
-        assertThat(factory.resolveTargets(plan.require("18-init-k8s-cluster"), nodes))
-                .extracting(Node::getHostname).containsExactly("cp-a");
-        assertThat(factory.resolveTargets(plan.require("20-add-control-nodes"), nodes))
+        assertThat(factory.resolveTargets(plan.require("18-init-k8s-cluster"), cluster, nodes))
                 .extracting(Node::getHostname).containsExactly("cp-b");
-        assertThat(factory.resolveTargets(plan.require("13-install-k8s-deps"), nodes))
-                .extracting(Node::getHostname).containsExactly("cp-a", "cp-b", "worker-a");
-        assertThat(factory.resolveTargets(plan.require("16-install-containerd"), nodes))
+        assertThat(factory.resolveTargets(plan.require("20-add-control-nodes"), cluster, nodes))
+                .extracting(Node::getHostname).containsExactly("cp-a");
+        assertThat(factory.resolveTargets(plan.require("13-install-k8s-deps"), cluster, nodes))
+                .extracting(Node::getHostname).containsExactly("cp-b", "worker-a", "cp-a");
+        assertThat(factory.resolveTargets(plan.require("16-install-containerd"), cluster, nodes))
                 .extracting(Node::getHostname)
-                .containsExactly("cp-a", "cp-b", "registry", "worker-a");
+                .containsExactly("cp-b", "worker-a", "cp-a", "registry");
+        assertThat(factory.resolveTargets(plan.require("17-install-registry"), cluster, nodes))
+                .extracting(Node::getHostname).containsExactly("worker-a", "registry");
     }
 
     @Test
@@ -115,8 +122,10 @@ class InstallPlanFactoryTest {
         assertThat(InstallPlanFactory.discoverProjectRoot(backend)).isEqualTo(root);
     }
 
-    private static Node node(Cluster cluster, String hostname, String ip, String role) {
+    private static Node node(
+            Cluster cluster, long id, String hostname, String ip, String role) {
         Node node = new Node(cluster);
+        ReflectionTestUtils.setField(node, "id", id);
         node.update(hostname, ip, "", role, "root", 22);
         return node;
     }

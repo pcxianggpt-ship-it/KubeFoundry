@@ -3,7 +3,6 @@ package io.kubefoundry.installer;
 import io.kubefoundry.cluster.Cluster;
 import io.kubefoundry.cluster.Node;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -13,21 +12,26 @@ import org.springframework.stereotype.Component;
 public class RuntimeEnvRenderer {
 
     public String render(Cluster cluster, List<Node> nodes, Node node) {
+        return render(cluster, nodes, node, RuntimeSettingsFromDefaults.create(cluster, node));
+    }
+
+    public String render(Cluster cluster, List<Node> nodes, Node node, RuntimeSettings settings) {
         Node primary = nodes.stream()
                 .filter(item -> "control_plane".equals(item.getRole()))
-                .sorted(Comparator.comparing(Node::getHostname)
-                        .thenComparing(Node::getIp))
+                .sorted(Comparator.comparing(Node::getId, Comparator.nullsLast(Long::compareTo))
+                        .thenComparing(Node::getHostname, Comparator.nullsLast(String::compareTo))
+                        .thenComparing(Node::getIp, Comparator.nullsLast(String::compareTo)))
                 .findFirst().orElse(null);
         Map<String, String> values = new TreeMap<>();
         values.put("KF_ARCH", value(node.getArchitecture(), "amd64"));
         values.put("KF_CLUSTER_NAME", cluster.getName());
-        values.put("KF_CONTAINERD_ROOT", "/data/k8s_install/containerd-data");
-        values.put("KF_DUAL_STACK", "N");
-        values.put("KF_ETCD_DATA_DIR", "/data/k8s_install/etcd_backup");
-        values.put("KF_INSTALL_MEDIA", "/root/kube-media");
-        values.put("KF_K8S_HOME", "/data/k8s_install");
+        values.put("KF_CONTAINERD_ROOT", settings.containerdRoot());
+        values.put("KF_DUAL_STACK", settings.dualStackEnabled() ? "Y" : "N");
+        values.put("KF_ETCD_DATA_DIR", settings.etcdDataDir());
+        values.put("KF_INSTALL_MEDIA", settings.installMedia());
+        values.put("KF_K8S_HOME", settings.k8sHome());
         values.put("KF_K8S_VERSION", cluster.getKubernetesVersion());
-        values.put("KF_KUBELET_ROOT", "/data/k8s_install/kubelet_root");
+        values.put("KF_KUBELET_ROOT", settings.kubeletRoot());
         values.put("KF_NODE_HOSTNAME", node.getHostname());
         values.put("KF_NODE_IP", node.getIp());
         values.put("KF_NODE_ROLE", node.getRole());
@@ -79,5 +83,30 @@ public class RuntimeEnvRenderer {
 
     private static String value(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private static final class RuntimeSettingsFromDefaults {
+        private static RuntimeSettings create(Cluster cluster, Node node) {
+            String k8sHome = "/data/k8s_install";
+            String installMedia = "/root/kube-media";
+            String architecture = value(node.getArchitecture(), "amd64");
+            return new RuntimeSettings(
+                    Map.ofEntries(
+                            Map.entry("k8s_home", k8sHome),
+                            Map.entry("install_media", installMedia),
+                            Map.entry("arch", architecture),
+                            Map.entry("repo_source", installMedia + "/01.rpm_package/k8srepo_kylinos_sp3_"
+                                    + architecture + ".tar.gz"),
+                            Map.entry("kubeadm_100y", installMedia + "/01.rpm_package/kubeadm-v"
+                                    + value(cluster.getKubernetesVersion(), "") + "-100y-" + architecture),
+                            Map.entry("container_runtime", installMedia + "/02.container_runtime"),
+                            Map.entry("registry_install", installMedia + "/04.registry"),
+                            Map.entry("flannel_config", installMedia + "/03.setup_file/kube-flannel.yml")),
+                    Map.of(
+                            "kubelet_root", k8sHome + "/kubelet_root",
+                            "containerd_root", k8sHome + "/containerd-data",
+                            "etcd_data_dir", k8sHome + "/etcd_backup"),
+                    Map.of("enable_ipv6_dual_stack", false));
+        }
     }
 }

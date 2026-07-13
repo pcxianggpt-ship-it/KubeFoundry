@@ -1,6 +1,7 @@
 package io.kubefoundry.installer;
 
 import io.kubefoundry.cluster.Node;
+import io.kubefoundry.cluster.Cluster;
 import java.nio.file.Path;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -18,9 +19,10 @@ import org.springframework.stereotype.Component;
 public class InstallPlanFactory {
 
     private static final Comparator<Node> NODE_ORDER = Comparator
-            .comparing(Node::getHostname, Comparator.nullsLast(String::compareTo))
+            .comparing(Node::getId, Comparator.nullsLast(Long::compareTo))
+            .thenComparing(Node::getHostname, Comparator.nullsLast(String::compareTo))
             .thenComparing(Node::getIp, Comparator.nullsLast(String::compareTo))
-            .thenComparing(Node::getId, Comparator.nullsLast(Long::compareTo));
+            .thenComparing(Node::getRole, Comparator.nullsLast(String::compareTo));
 
     private final Path projectRoot;
 
@@ -92,7 +94,10 @@ public class InstallPlanFactory {
                         "22-install-cni-flannel.sh", "serial", 1, true,
                         List.of(pathResource("flannel_config", "file", "/tmp/k8s/kube-flannel.yml")),
                         List.of(), List.of(),
-                        "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -A | grep -q flannel")));
+                        "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -A | grep -q flannel"),
+                InstallStep.builtin("web-verify-cluster-health", "验证 Kubernetes 集群健康",
+                        "verify", "primary_control_plane", "cluster_health",
+                        "serial", 1, true, "")));
     }
 
     public InstallPlan select(List<String> selectedKeys) {
@@ -110,9 +115,14 @@ public class InstallPlanFactory {
     }
 
     public List<Node> resolveTargets(InstallStep step, List<Node> configuredNodes) {
+        return resolveTargets(step, null, configuredNodes);
+    }
+
+    public List<Node> resolveTargets(InstallStep step, Cluster cluster, List<Node> configuredNodes) {
         List<Node> nodes = uniqueSorted(configuredNodes);
         List<Node> controls = filter(nodes, node -> "control_plane".equals(node.getRole()));
         Node primary = controls.isEmpty() ? null : controls.get(0);
+        String registryIp = cluster == null ? "" : cluster.getRegistryIp();
         return switch (step.targetScope()) {
             case "all_nodes" -> nodes;
             case "all_k8s_nodes" -> filter(nodes,
@@ -121,8 +131,9 @@ public class InstallPlanFactory {
             case "workers" -> filter(nodes, node -> "worker".equals(node.getRole()));
             case "non_primary_k8s_nodes" -> filter(nodes,
                     node -> Set.of("control_plane", "worker").contains(node.getRole())
-                            && node != primary);
-            case "registry" -> filter(nodes, node -> "registry".equals(node.getRole()));
+                            && (primary == null || !node.getId().equals(primary.getId())));
+            case "registry" -> filter(nodes, node -> "registry".equals(node.getRole())
+                    || (!registryIp.isBlank() && registryIp.equals(node.getIp())));
             case "primary_control_plane" -> primary == null ? List.of() : List.of(primary);
             case "other_control_planes" -> controls.size() < 2 ? List.of() : controls.subList(1, controls.size());
             default -> List.of();

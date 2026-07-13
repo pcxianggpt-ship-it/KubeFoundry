@@ -3,14 +3,20 @@ package io.kubefoundry.ssh;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
 import java.time.Duration;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 import org.apache.sshd.client.channel.ChannelExec;
 import org.apache.sshd.client.channel.ClientChannelEvent;
 import org.apache.sshd.sftp.client.SftpClient;
 import org.apache.sshd.sftp.client.SftpClientFactory;
+import org.apache.sshd.sftp.common.SftpException;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -43,7 +49,7 @@ public final class SshService {
 
     public void upload(SshSession session, Path local, String remotePath) throws IOException {
         if (session == null) throw new IllegalArgumentException("SSH 会话不能为空");
-        if (local == null || !java.nio.file.Files.isRegularFile(local)) {
+        if (local == null || !Files.isRegularFile(local)) {
             throw new IllegalArgumentException("本地上传文件不存在");
         }
         if (remotePath == null || remotePath.isBlank()) {
@@ -54,6 +60,43 @@ public final class SshService {
         }
     }
 
+    public void uploadDirectory(SshSession session, Path localDirectory, String remoteDirectory)
+            throws IOException {
+        if (session == null) throw new IllegalArgumentException("SSH 会话不能为空");
+        if (localDirectory == null || !Files.isDirectory(localDirectory, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IllegalArgumentException("本地上传目录不存在");
+        }
+        if (Files.isSymbolicLink(localDirectory)) {
+            throw new IllegalArgumentException("本地上传目录不能是符号链接");
+        }
+        String normalizedRemote = normalizeRemoteDirectory(remoteDirectory);
+        Path root = localDirectory.toAbsolutePath().normalize();
+        try (SftpClient sftp = SftpClientFactory.instance().createSftpClient(session.delegate())) {
+            Files.walkFileTree(root, new SimpleFileVisitor<>() {
+                @Override
+                public FileVisitResult preVisitDirectory(
+                        Path directory, java.nio.file.attribute.BasicFileAttributes attrs)
+                        throws IOException {
+                    rejectUnsafeLocalPath(root, directory, true);
+                    ensureRemoteDirectory(sftp, remotePathFor(root, directory, normalizedRemote));
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult visitFile(
+                        Path file, java.nio.file.attribute.BasicFileAttributes attrs)
+                        throws IOException {
+                    rejectUnsafeLocalPath(root, file, false);
+                    String remotePath = remotePathFor(root, file, normalizedRemote);
+                    int separator = remotePath.lastIndexOf('/');
+                    if (separator > 0) ensureRemoteDirectory(sftp, remotePath.substring(0, separator));
+                    sftp.put(file, remotePath);
+                    return FileVisitResult.CONTINUE;
+                }
+            });
+        }
+    }
+
     public void download(SshSession session, String remotePath, Path local) throws IOException {
         if (session == null) throw new IllegalArgumentException("SSH 会话不能为空");
         if (remotePath == null || remotePath.isBlank()) {
@@ -61,12 +104,72 @@ public final class SshService {
         }
         if (local == null) throw new IllegalArgumentException("本地下载路径不能为空");
         Path parent = local.toAbsolutePath().normalize().getParent();
-        if (parent != null) java.nio.file.Files.createDirectories(parent);
+        if (parent != null) Files.createDirectories(parent);
         try (SftpClient sftp = SftpClientFactory.instance().createSftpClient(session.delegate())) {
             try (java.io.InputStream input = sftp.read(remotePath)) {
-                java.nio.file.Files.copy(
-                        input, local, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                Files.copy(input, local, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             }
+        }
+    }
+
+    private static void rejectUnsafeLocalPath(Path root, Path path, boolean directory) {
+        Path normalized = path.toAbsolutePath().normalize();
+        if (!normalized.startsWith(root)) {
+            throw new IllegalArgumentException("本地上传路径越界");
+        }
+        if (Files.isSymbolicLink(path)) {
+            throw new IllegalArgumentException("本地上传目录包含符号链接");
+        }
+        if (!directory && !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IllegalArgumentException("本地上传目录只能包含普通文件");
+        }
+    }
+
+    private static String normalizeRemoteDirectory(String remoteDirectory) {
+        if (remoteDirectory == null || remoteDirectory.isBlank()) {
+            throw new IllegalArgumentException("远端目录不能为空");
+        }
+        String value = remoteDirectory.replace('\\', '/');
+        if (!value.startsWith("/")) {
+            throw new IllegalArgumentException("远端目录必须是绝对路径");
+        }
+        List<String> segments = java.util.Arrays.stream(value.split("/"))
+                .filter(segment -> !segment.isBlank())
+                .toList();
+        if (segments.stream().anyMatch(segment -> ".".equals(segment) || "..".equals(segment))) {
+            throw new IllegalArgumentException("远端目录越界");
+        }
+        return "/" + String.join("/", segments);
+    }
+
+    private static String remotePathFor(Path root, Path path, String remoteRoot) {
+        Path relative = root.relativize(path.toAbsolutePath().normalize());
+        if (relative.getNameCount() == 0) return remoteRoot;
+        String suffix = relative.toString().replace('\\', '/');
+        if (suffix.contains("../") || suffix.equals("..")) {
+            throw new IllegalArgumentException("本地上传路径越界");
+        }
+        return remoteRoot.endsWith("/") ? remoteRoot + suffix : remoteRoot + "/" + suffix;
+    }
+
+    private static void ensureRemoteDirectory(SftpClient sftp, String remoteDirectory) throws IOException {
+        String normalized = normalizeRemoteDirectory(remoteDirectory);
+        String current = "";
+        for (String segment : normalized.substring(1).split("/")) {
+            current += "/" + segment;
+            try {
+                sftp.mkdir(current);
+            } catch (SftpException exception) {
+                if (!remoteDirectoryExists(sftp, current)) throw exception;
+            }
+        }
+    }
+
+    private static boolean remoteDirectoryExists(SftpClient sftp, String remotePath) throws IOException {
+        try {
+            return sftp.stat(remotePath).isDirectory();
+        } catch (SftpException exception) {
+            return false;
         }
     }
 

@@ -128,6 +128,24 @@ class JobServiceTest {
         assertThat(item.getLogPath()).isEqualTo("logs/node-1.log");
     }
 
+    @Test
+    void publishesNodeRunningAndTerminalStatusForOutcomeOperations() throws Exception {
+        Cluster cluster = clusters.save(new Cluster("node-running-event-test"));
+        Node node = node(cluster, "node-1", "10.0.0.1");
+
+        long jobId = service.submit(new JobService.JobDefinition(
+                cluster.getId(), "install", List.of(
+                        new JobService.StepDefinition("执行安装步骤", 1, 1, true, List.of(
+                                JobService.NodeOperation.withOutcome(node.getId(), ignored ->
+                                        new JobService.NodeOutcome(true, 0, "执行成功", "logs/node-1.log")))))));
+        assertThat(executor.awaitIdle(5, TimeUnit.SECONDS)).isTrue();
+
+        assertThat(events.findTop100ByJobIdAndIdGreaterThanOrderById(jobId, 0).stream()
+                .filter(event -> "node.status".equals(event.getType()))
+                .map(event -> (String) event.getPayload().get("status")))
+                .containsExactly("running", "success");
+    }
+
     private Node node(Cluster cluster, String hostname, String ip) {
         Node node = new Node(cluster);
         node.update(hostname, ip, "", "worker", "root", 22);

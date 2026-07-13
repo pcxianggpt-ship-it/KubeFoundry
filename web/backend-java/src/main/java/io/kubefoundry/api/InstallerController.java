@@ -1,16 +1,19 @@
 package io.kubefoundry.api;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.kubefoundry.installer.ClusterSettingsService;
 import io.kubefoundry.installer.InstallPlanFactory;
 import io.kubefoundry.installer.InstallService;
 import io.kubefoundry.installer.InstallStep;
 import io.kubefoundry.installer.PrecheckService;
 import java.util.List;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -22,12 +25,38 @@ public class InstallerController {
     private final InstallPlanFactory plans;
     private final PrecheckService prechecks;
     private final InstallService installs;
+    private final ClusterSettingsService settings;
 
     public InstallerController(
-            InstallPlanFactory plans, PrecheckService prechecks, InstallService installs) {
+            InstallPlanFactory plans,
+            PrecheckService prechecks,
+            InstallService installs,
+            ClusterSettingsService settings) {
         this.plans = plans;
         this.prechecks = prechecks;
         this.installs = installs;
+        this.settings = settings;
+    }
+
+    @GetMapping("/settings")
+    public Map<String, Object> settings() {
+        return settings.getGlobalSettings();
+    }
+
+    @PutMapping("/settings")
+    public Map<String, Object> updateSettings(@RequestBody(required = false) Map<String, Object> request) {
+        return request == null ? settings.getGlobalSettings() : request;
+    }
+
+    @GetMapping("/clusters/{clusterId}/settings")
+    public Map<String, Object> clusterSettings(@PathVariable long clusterId) {
+        return settings.getClusterSettings(clusterId);
+    }
+
+    @PutMapping("/clusters/{clusterId}/settings")
+    public Map<String, Object> updateClusterSettings(
+            @PathVariable long clusterId, @RequestBody(required = false) Map<String, Object> request) {
+        return settings.updateClusterSettings(clusterId, request == null ? Map.of() : request);
     }
 
     @GetMapping("/install-plan")

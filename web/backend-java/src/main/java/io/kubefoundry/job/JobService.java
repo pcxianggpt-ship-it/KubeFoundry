@@ -120,6 +120,10 @@ public class JobService {
                             JobStepNode item = persistedNodes.get(operation.nodeId());
                             item.markRunning();
                             stepNodes.saveAndFlush(item);
+                            events.publish(jobId, "node.status", Map.of(
+                                    "node_id", operation.nodeId(),
+                                    "hostname", item.getNode().getHostname(),
+                                    "status", "running"));
                             try {
                                 NodeOutcome outcome = operation.run(jobId);
                                 item.complete(outcome);
@@ -132,21 +136,23 @@ public class JobService {
                                     throw new IllegalStateException(outcome.message());
                                 }
                             } catch (Exception exception) {
+                                boolean outcomeAlreadyRecorded = item.getExitCode() != null;
                                 item.markFailed(stableMessage(exception));
                                 stepNodes.saveAndFlush(item);
+                                if (operation.publishesOutcome() && !outcomeAlreadyRecorded) {
+                                    events.publish(jobId, "node.status", Map.of(
+                                            "node_id", operation.nodeId(),
+                                            "hostname", item.getNode().getHostname(),
+                                            "status", "failed",
+                                            "message", stableMessage(exception)));
+                                }
                                 throw exception;
                             }
                         })).toList();
                 JobExecutor.ExecutionSummary summary = executor.executeNodes(
                         work, stepDefinition.maxWorkers(), stepDefinition.failFast());
                 if ("failed".equals(summary.status())) {
-                    step.markFailed();
-                    steps.saveAndFlush(step);
-                    events.publish(jobId, "step.status", Map.of(
-                            "step_id", step.getId(), "status", "failed"));
-                    job.markFailed();
-                    jobs.saveAndFlush(job);
-                    events.publish(jobId, "job.status", Map.of("status", "failed"));
+                    failStepAndJob(jobId, job, step, "节点任务失败");
                     return;
                 }
                 step.markSuccess();
@@ -158,9 +164,48 @@ public class JobService {
             jobs.saveAndFlush(job);
             events.publish(jobId, "job.status", Map.of("status", "success"));
         } catch (RuntimeException exception) {
+            failRunningStepsAndNodes(jobId, stableMessage(exception));
             job.markFailed();
             jobs.saveAndFlush(job);
             events.publish(jobId, "job.status", Map.of("status", "failed"));
+        }
+    }
+
+    private void failStepAndJob(long jobId, Job job, JobStep step, String message) {
+        failNodes(step, message);
+        step.markFailed();
+        steps.saveAndFlush(step);
+        events.publish(jobId, "step.status", Map.of(
+                "step_id", step.getId(), "status", "failed"));
+        job.markFailed();
+        jobs.saveAndFlush(job);
+        events.publish(jobId, "job.status", Map.of("status", "failed"));
+    }
+
+    private void failRunningStepsAndNodes(long jobId, String message) {
+        for (JobStep step : listSteps(jobId)) {
+            if ("running".equals(step.getStatus())) {
+                failNodes(step, message);
+                step.markFailed();
+                steps.saveAndFlush(step);
+                events.publish(jobId, "step.status", Map.of(
+                        "step_id", step.getId(), "status", "failed"));
+            }
+        }
+    }
+
+    private void failNodes(JobStep step, String message) {
+        for (JobStepNode node : listStepNodes(step.getId())) {
+            if ("success".equals(node.getStatus()) || "failed".equals(node.getStatus())) {
+                continue;
+            }
+            node.markFailed(message);
+            stepNodes.saveAndFlush(node);
+            events.publish(step.getJob().getId(), "node.status", Map.of(
+                    "node_id", node.getNode().getId(),
+                    "hostname", node.getNode().getHostname(),
+                    "status", "failed",
+                    "message", message));
         }
     }
 

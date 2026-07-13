@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -67,11 +68,24 @@ public class RemoteStepRunner {
             Node node,
             InstallStep step,
             RuntimePaths paths) {
+        return run(jobId, cluster, nodes, node, step, paths.toRuntimeSettings(cluster, node));
+    }
+
+    public JobService.NodeOutcome run(
+            long jobId,
+            Cluster cluster,
+            List<Node> nodes,
+            Node node,
+            InstallStep step,
+            RuntimeSettings settings) {
         Path logPath = dataDirectory.resolve("jobs").resolve(Long.toString(jobId))
                 .resolve("logs").resolve(step.key()).resolve(node.getHostname() + ".log");
         try {
+            if ("cluster_health".equals(step.builtin())) {
+                return runClusterHealth(jobId, cluster, nodes, node, step.key());
+            }
             Files.createDirectories(logPath.getParent());
-            ResourceResolution resources = resolveResources(jobId, cluster, step, paths);
+            ResourceResolution resources = resolveResources(jobId, step, settings);
             if (resources.error() != null) {
                 writeLog(logPath, "", resources.error() + "\n");
                 return new JobService.NodeOutcome(false, 2, resources.error(), logPath.toString());
@@ -82,7 +96,7 @@ public class RemoteStepRunner {
             Files.createDirectories(workDirectory);
             Path runtimeFile = workDirectory.resolve("runtime.env");
             Path scriptFile = workDirectory.resolve("step.sh");
-            Files.writeString(runtimeFile, runtimeRenderer.render(cluster, nodes, node),
+            Files.writeString(runtimeFile, runtimeRenderer.render(cluster, nodes, node, settings),
                     StandardCharsets.UTF_8);
             writeStepScript(scriptFile, cluster, nodes, step);
             String remoteDirectory = "/tmp/kubefoundry/" + jobId + "/";
@@ -92,7 +106,11 @@ public class RemoteStepRunner {
                 ssh.upload(session, runtimeFile, remoteDirectory + "runtime.env");
                 ssh.upload(session, scriptFile, remoteDirectory + "step.sh");
                 for (ResolvedResource resource : resources.files()) {
-                    ssh.upload(session, resource.localPath(), resource.remotePath());
+                    if ("directory".equals(resource.kind())) {
+                        ssh.uploadDirectory(session, resource.localPath(), resource.remotePath());
+                    } else {
+                        ssh.upload(session, resource.localPath(), resource.remotePath());
+                    }
                 }
                 SshCommandResult executed = ssh.execute(
                         session, buildExecutionCommand(remoteDirectory, step, cluster, nodes, node),
@@ -123,6 +141,19 @@ public class RemoteStepRunner {
             String stepKey,
             String command,
             Duration timeout) {
+        CommandOutcome result = runCommandCapture(jobId, cluster, node, stepKey, command, timeout);
+        return new JobService.NodeOutcome(result.exitCode() == 0, result.exitCode(),
+                result.exitCode() == 0 ? "执行成功" : "执行失败，退出码: " + result.exitCode(),
+                result.logPath());
+    }
+
+    public CommandOutcome runCommandCapture(
+            long jobId,
+            Cluster cluster,
+            Node node,
+            String stepKey,
+            String command,
+            Duration timeout) {
         Path logPath = dataDirectory.resolve("jobs").resolve(Long.toString(jobId))
                 .resolve("logs").resolve(stepKey).resolve(node.getHostname() + ".log");
         try {
@@ -130,9 +161,7 @@ public class RemoteStepRunner {
                     session -> ssh.execute(session,
                             "bash -lc " + RuntimeEnvRenderer.shellQuote(command), timeout));
             writeLog(logPath, result.stdout(), result.stderr());
-            return new JobService.NodeOutcome(result.exitCode() == 0, result.exitCode(),
-                    result.exitCode() == 0 ? "执行成功" : "执行失败，退出码: " + result.exitCode(),
-                    logPath.toString());
+            return new CommandOutcome(result.exitCode(), result.stdout(), result.stderr(), logPath.toString());
         } catch (Exception exception) {
             String message = stableMessage(exception);
             try {
@@ -140,8 +169,24 @@ public class RemoteStepRunner {
             } catch (IOException suppressed) {
                 exception.addSuppressed(suppressed);
             }
-            return new JobService.NodeOutcome(false, 1, message, logPath.toString());
+            return new CommandOutcome(1, "", message, logPath.toString());
         }
+    }
+
+    private JobService.NodeOutcome runClusterHealth(
+            long jobId, Cluster cluster, List<Node> nodes, Node node, String stepKey) {
+        String command = "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get nodes --no-headers "
+                + "&& printf '\\n__KF_PODS__\\n' "
+                + "&& KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -A --no-headers";
+        CommandOutcome result = runCommandCapture(jobId, cluster, node, stepKey, command,
+                Duration.ofSeconds(120));
+        if (result.exitCode() != 0) {
+            return new JobService.NodeOutcome(false, result.exitCode(),
+                    "集群健康检查命令失败，退出码: " + result.exitCode(), result.logPath());
+        }
+        HealthResult health = evaluateClusterHealth(nodes, result.stdout());
+        return new JobService.NodeOutcome(health.ok(), health.ok() ? 0 : 1,
+                health.message(), result.logPath());
     }
 
     private void createRemoteDirectories(
@@ -182,22 +227,25 @@ public class RemoteStepRunner {
     }
 
     private ResourceResolution resolveResources(
-            long jobId, Cluster cluster, InstallStep step, RuntimePaths paths) {
+            long jobId, InstallStep step, RuntimeSettings paths) {
         List<ResolvedResource> resolved = new ArrayList<>();
         for (InstallStep.Resource resource : step.resources()) {
             Path local = resource.artifactKey() == null
-                    ? paths.get(resource.pathKey())
+                    ? paths.localPath(resource.pathKey())
                     : dataDirectory.resolve("jobs").resolve(Long.toString(jobId))
                             .resolve("artifacts").resolve(resource.artifactKey());
             String key = resource.artifactKey() == null ? resource.pathKey() : resource.artifactKey();
             if (local == null || !Files.exists(local)) {
                 return new ResourceResolution(List.of(), "步骤资源不可用: " + key);
             }
-            if ("directory".equals(resource.kind()) || Files.isDirectory(local)) {
-                return new ResourceResolution(List.of(), "当前最小闭环不支持目录 SFTP: " + key);
+            if ("directory".equals(resource.kind()) && !Files.isDirectory(local)) {
+                return new ResourceResolution(List.of(), "步骤资源不是目录: " + key);
             }
-            String remote = resource.remotePath().replace("{k8s_home}", "/data/k8s_install");
-            resolved.add(new ResolvedResource(local, remote));
+            if (!"directory".equals(resource.kind()) && !Files.isRegularFile(local)) {
+                return new ResourceResolution(List.of(), "步骤资源不是普通文件: " + key);
+            }
+            String remote = resource.remotePath().replace("{k8s_home}", paths.k8sHome());
+            resolved.add(new ResolvedResource(local, remote, resource.kind()));
         }
         return new ResourceResolution(List.copyOf(resolved), null);
     }
@@ -268,10 +316,83 @@ public class RemoteStepRunner {
                 ? exception.getClass().getSimpleName() : exception.getMessage();
     }
 
-    private record ResolvedResource(Path localPath, String remotePath) {
+    private static HealthResult evaluateClusterHealth(List<Node> nodes, String output) {
+        String[] sections = (output == null ? "" : output).split("(?m)^__KF_PODS__$", 2);
+        Set<String> expected = nodes.stream()
+                .filter(node -> Set.of("control_plane", "worker").contains(node.getRole()))
+                .map(Node::getHostname)
+                .filter(name -> name != null && !name.isBlank())
+                .collect(java.util.stream.Collectors.toCollection(java.util.TreeSet::new));
+        Set<String> ready = new java.util.TreeSet<>();
+        Set<String> notReady = new java.util.TreeSet<>();
+        for (String line : sections[0].split("\\R")) {
+            String[] fields = line.trim().split("\\s+");
+            if (fields.length < 2 || fields[0].isBlank()) continue;
+            if ("Ready".equals(fields[1])) ready.add(fields[0]);
+            else notReady.add(fields[0]);
+        }
+        Set<String> observed = new java.util.TreeSet<>(ready);
+        observed.addAll(notReady);
+        Set<String> missing = new java.util.TreeSet<>(expected);
+        missing.removeAll(observed);
+        List<String> failedPods = new ArrayList<>();
+        int flannelReady = 0;
+        if (sections.length > 1) {
+            for (String line : sections[1].split("\\R")) {
+                String[] fields = line.trim().split("\\s+");
+                if (fields.length < 4) continue;
+                String namespace = fields[0];
+                String name = fields[1];
+                String readyCount = fields[2];
+                String status = fields[3];
+                if (!Set.of("Running", "Completed", "Succeeded").contains(status)) {
+                    failedPods.add(namespace + "/" + name + ":" + status);
+                }
+                if ("kube-flannel".equals(namespace) && "Running".equals(status)
+                        && readyCountMatches(readyCount)) {
+                    flannelReady++;
+                }
+            }
+        }
+        List<String> problems = new ArrayList<>();
+        if (!notReady.isEmpty()) problems.add("NotReady nodes: " + String.join(", ", notReady));
+        if (!missing.isEmpty()) problems.add("missing nodes: " + String.join(", ", missing));
+        if (!failedPods.isEmpty()) problems.add("failed pods: " + String.join(", ", failedPods));
+        if (flannelReady < expected.size()) {
+            problems.add("flannel ready " + flannelReady + "/" + expected.size());
+        }
+        return problems.isEmpty()
+                ? new HealthResult(true, "cluster health check passed")
+                : new HealthResult(false, String.join("; ", problems));
+    }
+
+    private static boolean readyCountMatches(String value) {
+        String[] parts = value.split("/", 2);
+        if (parts.length != 2) return false;
+        try {
+            int ready = Integer.parseInt(parts[0]);
+            int total = Integer.parseInt(parts[1]);
+            return total > 0 && ready == total;
+        } catch (NumberFormatException exception) {
+            return false;
+        }
+    }
+
+    private record ResolvedResource(Path localPath, String remotePath, String kind) {
     }
 
     private record ResourceResolution(List<ResolvedResource> files, String error) {
+    }
+
+    private record HealthResult(boolean ok, String message) {
+    }
+
+    public record CommandOutcome(int exitCode, String stdout, String stderr, String logPath) {
+        public CommandOutcome {
+            stdout = stdout == null ? "" : stdout;
+            stderr = stderr == null ? "" : stderr;
+            logPath = logPath == null ? "" : logPath;
+        }
     }
 
     public static final class RuntimePaths {
@@ -284,11 +405,32 @@ public class RemoteStepRunner {
 
         Path get(String key) { return paths.get(key); }
 
+        RuntimeSettings toRuntimeSettings(Cluster cluster, Node node) {
+            RuntimeSettings defaults = defaults(cluster, node).toRuntimeSettingsWithoutRecursing();
+            Map<String, String> values = new LinkedHashMap<>(defaults.paths());
+            paths.forEach((key, path) -> values.put(key, path.toString()));
+            return new RuntimeSettings(values, defaults.env(), defaults.advanced());
+        }
+
+        private RuntimeSettings toRuntimeSettingsWithoutRecursing() {
+            Map<String, String> values = new LinkedHashMap<>();
+            paths.forEach((key, path) -> values.put(key, path.toString().replace('\\', '/')));
+            String k8sHome = values.getOrDefault("k8s_home", "/data/k8s_install");
+            return new RuntimeSettings(values, Map.of(
+                    "kubelet_root", k8sHome + "/kubelet_root",
+                    "containerd_root", k8sHome + "/containerd-data",
+                    "etcd_data_dir", k8sHome + "/etcd_backup"),
+                    Map.of("enable_ipv6_dual_stack", false));
+        }
+
         static RuntimePaths defaults(Cluster cluster, Node node) {
             String media = "/root/kube-media";
+            String k8sHome = "/data/k8s_install";
             String architecture = node.getArchitecture() == null || node.getArchitecture().isBlank()
                     ? "amd64" : node.getArchitecture();
             return new RuntimePaths()
+                    .with("k8s_home", Path.of(k8sHome))
+                    .with("install_media", Path.of(media))
                     .with("repo_source", Path.of(media, "01.rpm_package",
                             "k8srepo_kylinos_sp3_" + architecture + ".tar.gz"))
                     .with("kubeadm_100y", Path.of(media, "01.rpm_package",

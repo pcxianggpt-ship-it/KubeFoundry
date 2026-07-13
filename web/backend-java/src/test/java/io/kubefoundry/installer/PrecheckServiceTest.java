@@ -1,0 +1,146 @@
+package io.kubefoundry.installer;
+
+import io.kubefoundry.cluster.Cluster;
+import io.kubefoundry.cluster.ClusterRepository;
+import io.kubefoundry.cluster.Node;
+import io.kubefoundry.cluster.NodeRepository;
+import io.kubefoundry.job.JobEvent;
+import io.kubefoundry.job.JobEventRepository;
+import io.kubefoundry.job.JobExecutor;
+import io.kubefoundry.job.JobRepository;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.when;
+
+@SpringBootTest(properties = {
+        "spring.datasource.url=jdbc:h2:mem:precheck-service;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
+        "spring.jpa.hibernate.ddl-auto=validate"
+})
+class PrecheckServiceTest {
+
+    @Autowired
+    ClusterRepository clusters;
+
+    @Autowired
+    NodeRepository nodes;
+
+    @Autowired
+    JobRepository jobs;
+
+    @Autowired
+    JobExecutor executor;
+
+    @Autowired
+    PrecheckService service;
+
+    @Autowired
+    PrecheckResultRepository results;
+
+    @Autowired
+    JobEventRepository events;
+
+    @MockBean
+    RemoteStepRunner runner;
+
+    Cluster cluster;
+    Node node;
+
+    @BeforeEach
+    void setUp() {
+        cluster = clusters.save(new Cluster("precheck-" + System.nanoTime()));
+        cluster.markNodeTestStatus("success");
+        cluster = clusters.saveAndFlush(cluster);
+        node = new Node(cluster);
+        node.update("cp-a", "10.0.0.1", "", "control_plane", "root", 22);
+        node.completeNodeTest("kylin", "V10", "amd64");
+        node = nodes.saveAndFlush(node);
+    }
+
+    @AfterEach
+    void cleanUp() {
+        clusters.deleteAll();
+    }
+
+    @Test
+    void nonRootAndSwapAreWarningsButDoNotFailPrecheckJob() throws Exception {
+        when(runner.runCommandCapture(anyLong(), any(Cluster.class), any(Node.class),
+                eq("web-precheck-node-env"), any(), any()))
+                .thenReturn(new RemoteStepRunner.CommandOutcome(
+                        0, healthyOutput("""
+                                __KF__USER=1000
+                                __KF__SWAP=512
+                                """), "", "logs/cp-a.log"));
+
+        long jobId = service.start(cluster.getId());
+        assertThat(executor.awaitIdle(5, TimeUnit.SECONDS)).isTrue();
+
+        assertThat(jobs.findById(jobId).orElseThrow().getStatus()).isEqualTo("success");
+        assertThat(results.findByJobIdOrderByNodeIdAscIdAsc(jobId))
+                .filteredOn(result -> List.of("user", "swap").contains(result.getCheckKey()))
+                .extracting(PrecheckResult::getStatus)
+                .containsExactly("warning", "warning");
+        assertThat(events.findTop100ByJobIdAndIdGreaterThanOrderById(jobId, 0))
+                .filteredOn(event -> "precheck.result".equals(event.getType()))
+                .extracting(JobEvent::getPayload)
+                .anySatisfy(payload -> assertThat(payload).containsEntry("check_key", "user"));
+    }
+
+    @Test
+    void errorSeverityFailuresFailNodeAndJobAndPersistStructuredResults() throws Exception {
+        when(runner.runCommandCapture(anyLong(), any(Cluster.class), any(Node.class),
+                eq("web-precheck-node-env"), any(), any()))
+                .thenReturn(new RemoteStepRunner.CommandOutcome(
+                        0, healthyOutput("""
+                                __KF__USER=0
+                                __KF__CPU=1
+                                __KF__MEM=1024
+                                __KF__BASH=missing
+                                __KF__PORT_6443=used
+                                __KF__ARCH=aarch64
+                                """), "", "logs/cp-a.log"));
+
+        long jobId = service.start(cluster.getId());
+        assertThat(executor.awaitIdle(5, TimeUnit.SECONDS)).isTrue();
+
+        assertThat(jobs.findById(jobId).orElseThrow().getStatus()).isEqualTo("failed");
+        assertThat(results.findByJobIdOrderByNodeIdAscIdAsc(jobId))
+                .filteredOn(result -> "fail".equals(result.getStatus()))
+                .extracting(PrecheckResult::getCheckKey)
+                .contains("cpu", "memory", "bash", "ports", "system_drift");
+    }
+
+    private static String healthyOutput(String overrides) {
+        return """
+                __KF__USER=0
+                __KF__OS=Kylin Linux Advanced Server V10
+                __KF__OS_RELEASE__ID="kylin"
+                __KF__OS_RELEASE__VERSION_ID="V10"
+                __KF__OS_RELEASE__PRETTY_NAME="Kylin Linux Advanced Server V10"
+                __KF__CPU=4
+                __KF__MEM=8192
+                __KF__DISK=20480
+                __KF__SWAP=0
+                __KF__HOSTNAME=cp-a
+                __KF__ARCH=x86_64
+                __KF__BASH=present
+                __KF__SYSTEMD=present
+                __KF__PORT_6443=free
+                __KF__PORT_2379=free
+                __KF__PORT_2380=free
+                __KF__PORT_10250=free
+                __KF__PORT_10257=free
+                __KF__PORT_10259=free
+                """ + overrides;
+    }
+}

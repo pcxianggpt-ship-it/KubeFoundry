@@ -33,6 +33,7 @@ class SchemaMigrationTest {
             "jobs",
             "job_steps",
             "job_step_nodes",
+            "precheck_results",
             "events");
     private static List<String> h2FilesBeforeTest;
 
@@ -121,6 +122,18 @@ class SchemaMigrationTest {
         }
     }
 
+    @Test
+    void createsStructuredPrecheckResultsAndInstallerIndexesInV4AndV5() throws SQLException {
+        try (Connection connection = openConnection()) {
+            DatabaseMetaData metadata = connection.getMetaData();
+            assertThat(columnExists(metadata, "PRECHECK_RESULTS", "CHECK_KEY")).isTrue();
+            assertThat(columnExists(metadata, "PRECHECK_RESULTS", "SEVERITY")).isTrue();
+            assertThat(columnExists(metadata, "PRECHECK_RESULTS", "STATUS")).isTrue();
+            assertThat(successfulMigration(connection, "4")).isTrue();
+            assertThat(successfulMigration(connection, "5")).isTrue();
+        }
+    }
+
     private static boolean tableExists(DatabaseMetaData metadata, String table) throws SQLException {
         for (String tableName : List.of(table, table.toUpperCase(), table.toLowerCase())) {
             try (ResultSet tables = metadata.getTables(null, null, tableName, new String[] {"TABLE"})) {
@@ -142,6 +155,16 @@ class SchemaMigrationTest {
 
     private static Connection openConnection() throws SQLException {
         return DriverManager.getConnection(DATABASE_URL, "sa", "");
+    }
+
+    private static boolean successfulMigration(Connection connection, String version) throws SQLException {
+        try (var statement = connection.prepareStatement(
+                "SELECT \"success\" FROM \"flyway_schema_history\" WHERE \"version\" = ?")) {
+            statement.setString(1, version);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next() && result.getBoolean("success");
+            }
+        }
     }
 
     private static List<String> findH2Files() throws IOException {

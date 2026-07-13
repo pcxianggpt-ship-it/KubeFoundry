@@ -1,6 +1,8 @@
 package io.kubefoundry.api;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.kubefoundry.installer.PrecheckResult;
+import io.kubefoundry.installer.PrecheckResultRepository;
 import io.kubefoundry.job.Job;
 import io.kubefoundry.job.JobService;
 import io.kubefoundry.job.JobStep;
@@ -17,9 +19,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class JobController {
 
     private final JobService jobs;
+    private final PrecheckResultRepository precheckResults;
 
-    public JobController(JobService jobs) {
+    public JobController(JobService jobs, PrecheckResultRepository precheckResults) {
         this.jobs = jobs;
+        this.precheckResults = precheckResults;
     }
 
     @GetMapping
@@ -36,6 +40,13 @@ public class JobController {
     public Items<StepResponse> steps(@PathVariable long jobId) {
         return new Items<>(jobs.listSteps(jobId).stream().map(step -> StepResponse.from(
                 step, jobs.listStepNodes(step.getId()))).toList());
+    }
+
+    @GetMapping("/{jobId}/precheck-results")
+    public Items<PrecheckResultResponse> precheckResults(@PathVariable long jobId) {
+        jobs.get(jobId);
+        return new Items<>(precheckResults.findByJobIdOrderByNodeIdAscIdAsc(jobId)
+                .stream().map(PrecheckResultResponse::from).toList());
     }
 
     public record Items<T>(List<T> items) {
@@ -77,6 +88,26 @@ public class JobController {
             return new NodeResponse(value.getId(), value.getNode().getId(),
                     value.getNode().getHostname(), value.getStatus(), value.getLogPath(),
                     value.getExitCode(), value.getMessage());
+        }
+    }
+
+    public record PrecheckResultResponse(
+            long id,
+            @JsonProperty("node_id") long nodeId,
+            String hostname,
+            String ip,
+            String role,
+            @JsonProperty("check_key") String checkKey,
+            @JsonProperty("check_name") String checkName,
+            String severity,
+            String status,
+            String message,
+            String detail) {
+        static PrecheckResultResponse from(PrecheckResult value) {
+            return new PrecheckResultResponse(value.getId(), value.getNode().getId(),
+                    value.getNode().getHostname(), value.getNode().getIp(),
+                    value.getNode().getRole(), value.getCheckKey(), value.getCheckName(),
+                    value.getSeverity(), value.getStatus(), value.getMessage(), value.getDetail());
         }
     }
 }

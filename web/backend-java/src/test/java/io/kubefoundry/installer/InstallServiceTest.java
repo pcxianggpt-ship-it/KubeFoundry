@@ -84,13 +84,15 @@ class InstallServiceTest {
         verify(jobService).submit(captor.capture());
         JobService.JobDefinition definition = captor.getValue();
         assertThat(definition.type()).isEqualTo("install");
-        assertThat(definition.steps()).hasSize(13);
+        assertThat(definition.steps()).hasSize(14);
         assertThat(definition.steps().get(3).name()).isEqualTo("安装 Kubernetes 依赖");
         assertThat(definition.steps().get(3).maxWorkers()).isEqualTo(5);
         assertThat(definition.steps().get(8).name()).isEqualTo("初始化 Kubernetes 集群");
         assertThat(definition.steps().get(8).maxWorkers()).isEqualTo(1);
         assertThat(definition.steps().get(10).name()).isEqualTo("加入其他控制节点");
         assertThat(definition.steps().get(10).maxWorkers()).isEqualTo(1);
+        assertThat(definition.steps().get(13).name()).isEqualTo("验证 Kubernetes 集群健康");
+        assertThat(definition.steps().get(13).maxWorkers()).isEqualTo(1);
     }
 
     @Test

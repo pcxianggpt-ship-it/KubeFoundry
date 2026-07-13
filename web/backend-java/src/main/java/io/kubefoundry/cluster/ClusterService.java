@@ -293,10 +293,10 @@ public class ClusterService {
         }
 
         public String code() { return code; }
-        static ResourceNotFoundException cluster(long id) {
+        public static ResourceNotFoundException cluster(long id) {
             return new ResourceNotFoundException("CLUSTER_NOT_FOUND", "集群不存在: " + id);
         }
-        static ResourceNotFoundException node(long id) {
+        public static ResourceNotFoundException node(long id) {
             return new ResourceNotFoundException("NODE_NOT_FOUND", "节点不存在: " + id);
         }
     }

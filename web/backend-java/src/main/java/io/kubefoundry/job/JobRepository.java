@@ -13,6 +13,8 @@ public interface JobRepository extends JpaRepository<Job, Long> {
     List<Job> findByClusterIdOrderByIdDesc(long clusterId);
     Optional<Job> findFirstByClusterIdAndTypeAndStatusInOrderByIdDesc(
             long clusterId, String type, List<String> statuses);
+    Optional<Job> findFirstByClusterIdAndTypeInAndStatusInOrderByIdDesc(
+            long clusterId, List<String> types, List<String> statuses);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional

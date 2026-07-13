@@ -124,8 +124,10 @@ class RemoteStepRunnerTest {
     }
 
     @Test
-    void rejectsDirectoryResourceInsteadOfPretendingSftpSupport() throws Exception {
+    void uploadsDirectoryResourceTreeAndThenExecutesStep() throws Exception {
         Path directory = Files.createDirectory(temporaryDirectory.resolve("payload"));
+        Files.createDirectories(directory.resolve("bin/tools"));
+        Files.writeString(directory.resolve("bin/tools/containerd"), "binary", StandardCharsets.UTF_8);
         Path script = temporaryDirectory.resolve("directory-step.sh");
         Files.writeString(script, "#!/bin/bash\n", StandardCharsets.UTF_8);
         InstallStep step = InstallStep.script(
@@ -138,9 +140,8 @@ class RemoteStepRunnerTest {
                 8L, cluster, List.of(node), node, step,
                 new RemoteStepRunner.RuntimePaths().with("container_runtime", directory));
 
-        assertThat(outcome.success()).isFalse();
-        assertThat(outcome.exitCode()).isEqualTo(2);
-        assertThat(outcome.message()).contains("不支持目录 SFTP");
+        assertThat(outcome.success()).isTrue();
+        assertThat(remoteRoot.resolve("tmp/runtime/bin/tools/containerd")).hasContent("binary");
     }
 
     private RemoteStepRunner runner() {

@@ -134,7 +134,7 @@ class NodeTestServiceTest {
         assertThat(stored.getOsVersion()).isEqualTo("V10");
         assertThat(stored.getArchitecture()).isEqualTo("arm64");
         assertThat(nodeStatuses(jobId)).containsExactly(
-                "password_connecting", "key_installing", "key_verifying", "success");
+                "running", "password_connecting", "key_installing", "key_verifying", "success");
     }
 
     @Test

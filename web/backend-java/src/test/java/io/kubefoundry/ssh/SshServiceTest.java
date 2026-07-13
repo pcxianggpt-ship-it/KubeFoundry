@@ -108,6 +108,45 @@ class SshServiceTest {
     }
 
     @Test
+    void uploadsDirectoryTreeOverSftpIncludingEmptyDirectories() throws Exception {
+        Path local = Files.createDirectory(temporaryDirectory.resolve("payload"));
+        Files.createDirectories(local.resolve("bin/tools"));
+        Files.createDirectories(local.resolve("empty"));
+        Files.writeString(local.resolve("README.txt"), "root", StandardCharsets.UTF_8);
+        Files.writeString(local.resolve("bin/tools/nerdctl"), "binary", StandardCharsets.UTF_8);
+
+        try (SshSession session = clients.connectWithPassword(spec(), "secret".toCharArray())) {
+            service.uploadDirectory(session, local, "/runtime");
+        }
+
+        assertThat(temporaryDirectory.resolve("remote/runtime/README.txt")).hasContent("root");
+        assertThat(temporaryDirectory.resolve("remote/runtime/bin/tools/nerdctl"))
+                .hasContent("binary");
+        assertThat(temporaryDirectory.resolve("remote/runtime/empty")).isDirectory();
+    }
+
+    @Test
+    void rejectsSymbolicLinksAndRemoteTraversalDuringDirectoryUpload() throws Exception {
+        Path local = Files.createDirectory(temporaryDirectory.resolve("unsafe-payload"));
+        Path outside = Files.writeString(
+                temporaryDirectory.resolve("outside.txt"), "secret", StandardCharsets.UTF_8);
+        try {
+            Files.createSymbolicLink(local.resolve("escape"), outside);
+        } catch (UnsupportedOperationException | IOException exception) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(false, "当前平台不能创建符号链接");
+        }
+
+        try (SshSession session = clients.connectWithPassword(spec(), "secret".toCharArray())) {
+            assertThatThrownBy(() -> service.uploadDirectory(session, local, "/safe"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("符号链接");
+            assertThatThrownBy(() -> service.uploadDirectory(session, local, "/safe/../escape"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("越界");
+        }
+    }
+
+    @Test
     void downloadsFileOverSftp() throws Exception {
         Files.writeString(temporaryDirectory.resolve("remote/artifact.txt"),
                 "join command\n", StandardCharsets.UTF_8);
