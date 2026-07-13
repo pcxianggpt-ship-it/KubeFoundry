@@ -108,6 +108,18 @@ class SshServiceTest {
     }
 
     @Test
+    void downloadsFileOverSftp() throws Exception {
+        Files.writeString(temporaryDirectory.resolve("remote/artifact.txt"),
+                "join command\n", StandardCharsets.UTF_8);
+        Path local = temporaryDirectory.resolve("downloaded.txt");
+        try (SshSession session = clients.connectWithPassword(spec(), "secret".toCharArray())) {
+            service.download(session, "/artifact.txt", local);
+        }
+
+        assertThat(local).hasContent("join command\n");
+    }
+
+    @Test
     void rejectsInvalidPasswordWithoutLeakingIt() {
         assertThatThrownBy(() -> clients.connectWithPassword(spec(), "wrong-secret".toCharArray()))
                 .isInstanceOf(SshAuthenticationException.class)

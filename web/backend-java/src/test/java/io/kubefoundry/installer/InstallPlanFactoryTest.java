@@ -1,0 +1,123 @@
+package io.kubefoundry.installer;
+
+import io.kubefoundry.cluster.Cluster;
+import io.kubefoundry.cluster.Node;
+import java.nio.file.Path;
+import java.nio.file.Files;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+class InstallPlanFactoryTest {
+
+    @TempDir
+    Path temporaryDirectory;
+
+    private final InstallPlanFactory factory = new InstallPlanFactory(Path.of("D:/repo"));
+
+    @Test
+    void mapsAllThirteenPythonStepsInOrder() {
+        InstallPlan plan = factory.create();
+
+        assertThat(plan.steps()).extracting(InstallStep::key).containsExactly(
+                "10-setup-yum-source",
+                "11b-setup-hostname",
+                "12-setup-k8s-repo",
+                "13-install-k8s-deps",
+                "14-replace-kubeadm",
+                "15-environment-config",
+                "16-install-containerd",
+                "17-install-registry",
+                "18-init-k8s-cluster",
+                "19-modify-cert-expiry",
+                "20-add-control-nodes",
+                "21-add-worker-nodes",
+                "22-install-cni-flannel");
+        assertThat(plan.steps()).hasSize(13);
+
+        InstallStep dependencies = plan.require("13-install-k8s-deps");
+        InstallStep containerd = plan.require("16-install-containerd");
+        assertThat(dependencies.mode()).isEqualTo("parallel");
+        assertThat(dependencies.maxWorkers()).isEqualTo(5);
+        assertThat(dependencies.failFast()).isFalse();
+        assertThat(containerd.mode()).isEqualTo("parallel");
+        assertThat(containerd.maxWorkers()).isEqualTo(5);
+
+        InstallStep initialize = plan.require("18-init-k8s-cluster");
+        InstallStep joinControls = plan.require("20-add-control-nodes");
+        assertThat(initialize.mode()).isEqualTo("serial");
+        assertThat(initialize.maxWorkers()).isEqualTo(1);
+        assertThat(initialize.outputs()).extracting(InstallStep.Output::key)
+                .containsExactly("control_join", "worker_join");
+        assertThat(joinControls.mode()).isEqualTo("serial");
+        assertThat(joinControls.maxWorkers()).isEqualTo(1);
+        assertThat(joinControls.resources()).extracting(InstallStep.Resource::artifactKey)
+                .containsExactly("control_join");
+    }
+
+    @Test
+    void preservesScriptsResourcesArgumentsAndVerificationCommands() {
+        InstallPlan plan = factory.create();
+
+        assertThat(plan.require("10-setup-yum-source").script())
+                .isEqualTo(Path.of("D:/repo/scripts/steps/phase2_k8s_base/10-setup-yum-source.sh"));
+        assertThat(plan.require("10-setup-yum-source").resources())
+                .containsExactly(new InstallStep.Resource(
+                        "repo_source", null, "file", "/tmp/k8s/k8s-repo-source.tar.gz"));
+        assertThat(plan.require("10-setup-yum-source").arguments())
+                .containsExactly(new InstallStep.Argument("/tmp/k8s/k8s-repo-source.tar.gz", null));
+        assertThat(plan.require("11b-setup-hostname").builtin()).isEqualTo("setup_hostname");
+        assertThat(plan.require("22-install-cni-flannel").verifyCommand())
+                .contains("kubectl get pods -A");
+    }
+
+    @Test
+    void resolvesTargetsFromJavaRolesWithStablePrimaryAndDeduplication() {
+        Cluster cluster = new Cluster("target-test");
+        Node cpB = node(cluster, "cp-b", "10.0.0.2", "control_plane");
+        Node worker = node(cluster, "worker-a", "10.0.0.3", "worker");
+        Node duplicateWorker = node(cluster, "worker-copy", "10.0.0.3", "worker");
+        Node cpA = node(cluster, "cp-a", "10.0.0.1", "control_plane");
+        Node registry = node(cluster, "registry", "10.0.0.4", "registry");
+        List<Node> nodes = List.of(cpB, worker, duplicateWorker, cpA, registry);
+        InstallPlan plan = factory.create();
+
+        assertThat(factory.resolveTargets(plan.require("18-init-k8s-cluster"), nodes))
+                .extracting(Node::getHostname).containsExactly("cp-a");
+        assertThat(factory.resolveTargets(plan.require("20-add-control-nodes"), nodes))
+                .extracting(Node::getHostname).containsExactly("cp-b");
+        assertThat(factory.resolveTargets(plan.require("13-install-k8s-deps"), nodes))
+                .extracting(Node::getHostname).containsExactly("cp-a", "cp-b", "worker-a");
+        assertThat(factory.resolveTargets(plan.require("16-install-containerd"), nodes))
+                .extracting(Node::getHostname)
+                .containsExactly("cp-a", "cp-b", "registry", "worker-a");
+    }
+
+    @Test
+    void rejectsUnknownSelectionAndMissingArtifactProducer() {
+        assertThatThrownBy(() -> factory.select(List.of("missing")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("missing");
+        assertThatThrownBy(() -> factory.select(List.of("20-add-control-nodes")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("control_join");
+    }
+
+    @Test
+    void discoversRepositoryRootFromNestedBackendWorkingDirectory() throws Exception {
+        Path root = temporaryDirectory.resolve("repository");
+        Files.createDirectories(root.resolve("scripts/steps"));
+        Path backend = Files.createDirectories(root.resolve("web/backend-java"));
+
+        assertThat(InstallPlanFactory.discoverProjectRoot(backend)).isEqualTo(root);
+    }
+
+    private static Node node(Cluster cluster, String hostname, String ip, String role) {
+        Node node = new Node(cluster);
+        node.update(hostname, ip, "", role, "root", 22);
+        return node;
+    }
+}

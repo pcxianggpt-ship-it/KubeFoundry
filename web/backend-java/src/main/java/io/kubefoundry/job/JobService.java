@@ -121,16 +121,24 @@ public class JobService {
                             item.markRunning();
                             stepNodes.saveAndFlush(item);
                             try {
-                                operation.action().run(jobId);
-                                item.markSuccess();
+                                NodeOutcome outcome = operation.run(jobId);
+                                item.complete(outcome);
                                 stepNodes.saveAndFlush(item);
+                                if (operation.publishesOutcome()) {
+                                    events.publish(jobId, "node.status", outcome.eventPayload(
+                                            operation.nodeId(), item.getNode().getHostname()));
+                                }
+                                if (!outcome.success()) {
+                                    throw new IllegalStateException(outcome.message());
+                                }
                             } catch (Exception exception) {
-                                item.markFailed();
+                                item.markFailed(stableMessage(exception));
                                 stepNodes.saveAndFlush(item);
                                 throw exception;
                             }
                         })).toList();
-                JobExecutor.ExecutionSummary summary = executor.executeNodes(work);
+                JobExecutor.ExecutionSummary summary = executor.executeNodes(
+                        work, stepDefinition.maxWorkers(), stepDefinition.failFast());
                 if ("failed".equals(summary.status())) {
                     step.markFailed();
                     steps.saveAndFlush(step);
@@ -171,6 +179,7 @@ public class JobService {
             }
             if (!orders.add(step.order())) throw new IllegalArgumentException("任务步骤顺序不能重复");
             if (step.nodes() == null) throw new IllegalArgumentException("节点任务列表不能为空");
+            if (step.maxWorkers() < 1) throw new IllegalArgumentException("节点并发数必须大于 0");
             Set<Long> nodeIds = new HashSet<>();
             for (NodeOperation operation : step.nodes()) {
                 if (operation == null) throw new IllegalArgumentException("节点任务不能为空");
@@ -199,7 +208,15 @@ public class JobService {
     public record JobDefinition(long clusterId, String type, List<StepDefinition> steps) {
     }
 
-    public record StepDefinition(String name, int order, List<NodeOperation> nodes) {
+    public record StepDefinition(
+            String name,
+            int order,
+            int maxWorkers,
+            boolean failFast,
+            List<NodeOperation> nodes) {
+        public StepDefinition(String name, int order, List<NodeOperation> nodes) {
+            this(name, order, 5, false, nodes);
+        }
     }
 
     @FunctionalInterface
@@ -207,13 +224,72 @@ public class JobService {
         void run(long jobId) throws Exception;
     }
 
-    public record NodeOperation(long nodeId, JobAction action) {
-        public NodeOperation {
+    @FunctionalInterface
+    public interface OutcomeJobAction {
+        NodeOutcome run(long jobId) throws Exception;
+    }
+
+    public static final class NodeOperation {
+        private final long nodeId;
+        private final OutcomeJobAction action;
+        private final boolean publishesOutcome;
+
+        public NodeOperation(long nodeId, JobAction action) {
             if (action == null) throw new IllegalArgumentException("节点任务不能为空");
+            this.nodeId = nodeId;
+            this.publishesOutcome = false;
+            this.action = jobId -> {
+                action.run(jobId);
+                return NodeOutcome.successful();
+            };
         }
 
         public NodeOperation(long nodeId, JobExecutor.CheckedRunnable action) {
-            this(nodeId, ignored -> action.run());
+            this(nodeId, (JobAction) ignored -> action.run());
         }
+
+        private NodeOperation(long nodeId, OutcomeJobAction action) {
+            if (action == null) throw new IllegalArgumentException("节点任务不能为空");
+            this.nodeId = nodeId;
+            this.action = action;
+            this.publishesOutcome = true;
+        }
+
+        public static NodeOperation withOutcome(long nodeId, OutcomeJobAction action) {
+            return new NodeOperation(nodeId, action);
+        }
+
+        public long nodeId() { return nodeId; }
+        boolean publishesOutcome() { return publishesOutcome; }
+        NodeOutcome run(long jobId) throws Exception { return action.run(jobId); }
+    }
+
+    public record NodeOutcome(boolean success, int exitCode, String message, String logPath) {
+        public NodeOutcome {
+            message = message == null || message.isBlank()
+                    ? (success ? "执行成功" : "执行失败，退出码: " + exitCode)
+                    : message;
+            logPath = logPath == null ? "" : logPath;
+        }
+
+        public static NodeOutcome successful() {
+            return new NodeOutcome(true, 0, "执行成功", "");
+        }
+
+        Map<String, Object> eventPayload(long nodeId, String hostname) {
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("node_id", nodeId);
+            payload.put("hostname", hostname);
+            payload.put("status", success ? "success" : "failed");
+            payload.put("exit_code", exitCode);
+            payload.put("message", message);
+            payload.put("log_path", logPath);
+            return Map.copyOf(payload);
+        }
+    }
+
+    private static String stableMessage(Exception exception) {
+        return exception.getMessage() == null || exception.getMessage().isBlank()
+                ? exception.getClass().getSimpleName() : exception.getMessage();
     }
 }

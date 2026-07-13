@@ -69,10 +69,14 @@ public class JobController {
             long id,
             @JsonProperty("node_id") long nodeId,
             String hostname,
-            String status) {
+            String status,
+            @JsonProperty("log_path") String logPath,
+            @JsonProperty("exit_code") Integer exitCode,
+            String message) {
         static NodeResponse from(JobStepNode value) {
             return new NodeResponse(value.getId(), value.getNode().getId(),
-                    value.getNode().getHostname(), value.getStatus());
+                    value.getNode().getHostname(), value.getStatus(), value.getLogPath(),
+                    value.getExitCode(), value.getMessage());
         }
     }
 }

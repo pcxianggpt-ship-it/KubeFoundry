@@ -30,6 +30,15 @@ public class JobStepNode {
     @Column(nullable = false, length = 32)
     private String status = "pending";
 
+    @Column(name = "log_path", length = 512)
+    private String logPath;
+
+    @Column(name = "exit_code")
+    private Integer exitCode;
+
+    @Column(length = 1024)
+    private String message;
+
     protected JobStepNode() {
     }
 
@@ -42,7 +51,25 @@ public class JobStepNode {
     public JobStep getStep() { return step; }
     public Node getNode() { return node; }
     public String getStatus() { return status; }
+    public String getLogPath() { return logPath; }
+    public Integer getExitCode() { return exitCode; }
+    public String getMessage() { return message; }
     public void markRunning() { status = "running"; }
-    public void markSuccess() { status = "success"; }
-    public void markFailed() { status = "failed"; }
+    public void markSuccess() {
+        status = "success";
+        exitCode = 0;
+        message = "执行成功";
+    }
+    public void markFailed() { markFailed("执行失败"); }
+    public void markFailed(String failureMessage) {
+        status = "failed";
+        if (exitCode == null) exitCode = 1;
+        if (message == null || message.isBlank()) message = failureMessage;
+    }
+    public void complete(JobService.NodeOutcome outcome) {
+        status = outcome.success() ? "success" : "failed";
+        exitCode = outcome.exitCode();
+        message = outcome.message();
+        logPath = outcome.logPath();
+    }
 }

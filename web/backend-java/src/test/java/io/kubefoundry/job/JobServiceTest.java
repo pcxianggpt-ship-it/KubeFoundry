@@ -108,6 +108,26 @@ class JobServiceTest {
         assertThat(jobs.count()).isZero();
     }
 
+    @Test
+    void persistsNodeExitCodeLogPathAndFailureMessage() throws Exception {
+        Cluster cluster = clusters.save(new Cluster("node-outcome-test"));
+        Node node = node(cluster, "node-1", "10.0.0.1");
+        JobService.NodeOperation operation = JobService.NodeOperation.withOutcome(node.getId(), jobId ->
+                new JobService.NodeOutcome(false, 23, "远程执行失败", "logs/node-1.log"));
+
+        long jobId = service.submit(new JobService.JobDefinition(
+                cluster.getId(), "install", List.of(
+                        new JobService.StepDefinition("执行安装步骤", 1, 1, true, List.of(operation)))));
+        assertThat(executor.awaitIdle(5, TimeUnit.SECONDS)).isTrue();
+
+        JobStep step = steps.findByJobIdOrderByOrder(jobId).get(0);
+        JobStepNode item = stepNodes.findByStepIdOrderById(step.getId()).get(0);
+        assertThat(item.getStatus()).isEqualTo("failed");
+        assertThat(item.getExitCode()).isEqualTo(23);
+        assertThat(item.getMessage()).isEqualTo("远程执行失败");
+        assertThat(item.getLogPath()).isEqualTo("logs/node-1.log");
+    }
+
     private Node node(Cluster cluster, String hostname, String ip) {
         Node node = new Node(cluster);
         node.update(hostname, ip, "", "worker", "root", 22);

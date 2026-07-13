@@ -9,6 +9,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -17,6 +18,7 @@ public class JobExecutor implements AutoCloseable {
 
     private final ThreadPoolExecutor jobPool;
     private final ThreadPoolExecutor nodePool;
+    private final AtomicInteger unfinishedJobs = new AtomicInteger();
 
     public JobExecutor(
             @Value("${kubefoundry.jobs.workers:5}") int workers,
@@ -29,37 +31,56 @@ public class JobExecutor implements AutoCloseable {
 
     public void submit(Runnable task) {
         if (task == null) throw new IllegalArgumentException("任务不能为空");
+        unfinishedJobs.incrementAndGet();
         try {
-            jobPool.execute(task);
+            jobPool.execute(() -> {
+                try {
+                    task.run();
+                } finally {
+                    unfinishedJobs.decrementAndGet();
+                }
+            });
         } catch (java.util.concurrent.RejectedExecutionException exception) {
+            unfinishedJobs.decrementAndGet();
             throw new JobQueueFullException();
         }
     }
 
     public ExecutionSummary executeNodes(List<NodeWork> workItems) {
+        return executeNodes(workItems, Integer.MAX_VALUE, false);
+    }
+
+    public ExecutionSummary executeNodes(
+            List<NodeWork> workItems, int maxWorkers, boolean failFast) {
         if (workItems == null || workItems.isEmpty()) {
             return new ExecutionSummary("success", List.of());
         }
-        List<Future<NodeResult>> futures = new ArrayList<>(workItems.size());
-        try {
-            for (NodeWork item : workItems) {
-                futures.add(nodePool.submit(() -> execute(item)));
-            }
-        } catch (java.util.concurrent.RejectedExecutionException exception) {
-            futures.forEach(future -> future.cancel(true));
-            throw new JobQueueFullException();
-        }
-
-        List<NodeResult> results = new ArrayList<>(futures.size());
-        for (Future<NodeResult> future : futures) {
+        if (maxWorkers < 1) throw new IllegalArgumentException("节点并发数必须大于 0");
+        List<NodeResult> results = new ArrayList<>(workItems.size());
+        int offset = 0;
+        while (offset < workItems.size()) {
+            int end = Math.min(workItems.size(), offset + maxWorkers);
+            List<Future<NodeResult>> futures = new ArrayList<>(end - offset);
             try {
-                results.add(future.get());
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException("等待节点任务时被中断", exception);
-            } catch (ExecutionException exception) {
-                throw new IllegalStateException("节点任务执行器异常", exception.getCause());
+                for (NodeWork item : workItems.subList(offset, end)) {
+                    futures.add(nodePool.submit(() -> execute(item)));
+                }
+            } catch (java.util.concurrent.RejectedExecutionException exception) {
+                futures.forEach(future -> future.cancel(true));
+                throw new JobQueueFullException();
             }
+            for (Future<NodeResult> future : futures) {
+                try {
+                    results.add(future.get());
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("等待节点任务时被中断", exception);
+                } catch (ExecutionException exception) {
+                    throw new IllegalStateException("节点任务执行器异常", exception.getCause());
+                }
+            }
+            if (failFast && results.stream().anyMatch(result -> "failed".equals(result.status()))) break;
+            offset = end;
         }
         String status = results.stream().allMatch(result -> "success".equals(result.status()))
                 ? "success"
@@ -70,7 +91,8 @@ public class JobExecutor implements AutoCloseable {
     public boolean awaitIdle(long timeout, TimeUnit unit) throws InterruptedException {
         long deadline = System.nanoTime() + unit.toNanos(timeout);
         while (System.nanoTime() < deadline) {
-            if (jobPool.getActiveCount() == 0 && jobPool.getQueue().isEmpty()
+            if (unfinishedJobs.get() == 0
+                    && jobPool.getActiveCount() == 0 && jobPool.getQueue().isEmpty()
                     && nodePool.getActiveCount() == 0 && nodePool.getQueue().isEmpty()) {
                 return true;
             }

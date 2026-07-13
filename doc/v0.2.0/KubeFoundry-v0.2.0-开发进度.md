@@ -80,3 +80,22 @@
 - 状态：已完成。
 - 已具备不依赖系统 `ssh`、`scp`、`sshpass` 或 `expect` 的密码连接、主机指纹、Ed25519 集群密钥、SFTP、命令执行、免密配置、环境探测、受控并发和 SSE 事件能力。
 - Windows 开发环境完成自动化验证；主密钥、私钥目录权限和真实 OpenSSH 兼容性仍按计划在 M5 的 Linux x86_64/ARM64 环境验收。
+
+## 任务 9：Java 安装计划、预检查与 Bash 步骤编排
+
+- 状态：已完成。
+- 安装计划：Java 完整映射 Python 权威基线中的 13 个安装步骤，保留顺序、节点范围、串并行模式、并发上限、失败策略、脚本、资源、参数、产物和验证命令；`13-install-k8s-deps`、`16-install-containerd` 使用 5 节点受控并发，`18-init-k8s-cluster`、`20-add-control-nodes` 串行执行。
+- 目标解析：仅使用 Java 节点角色解析目标，按主机名、IP 和 ID 稳定排序并按 IP 去重；第一个 `control_plane` 作为主控节点。
+- 运行时环境：生成与 Python 兼容的 `KF_*`、传统兼容变量和日志函数，所有值使用严格 POSIX shell 单引号转义，不包含密码、密文或私钥。
+- SSH/SFTP：复用 Apache MINA SSHD、集群 Ed25519 密钥和主机指纹校验；远端工作目录固定为 `/tmp/kubefoundry/{jobId}/`，先创建目录，再上传 `runtime.env`、`step.sh` 和单文件资源，最后通过 `bash -lc` 执行。目录资源明确返回“不支持目录 SFTP”，不会伪报成功。
+- 产物闭环：支持通过 SFTP 下载控制面初始化产物，并在后续控制节点、工作节点加入步骤中作为单文件资源重新上传。
+- 任务编排：继续使用 `JobService` 的步骤串行和 `JobExecutor` 既有有界节点池，按步骤限制并发与 `failFast`，没有新增线程池；预检查和安装服务均拒绝集群或节点测试状态不是 `success` 的配置。
+- 诊断持久化：Flyway V3 为 `job_step_nodes` 增加日志路径、退出码和消息；任务查询 API 返回逐节点诊断。本地日志固定写入 `${KF_DATA_DIR}/jobs/{jobId}/logs/{stepKey}/{hostname}.log`。
+- API：提供 `GET /api/install-plan`、`POST /api/clusters/{clusterId}/precheck` 和 `POST /api/clusters/{clusterId}/install`，活动任务冲突返回稳定错误码和任务 ID。
+- 验证：严格按 RED/GREEN 开发，使用嵌入式 Apache MINA SSH/SFTP 服务，不调用系统 SSH，也不真实执行安装脚本；覆盖计划等价、角色目标、Shell 引用、运行时环境、SFTP 分发与下载、退出码、失败汇总、准入和 V3 迁移。
+
+## 里程碑 M3：安装编排闭环
+
+- 状态：已完成。
+- Java 后端已具备从计划查询、节点测试准入、预检查、Bash 步骤分发执行、受控并发、日志与退出码持久化，到初始化产物流转的最小安装编排闭环。
+- 目录型离线介质仍明确拒绝，待后续任务定义并实现目录打包或递归 SFTP 协议后再开放，不将当前单文件 SFTP 能力伪装为目录支持。

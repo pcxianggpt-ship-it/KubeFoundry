@@ -54,6 +54,22 @@ public final class SshService {
         }
     }
 
+    public void download(SshSession session, String remotePath, Path local) throws IOException {
+        if (session == null) throw new IllegalArgumentException("SSH 会话不能为空");
+        if (remotePath == null || remotePath.isBlank()) {
+            throw new IllegalArgumentException("远端路径不能为空");
+        }
+        if (local == null) throw new IllegalArgumentException("本地下载路径不能为空");
+        Path parent = local.toAbsolutePath().normalize().getParent();
+        if (parent != null) java.nio.file.Files.createDirectories(parent);
+        try (SftpClient sftp = SftpClientFactory.instance().createSftpClient(session.delegate())) {
+            try (java.io.InputStream input = sftp.read(remotePath)) {
+                java.nio.file.Files.copy(
+                        input, local, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+        }
+    }
+
     private static final class LimitedOutputStream extends ByteArrayOutputStream {
         private final int limit;
 

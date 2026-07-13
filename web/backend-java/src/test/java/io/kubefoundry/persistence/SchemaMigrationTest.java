@@ -104,6 +104,23 @@ class SchemaMigrationTest {
         }
     }
 
+    @Test
+    void addsStableNodeExecutionDiagnosticsInV3() throws SQLException {
+        try (Connection connection = openConnection()) {
+            DatabaseMetaData metadata = connection.getMetaData();
+            assertThat(columnExists(metadata, "JOB_STEP_NODES", "LOG_PATH")).isTrue();
+            assertThat(columnExists(metadata, "JOB_STEP_NODES", "EXIT_CODE")).isTrue();
+            assertThat(columnExists(metadata, "JOB_STEP_NODES", "MESSAGE")).isTrue();
+            try (var statement = connection.prepareStatement(
+                    "SELECT \"success\" FROM \"flyway_schema_history\" WHERE \"version\" = '3'")) {
+                try (ResultSet result = statement.executeQuery()) {
+                    assertThat(result.next()).isTrue();
+                    assertThat(result.getBoolean("success")).isTrue();
+                }
+            }
+        }
+    }
+
     private static boolean tableExists(DatabaseMetaData metadata, String table) throws SQLException {
         for (String tableName : List.of(table, table.toUpperCase(), table.toLowerCase())) {
             try (ResultSet tables = metadata.getTables(null, null, tableName, new String[] {"TABLE"})) {
@@ -114,6 +131,13 @@ class SchemaMigrationTest {
         }
 
         return false;
+    }
+
+    private static boolean columnExists(
+            DatabaseMetaData metadata, String table, String column) throws SQLException {
+        try (ResultSet columns = metadata.getColumns(null, null, table, column)) {
+            return columns.next();
+        }
     }
 
     private static Connection openConnection() throws SQLException {
