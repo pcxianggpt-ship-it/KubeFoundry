@@ -157,19 +157,25 @@ public final class SshService {
         String current = "";
         for (String segment : normalized.substring(1).split("/")) {
             current += "/" + segment;
+            SftpClient.Attributes attributes;
             try {
-                sftp.mkdir(current);
+                attributes = sftp.lstat(current);
             } catch (SftpException exception) {
-                if (!remoteDirectoryExists(sftp, current)) throw exception;
+                try {
+                    sftp.mkdir(current);
+                } catch (SftpException mkdirException) {
+                    attributes = sftp.lstat(current);
+                }
+                attributes = sftp.lstat(current);
             }
+            requireSafeRemoteDirectory(current, attributes);
         }
     }
 
-    private static boolean remoteDirectoryExists(SftpClient sftp, String remotePath) throws IOException {
-        try {
-            return sftp.stat(remotePath).isDirectory();
-        } catch (SftpException exception) {
-            return false;
+    private static void requireSafeRemoteDirectory(
+            String remotePath, SftpClient.Attributes attributes) {
+        if (attributes.isSymbolicLink() || !attributes.isDirectory()) {
+            throw new IllegalArgumentException("远端目录不是安全的普通目录: " + remotePath);
         }
     }
 

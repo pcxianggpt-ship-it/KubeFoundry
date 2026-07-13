@@ -107,3 +107,12 @@
 - 设置：新增 Flyway V6 `app_settings`，`/api/settings` 可持久化读写；全局默认与集群覆盖按白名单合并，拒绝敏感及未知键，读取结果不回显敏感项。
 - 健康检查：内置 `cluster_health` 最多重试 30 次、间隔 10 秒；测试通过可替换等待策略验证瞬时失败恢复和最终失败。
 - 准入与 hosts：系统漂移会把节点和集群测试状态标记为 `stale`，安装拒绝旧成功状态；`setup_hostname` 覆盖外置仓库与同 IP 异名仓库别名，并使用 POSIX 单引号安全写入 hosts。
+
+## 任务 9 第二轮修复包 B
+
+- 状态：已完成。
+- SFTP 目录安全：递归上传逐级使用不跟随链接的 `lstat` 校验远端路径，仅接受普通目录；远端符号链接或普通文件会在上传前拒绝，本地符号链接和 `..` 越界防护保持不变。
+- 数据库准入：`InstallerAdmission` 以集群行 `PESSIMISTIC_WRITE` 事务锁串行化 install/precheck 的检查与创建，不再依赖单 JVM 内存锁；冲突请求返回现有活动任务的 `job_id`，异常事务释放锁，重启恢复后的 `interrupted` 任务不会成为永久锁。
+- 事务与执行器：`JobService.submit` 在提交成功后才将任务交给 `JobExecutor`；外层事务回滚时任务记录和异步入队均不会留下。
+- 命令链验证：假 SSH 精确验证 `source runtime.env -> bash step.sh [安全参数] -> verify` 的顺序，恶意单引号仍是单一参数；上传的 `runtime.env` 与 `step.sh` 只做 Bash 语法和 `source` 兼容检查，不执行真实安装步骤。
+- 验证：新增独立准入实例并发、事务提交/回滚、嵌入式 SFTP 远端链接/非目录和命令链回归测试；Windows 使用可用 Git Bash 做条件化语法检查。

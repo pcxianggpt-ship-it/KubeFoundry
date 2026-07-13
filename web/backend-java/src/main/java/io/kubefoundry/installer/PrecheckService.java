@@ -72,15 +72,6 @@ public class PrecheckService {
         this.admission = admission;
     }
 
-    public PrecheckService(
-            ClusterRepository clusters,
-            NodeRepository nodes,
-            JobRepository jobs,
-            JobService jobService,
-            RemoteStepRunner runner) {
-        this(clusters, nodes, jobs, jobService, runner, null, null, new InstallerAdmission(jobs));
-    }
-
     public long start(long clusterId) {
         Cluster cluster = clusters.findById(clusterId)
                 .orElseThrow(() -> ResourceNotFoundException.cluster(clusterId));

@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.CopyOnWriteArrayList;
+import org.junit.jupiter.api.Assumptions;
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory;
 import org.apache.sshd.common.keyprovider.KeyPairProvider;
 import org.apache.sshd.server.SshServer;
@@ -106,6 +107,40 @@ class RemoteStepRunnerTest {
                 .contains("printf verified");
         assertThat(remoteRoot.resolve("tmp/kubefoundry/42/runtime.env")).isRegularFile();
         assertThat(remoteRoot.resolve("tmp/kubefoundry/42/step.sh")).hasSameTextualContentAs(script);
+    }
+
+    @Test
+    void ordersRuntimeScriptSafeArgumentsAndVerifyWithoutExecutingTheUploadedScript() throws Exception {
+        Path script = temporaryDirectory.resolve("syntax-only-step.sh");
+        Files.writeString(script, "#!/bin/bash\nexit 47\n", StandardCharsets.UTF_8);
+        String maliciousArgument = "value'; touch /tmp/kubefoundry-command-injection; #";
+        InstallStep step = InstallStep.script(
+                "syntax-only", "命令链", "test", "primary_control_plane", script,
+                "serial", 1, true, List.of(),
+                List.of(new InstallStep.Argument(maliciousArgument, null)), List.of(),
+                "test {node_hostname} = {node_hostname}");
+
+        JobService.NodeOutcome outcome = runner().run(42L, cluster, List.of(node), node, step);
+
+        assertThat(outcome.success()).isTrue();
+        String command = unquoteBashLoginCommand(commands.get(1));
+        assertThat(command)
+                .containsSubsequence(
+                        "source ./runtime.env",
+                        "bash ./step.sh 'value'\"'\"'; touch /tmp/kubefoundry-command-injection; #'",
+                        "test 'cp-a' = 'cp-a'");
+        assertThat(command).doesNotContain("bash ./step.sh value'; touch");
+
+        Path compatibilityDirectory = Files.createDirectory(temporaryDirectory.resolve("bash-compatibility"));
+        Path runtime = compatibilityDirectory.resolve("runtime.env");
+        Path uploadedScript = compatibilityDirectory.resolve("step.sh");
+        Files.copy(remoteRoot.resolve("tmp/kubefoundry/42/runtime.env"), runtime);
+        Files.copy(remoteRoot.resolve("tmp/kubefoundry/42/step.sh"), uploadedScript);
+        String bash = availableBash();
+        Assumptions.assumeTrue(bash != null, "当前环境未提供 Bash，跳过语法兼容检查");
+        assertThat(runBash(bash, "-n", runtime.toString())).isZero();
+        assertThat(runBash(bash, "-n", uploadedScript.toString())).isZero();
+        assertThat(runBash(bash, "-c", "set -e; source \"$1\"", "bash", runtime.toString())).isZero();
     }
 
     @Test
@@ -257,6 +292,33 @@ class RemoteStepRunnerTest {
                 },
                 new RuntimeEnvRenderer(),
                 temporaryDirectory.resolve("data"));
+    }
+
+    private static String availableBash() {
+        List<String> candidates = System.getProperty("os.name").startsWith("Windows")
+                ? List.of("C:/Program Files/Git/bin/bash.exe", "bash")
+                : List.of("bash");
+        for (String candidate : candidates) {
+            try {
+                if (new ProcessBuilder(candidate, "--version").start().waitFor() == 0) return candidate;
+            } catch (IOException | InterruptedException exception) {
+                if (exception instanceof InterruptedException) Thread.currentThread().interrupt();
+            }
+        }
+        return null;
+    }
+
+    private static int runBash(String bash, String... arguments) throws Exception {
+        String[] command = new String[arguments.length + 1];
+        command[0] = bash;
+        System.arraycopy(arguments, 0, command, 1, arguments.length);
+        return new ProcessBuilder(command).start().waitFor();
+    }
+
+    private static String unquoteBashLoginCommand(String command) {
+        assertThat(command).startsWith("bash -lc '").endsWith("'");
+        return command.substring("bash -lc '".length(), command.length() - 1)
+                .replace("'\"'\"'", "'");
     }
 
     private final class TestCommand extends AbstractCommandSupport {

@@ -1,6 +1,8 @@
 package io.kubefoundry.cluster;
 
+import jakarta.persistence.LockModeType;
 import java.util.Optional;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -9,6 +11,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 public interface ClusterRepository extends JpaRepository<Cluster, Long> {
     Optional<Cluster> findByName(String name);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select cluster from Cluster cluster where cluster.id = :clusterId")
+    Optional<Cluster> findByIdForUpdate(@Param("clusterId") long clusterId);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional

@@ -13,6 +13,9 @@ import java.util.Set;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 public class JobService {
@@ -42,6 +45,7 @@ public class JobService {
         this.events = events;
     }
 
+    @Transactional
     public long submit(JobDefinition definition) {
         validate(definition);
         Cluster cluster = clusters.findById(definition.clusterId())
@@ -58,12 +62,26 @@ public class JobService {
                     stepNodes.save(new JobStepNode(step, node));
                 }
             }
-            executor.submit(() -> run(job.getId(), definition));
+            submitAfterCommit(job.getId(), definition);
         } catch (RuntimeException exception) {
             jobs.deleteById(job.getId());
             throw exception;
         }
         return job.getId();
+    }
+
+    private void submitAfterCommit(long jobId, JobDefinition definition) {
+        Runnable task = () -> run(jobId, definition);
+        if (!TransactionSynchronizationManager.isActualTransactionActive()) {
+            executor.submit(task);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                executor.submit(task);
+            }
+        });
     }
 
     public int recoverInterruptedJobs() {

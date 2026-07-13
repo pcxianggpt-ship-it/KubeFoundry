@@ -9,6 +9,7 @@ import io.kubefoundry.job.JobService;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.LongSupplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -29,6 +30,7 @@ class InstallServiceTest {
     JobService jobService;
     RemoteStepRunner runner;
     InstallPlanFactory plans;
+    InstallerAdmission admission;
     Cluster cluster;
     List<Node> configuredNodes;
 
@@ -40,6 +42,7 @@ class InstallServiceTest {
         jobService = mock(JobService.class);
         runner = mock(RemoteStepRunner.class);
         plans = new InstallPlanFactory(Path.of("D:/repo"));
+        admission = mock(InstallerAdmission.class);
         cluster = new Cluster("service-test");
         cluster.markNodeTestStatus("success");
         Node control = node("cp-a", "10.0.0.1", "control_plane");
@@ -52,6 +55,8 @@ class InstallServiceTest {
                 org.mockito.ArgumentMatchers.anyLong(), any(), any()))
                 .thenReturn(Optional.empty());
         when(jobService.submit(any())).thenReturn(99L);
+        when(admission.submit(org.mockito.ArgumentMatchers.anyLong(), any(LongSupplier.class)))
+                .thenAnswer(invocation -> invocation.<LongSupplier>getArgument(1).getAsLong());
     }
 
     @Test
@@ -113,11 +118,11 @@ class InstallServiceTest {
     }
 
     private InstallService installService() {
-        return new InstallService(clusters, nodes, jobs, jobService, plans, runner);
+        return new InstallService(clusters, nodes, jobService, plans, runner, null, admission);
     }
 
     private PrecheckService precheckService() {
-        return new PrecheckService(clusters, nodes, jobs, jobService, runner);
+        return new PrecheckService(clusters, nodes, jobs, jobService, runner, null, null, admission);
     }
 
     private Node node(String hostname, String ip, String role) {

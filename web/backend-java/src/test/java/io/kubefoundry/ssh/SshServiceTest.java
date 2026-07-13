@@ -34,12 +34,13 @@ class SshServiceTest {
     SshServer server;
     SshClientFactory clients;
     SshService service;
+    Path remoteRoot;
     KeyPair clientKeyPair;
     List<PublicKey> presentedKeys;
 
     @BeforeEach
     void startServer() throws Exception {
-        Path remoteRoot = temporaryDirectory.resolve("remote");
+        remoteRoot = temporaryDirectory.resolve("remote");
         Files.createDirectory(remoteRoot);
         server = SshServer.setUpDefaultServer();
         server.setPort(0);
@@ -144,6 +145,45 @@ class SshServiceTest {
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("越界");
         }
+    }
+
+    @Test
+    void rejectsRemoteDirectorySymlinksWithoutWritingOutsideTheUploadTree() throws Exception {
+        Path local = Files.createDirectory(temporaryDirectory.resolve("safe-payload"));
+        Files.createDirectories(local.resolve("nested"));
+        Files.writeString(local.resolve("nested/payload.txt"), "payload", StandardCharsets.UTF_8);
+        Path outside = Files.createDirectories(remoteRoot.resolve("outside"));
+        Path remoteParent = Files.createDirectories(remoteRoot.resolve("safe/runtime"));
+        try {
+            Files.createSymbolicLink(remoteParent.resolve("nested"), Path.of("../../outside"));
+        } catch (UnsupportedOperationException | IOException exception) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(false, "当前平台不能创建远端符号链接");
+        }
+
+        try (SshSession session = clients.connectWithPassword(spec(), "secret".toCharArray())) {
+            assertThatThrownBy(() -> service.uploadDirectory(session, local, "/safe/runtime"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("远端目录");
+        }
+
+        assertThat(outside.resolve("payload.txt")).doesNotExist();
+    }
+
+    @Test
+    void rejectsRemotePathSegmentsThatAreNotDirectories() throws Exception {
+        Path local = Files.createDirectory(temporaryDirectory.resolve("directory-payload"));
+        Files.createDirectories(local.resolve("nested"));
+        Files.writeString(local.resolve("nested/payload.txt"), "payload", StandardCharsets.UTF_8);
+        Path remoteParent = Files.createDirectories(remoteRoot.resolve("safe-file/runtime"));
+        Files.writeString(remoteParent.resolve("nested"), "not a directory", StandardCharsets.UTF_8);
+
+        try (SshSession session = clients.connectWithPassword(spec(), "secret".toCharArray())) {
+            assertThatThrownBy(() -> service.uploadDirectory(session, local, "/safe-file/runtime"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("远端目录");
+        }
+
+        assertThat(remoteParent.resolve("nested/payload.txt")).doesNotExist();
     }
 
     @Test

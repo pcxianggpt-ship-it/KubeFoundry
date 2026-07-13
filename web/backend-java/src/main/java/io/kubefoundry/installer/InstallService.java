@@ -40,16 +40,6 @@ public class InstallService {
         this.admission = admission;
     }
 
-    public InstallService(
-            ClusterRepository clusters,
-            NodeRepository nodes,
-            io.kubefoundry.job.JobRepository jobs,
-            JobService jobService,
-            InstallPlanFactory plans,
-            RemoteStepRunner runner) {
-        this(clusters, nodes, jobService, plans, runner, null, new InstallerAdmission(jobs));
-    }
-
     public long start(long clusterId, List<String> selectedSteps) {
         Cluster cluster = clusters.findById(clusterId)
                 .orElseThrow(() -> ResourceNotFoundException.cluster(clusterId));
