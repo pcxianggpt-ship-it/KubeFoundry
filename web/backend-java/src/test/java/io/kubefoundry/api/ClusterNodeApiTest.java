@@ -122,6 +122,23 @@ class ClusterNodeApiTest {
     }
 
     @Test
+    void passwordUpdateMarksTestStaleButKeepsTrustedHostFingerprint() throws Exception {
+        long clusterId = createCluster("fingerprint-on-password-update");
+        long nodeId = createNode(clusterId, "node-1", "192.168.1.11", "Secret123");
+        jdbc.update("update nodes set host_fingerprint=? where id=?", "SHA256:trusted", nodeId);
+
+        mvc.perform(put("/api/nodes/{id}", nodeId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"ChangedSecret456\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.node_test_status").value("stale"));
+
+        assertThat(jdbc.queryForObject(
+                "select host_fingerprint from nodes where id=?", String.class, nodeId))
+                .isEqualTo("SHA256:trusted");
+    }
+
+    @Test
     void copiedNodeKeepsCredentialButResetsHostBindingAndBecomesFormalAfterEdit() throws Exception {
         long clusterId = createCluster("copy-node");
         long sourceId = createNode(clusterId, "node-1", "192.168.1.11", "Secret123");

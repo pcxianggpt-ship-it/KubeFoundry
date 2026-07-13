@@ -11,7 +11,9 @@ import org.apache.sshd.client.channel.ChannelExec;
 import org.apache.sshd.client.channel.ClientChannelEvent;
 import org.apache.sshd.sftp.client.SftpClient;
 import org.apache.sshd.sftp.client.SftpClientFactory;
+import org.springframework.stereotype.Service;
 
+@Service
 public final class SshService {
 
     private static final int MAX_CAPTURE_BYTES = 1024 * 1024;

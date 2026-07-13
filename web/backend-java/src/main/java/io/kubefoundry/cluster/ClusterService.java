@@ -89,6 +89,8 @@ public class ClusterService {
     @Transactional
     public NodeResponse updateNode(long nodeId, NodeRequest request) {
         Node node = requireNode(nodeId);
+        boolean hostIdentityChanged = changed(request.ip(), node.getIp())
+                || (request.sshPort() != null && request.sshPort() != node.getSshPort());
         boolean criticalChanged = changed(request.hostname(), node.getHostname())
                 || changed(request.ip(), node.getIp())
                 || changed(request.ipv6(), node.getIpv6())
@@ -103,7 +105,7 @@ public class ClusterService {
         replacePasswordIfPresent(node, request.password());
         if (node.isDraft()) node.markDraft(false);
         if (criticalChanged) {
-            node.markTestStale();
+            node.markTestStale(hostIdentityChanged);
             node.getCluster().markNodeConfigurationChanged();
         }
         return NodeResponse.from(nodes.save(node));
@@ -264,12 +266,17 @@ public class ClusterService {
             @JsonProperty("has_password") boolean hasPassword,
             @JsonProperty("is_draft") boolean draft,
             @JsonProperty("node_test_status") String nodeTestStatus,
+            @JsonProperty("os_type") String osType,
+            @JsonProperty("os_version") String osVersion,
+            @JsonProperty("arch") String architecture,
+            @JsonProperty("node_test_message") String nodeTestMessage,
             String status) {
         static NodeResponse from(Node value) {
             return new NodeResponse(value.getId(), value.getCluster().getId(), value.getHostname(),
                     value.getIp(), value.getIpv6(), value.getRole(), value.getSshUser(),
                     value.getSshPort(), value.hasPassword(), value.isDraft(),
-                    value.getNodeTestStatus(), value.getStatus());
+                    value.getNodeTestStatus(), value.getOsType(), value.getOsVersion(),
+                    value.getArchitecture(), value.getNodeTestMessage(), value.getStatus());
         }
     }
 

@@ -2,6 +2,7 @@ package io.kubefoundry.api;
 
 import io.kubefoundry.cluster.ClusterService.ResourceNotFoundException;
 import io.kubefoundry.job.JobQueueFullException;
+import io.kubefoundry.ssh.NodeTestService.ActiveNodeTestException;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -32,5 +33,13 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(Map.of(
                 "code", "JOB_QUEUE_FULL",
                 "message", exception.getMessage()));
+    }
+
+    @ExceptionHandler(ActiveNodeTestException.class)
+    public ResponseEntity<Map<String, Object>> activeNodeTest(ActiveNodeTestException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                "code", "NODE_TEST_ACTIVE",
+                "message", exception.getMessage(),
+                "job_id", exception.jobId()));
     }
 }

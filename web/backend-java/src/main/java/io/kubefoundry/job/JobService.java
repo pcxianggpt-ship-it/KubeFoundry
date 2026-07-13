@@ -120,19 +120,13 @@ public class JobService {
                             JobStepNode item = persistedNodes.get(operation.nodeId());
                             item.markRunning();
                             stepNodes.saveAndFlush(item);
-                            events.publish(jobId, "node.status", Map.of(
-                                    "node_id", operation.nodeId(), "status", "running"));
                             try {
-                                operation.action().run();
+                                operation.action().run(jobId);
                                 item.markSuccess();
                                 stepNodes.saveAndFlush(item);
-                                events.publish(jobId, "node.status", Map.of(
-                                        "node_id", operation.nodeId(), "status", "success"));
                             } catch (Exception exception) {
                                 item.markFailed();
                                 stepNodes.saveAndFlush(item);
-                                events.publish(jobId, "node.status", Map.of(
-                                        "node_id", operation.nodeId(), "status", "failed"));
                                 throw exception;
                             }
                         })).toList();
@@ -208,9 +202,18 @@ public class JobService {
     public record StepDefinition(String name, int order, List<NodeOperation> nodes) {
     }
 
-    public record NodeOperation(long nodeId, JobExecutor.CheckedRunnable action) {
+    @FunctionalInterface
+    public interface JobAction {
+        void run(long jobId) throws Exception;
+    }
+
+    public record NodeOperation(long nodeId, JobAction action) {
         public NodeOperation {
             if (action == null) throw new IllegalArgumentException("节点任务不能为空");
+        }
+
+        public NodeOperation(long nodeId, JobExecutor.CheckedRunnable action) {
+            this(nodeId, ignored -> action.run());
         }
     }
 }

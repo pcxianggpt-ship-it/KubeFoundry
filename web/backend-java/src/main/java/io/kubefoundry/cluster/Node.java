@@ -94,8 +94,18 @@ public class Node {
     public boolean isDraft() { return draft; }
     public String getNodeTestStatus() { return nodeTestStatus; }
     public String getHostFingerprint() { return hostFingerprint; }
+    public String getOsType() { return osType; }
+    public String getOsVersion() { return osVersion; }
+    public String getArchitecture() { return architecture; }
+    public String getNodeTestMessage() { return nodeTestMessage; }
     public String getStatus() { return status; }
     public boolean hasPassword() { return passwordCiphertext != null && !passwordCiphertext.isBlank(); }
+
+    public EncryptedCredential encryptedPassword() {
+        return hasPassword() && passwordIv != null && passwordVersion != null
+                ? new EncryptedCredential(passwordCiphertext, passwordIv, passwordVersion)
+                : null;
+    }
 
     public void update(
             String hostname, String ip, String ipv6, String role, String sshUser, Integer sshPort) {
@@ -115,9 +125,9 @@ public class Node {
 
     public void markDraft(boolean value) { draft = value; }
 
-    public void markTestStale() {
+    public void markTestStale(boolean resetHostFingerprint) {
         nodeTestStatus = "stale";
-        hostFingerprint = null;
+        if (resetHostFingerprint) hostFingerprint = null;
         osType = null;
         osVersion = null;
         architecture = null;
@@ -138,6 +148,27 @@ public class Node {
             throw new IllegalArgumentException("主机指纹不能为空");
         }
         hostFingerprint = fingerprint;
+    }
+
+    public void markNodeTestPhase(String phase) {
+        nodeTestStatus = phase;
+        nodeTestMessage = null;
+    }
+
+    public void completeNodeTest(String detectedOsType, String detectedOsVersion, String detectedArchitecture) {
+        nodeTestStatus = "success";
+        nodeTestMessage = "测试成功";
+        osType = detectedOsType;
+        osVersion = detectedOsVersion;
+        architecture = detectedArchitecture;
+    }
+
+    public void failNodeTest(String message) {
+        nodeTestStatus = "failed";
+        nodeTestMessage = message;
+        osType = null;
+        osVersion = null;
+        architecture = null;
     }
 
     public void copyCredentialFrom(Node source) {

@@ -100,4 +100,8 @@ public class Cluster {
         nodeConfigVersion++;
         nodeTestStatus = "stale";
     }
+
+    public void markNodeTestStatus(String value) {
+        nodeTestStatus = value;
+    }
 }

@@ -63,3 +63,19 @@
 - SSE：事件先持久化再推送，按自增 ID 保序；支持 `Last-Event-ID` 请求头和 `last_id` 查询参数断线续传，默认 15 秒心跳，终态事件后完成连接。
 - 查询接口：提供任务列表、任务详情、步骤和逐节点状态接口；在关闭 `open-in-view` 的情况下显式预取节点响应字段。
 - 验证：覆盖并发上限、部分失败、队列拒绝、孤立任务清理、启动恢复、SSE 顺序/续传/心跳和懒加载回归；Java 后端全量 51 个测试通过，其中 14 个 POSIX 权限测试按 Windows 环境预期跳过。
+
+## 任务 8：Java 免密配置与节点测试
+
+- 状态：已完成。
+- API：实现 `POST /api/clusters/{clusterId}/node-test` 和 `POST /api/nodes/{nodeId}/node-test`，继续返回 `202 {job_id,status}`；集群接口支持 `failed_only=true` 只重试失败节点，重复启动返回当前活动任务 ID。
+- 免密流程：使用解密后的节点密码建立 Java SSH 会话，校验/记录主机指纹，以 `grep -qxF` 幂等追加集群公钥，再使用集群 Ed25519 私钥重新连接。
+- 环境探测：免密复连后读取 `/etc/os-release` 和 `uname -m`，保存操作系统、版本和规范化架构 `amd64/arm64`。
+- 状态事件：逐节点按 `password_connecting -> key_installing -> key_verifying -> success/failed` 更新 H2 并发送 SSE；集群按全部节点结果汇总 `running/success/failed`。
+- 安全：密码仅在执行线程内解密为 `char[]`，使用后清零；节点错误消息按密码字符脱敏并限制长度；修改密码只使测试状态失效，不清除已信任主机指纹，只有 IP 或 SSH 端口变化才重新建立指纹信任。
+- 验证：覆盖阶段顺序、系统信息、部分失败、失败节点重试、密码脱敏、集群/单节点 API、幂等公钥命令和架构规范化；Java 后端全量 57 个测试通过，其中 14 个 POSIX 权限测试按 Windows 环境预期跳过。
+
+## 里程碑 M2：Java SSH 闭环
+
+- 状态：已完成。
+- 已具备不依赖系统 `ssh`、`scp`、`sshpass` 或 `expect` 的密码连接、主机指纹、Ed25519 集群密钥、SFTP、命令执行、免密配置、环境探测、受控并发和 SSE 事件能力。
+- Windows 开发环境完成自动化验证；主密钥、私钥目录权限和真实 OpenSSH 兼容性仍按计划在 M5 的 Linux x86_64/ARM64 环境验收。
