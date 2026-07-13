@@ -27,6 +27,7 @@ public class JobService {
     private final JobStepNodeRepository stepNodes;
     private final JobExecutor executor;
     private final EventService events;
+    private final JobSubmissionFailureHandler submissionFailures;
 
     public JobService(
             ClusterRepository clusters,
@@ -35,7 +36,8 @@ public class JobService {
             JobStepRepository steps,
             JobStepNodeRepository stepNodes,
             JobExecutor executor,
-            EventService events) {
+            EventService events,
+            JobSubmissionFailureHandler submissionFailures) {
         this.clusters = clusters;
         this.nodes = nodes;
         this.jobs = jobs;
@@ -43,6 +45,7 @@ public class JobService {
         this.stepNodes = stepNodes;
         this.executor = executor;
         this.events = events;
+        this.submissionFailures = submissionFailures;
     }
 
     @Transactional
@@ -79,7 +82,16 @@ public class JobService {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                executor.submit(task);
+                try {
+                    executor.submit(task);
+                } catch (RuntimeException exception) {
+                    try {
+                        submissionFailures.compensate(jobId);
+                    } catch (RuntimeException compensationFailure) {
+                        exception.addSuppressed(compensationFailure);
+                    }
+                    throw exception;
+                }
             }
         });
     }

@@ -202,6 +202,35 @@ class RemoteStepRunnerTest {
     }
 
     @Test
+    void normalizesDuplicateIpsForRuntimeArgumentsAndVerifyPlaceholders() throws Exception {
+        ReflectionTestUtils.setField(node, "id", 10L);
+        node.update("worker-a", null, null, "worker", null, null);
+        Node duplicateControl = RuntimeEnvRendererTest.node(
+                cluster, "duplicate-control", "127.0.0.1", "control_plane", "amd64");
+        Node canonicalControl = RuntimeEnvRendererTest.node(
+                cluster, "cp-primary", "10.0.0.30", "control_plane", "amd64");
+        ReflectionTestUtils.setField(duplicateControl, "id", 20L);
+        ReflectionTestUtils.setField(canonicalControl, "id", 30L);
+        Path script = temporaryDirectory.resolve("normalized-primary.sh");
+        Files.writeString(script, "#!/bin/bash\n", StandardCharsets.UTF_8);
+        InstallStep step = InstallStep.script(
+                "normalized-primary", "规范化主控", "test", "all_nodes", script,
+                "serial", 1, true, List.of(),
+                List.of(new InstallStep.Argument(null, "primary_control_ip")), List.of(),
+                "test {primary_control_hostname} = {primary_control_hostname}");
+
+        JobService.NodeOutcome outcome = runner().run(42L, cluster,
+                List.of(duplicateControl, canonicalControl, node), node, step);
+
+        assertThat(outcome.success()).isTrue();
+        assertThat(commands.get(1))
+                .contains("10.0.0.30", "cp-primary")
+                .doesNotContain("duplicate-control");
+        assertThat(Files.readString(remoteRoot.resolve("tmp/kubefoundry/42/runtime.env")))
+                .contains("export KF_PRIMARY_CONTROL_IP='10.0.0.30'");
+    }
+
+    @Test
     void retriesTransientClusterHealthFailuresWithoutWaitingInTests() {
         AtomicInteger attempts = new AtomicInteger();
         RemoteStepRunner runner = healthRunner(attempts, List.of(
@@ -258,6 +287,21 @@ class RemoteStepRunnerTest {
         assertThat(outcome.success()).isTrue();
         assertThat(Files.readString(remoteRoot.resolve("tmp/kubefoundry/42/step.sh")))
                 .contains("'127.0.0.1    cp-a registry-alias'");
+    }
+
+    @Test
+    void usesRuntimeRegistryFallbackForHostsAliasWhenHostnameIsBlank() throws Exception {
+        cluster.update(null, null, null, null, null, "   ", "127.0.0.1", null, null);
+        InstallStep step = InstallStep.builtin("hostname", "主机名", "k8s_base", "all_nodes",
+                "setup_hostname", "serial", 1, true, "");
+
+        JobService.NodeOutcome outcome = runner().run(42L, cluster, List.of(node), node, step);
+
+        assertThat(outcome.success()).isTrue();
+        assertThat(Files.readString(remoteRoot.resolve("tmp/kubefoundry/42/step.sh")))
+                .contains("'127.0.0.1    cp-a registry'");
+        assertThat(Files.readString(remoteRoot.resolve("tmp/kubefoundry/42/runtime.env")))
+                .contains("export KF_REGISTRY_HOSTNAME='registry'");
     }
 
     private RemoteStepRunner healthRunner(

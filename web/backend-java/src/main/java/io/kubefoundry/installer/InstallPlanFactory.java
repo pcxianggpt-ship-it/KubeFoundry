@@ -4,10 +4,7 @@ import io.kubefoundry.cluster.Node;
 import io.kubefoundry.cluster.Cluster;
 import java.nio.file.Path;
 import java.nio.file.Files;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -17,12 +14,6 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class InstallPlanFactory {
-
-    private static final Comparator<Node> NODE_ORDER = Comparator
-            .comparing(Node::getId, Comparator.nullsLast(Long::compareTo))
-            .thenComparing(Node::getHostname, Comparator.nullsLast(String::compareTo))
-            .thenComparing(Node::getIp, Comparator.nullsLast(String::compareTo))
-            .thenComparing(Node::getRole, Comparator.nullsLast(String::compareTo));
 
     private final Path projectRoot;
 
@@ -119,7 +110,7 @@ public class InstallPlanFactory {
     }
 
     public List<Node> resolveTargets(InstallStep step, Cluster cluster, List<Node> configuredNodes) {
-        List<Node> nodes = uniqueSorted(configuredNodes);
+        List<Node> nodes = InstallationNodes.normalize(configuredNodes);
         List<Node> controls = filter(nodes, node -> "control_plane".equals(node.getRole()));
         Node primary = PrimaryControlPlaneSelector.select(nodes);
         String registryIp = cluster == null ? "" : cluster.getRegistryIp();
@@ -165,16 +156,6 @@ public class InstallPlanFactory {
 
     private static InstallStep.Argument context(String key) {
         return new InstallStep.Argument(null, key);
-    }
-
-    private static List<Node> uniqueSorted(List<Node> nodes) {
-        LinkedHashMap<String, Node> unique = new LinkedHashMap<>();
-        nodes.stream().sorted(NODE_ORDER).forEach(node -> {
-            String identity = node.getIp() == null || node.getIp().isBlank()
-                    ? "id:" + node.getId() : "ip:" + node.getIp();
-            unique.putIfAbsent(identity, node);
-        });
-        return List.copyOf(unique.values());
     }
 
     private static List<Node> filter(List<Node> nodes, Predicate<Node> predicate) {

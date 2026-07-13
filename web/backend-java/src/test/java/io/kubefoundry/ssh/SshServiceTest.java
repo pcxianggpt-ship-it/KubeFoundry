@@ -109,6 +109,35 @@ class SshServiceTest {
     }
 
     @Test
+    void rejectsFinalRemoteSymlinkForSingleFileUpload() throws Exception {
+        Path local = Files.writeString(
+                temporaryDirectory.resolve("symlink-source.txt"), "replacement", StandardCharsets.UTF_8);
+        Path outside = Files.writeString(remoteRoot.resolve("outside.txt"), "original", StandardCharsets.UTF_8);
+        createSymbolicLinkOrSkip(remoteRoot.resolve("uploaded.txt"), Path.of("outside.txt"));
+
+        try (SshSession session = clients.connectWithPassword(spec(), "secret".toCharArray())) {
+            assertThatThrownBy(() -> service.upload(session, local, "/uploaded.txt"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("远端文件");
+        }
+
+        assertThat(outside).hasContent("original");
+    }
+
+    @Test
+    void rejectsFinalRemoteDirectoryForSingleFileUpload() throws Exception {
+        Path local = Files.writeString(
+                temporaryDirectory.resolve("directory-source.txt"), "replacement", StandardCharsets.UTF_8);
+        Files.createDirectory(remoteRoot.resolve("uploaded.txt"));
+
+        try (SshSession session = clients.connectWithPassword(spec(), "secret".toCharArray())) {
+            assertThatThrownBy(() -> service.upload(session, local, "/uploaded.txt"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("远端文件");
+        }
+    }
+
+    @Test
     void uploadsDirectoryTreeOverSftpIncludingEmptyDirectories() throws Exception {
         Path local = Files.createDirectory(temporaryDirectory.resolve("payload"));
         Files.createDirectories(local.resolve("bin/tools"));
@@ -124,6 +153,37 @@ class SshServiceTest {
         assertThat(temporaryDirectory.resolve("remote/runtime/bin/tools/nerdctl"))
                 .hasContent("binary");
         assertThat(temporaryDirectory.resolve("remote/runtime/empty")).isDirectory();
+    }
+
+    @Test
+    void rejectsFinalRemoteSymlinkForDirectoryFileUpload() throws Exception {
+        Path local = Files.createDirectory(temporaryDirectory.resolve("symlink-payload"));
+        Files.writeString(local.resolve("payload.txt"), "replacement", StandardCharsets.UTF_8);
+        Path remoteDirectory = Files.createDirectory(remoteRoot.resolve("runtime"));
+        Path outside = Files.writeString(remoteRoot.resolve("outside.txt"), "original", StandardCharsets.UTF_8);
+        createSymbolicLinkOrSkip(remoteDirectory.resolve("payload.txt"), Path.of("../outside.txt"));
+
+        try (SshSession session = clients.connectWithPassword(spec(), "secret".toCharArray())) {
+            assertThatThrownBy(() -> service.uploadDirectory(session, local, "/runtime"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("远端文件");
+        }
+
+        assertThat(outside).hasContent("original");
+    }
+
+    @Test
+    void rejectsFinalRemoteDirectoryForDirectoryFileUpload() throws Exception {
+        Path local = Files.createDirectory(temporaryDirectory.resolve("directory-payload-file"));
+        Files.writeString(local.resolve("payload.txt"), "replacement", StandardCharsets.UTF_8);
+        Path remoteDirectory = Files.createDirectory(remoteRoot.resolve("runtime"));
+        Files.createDirectory(remoteDirectory.resolve("payload.txt"));
+
+        try (SshSession session = clients.connectWithPassword(spec(), "secret".toCharArray())) {
+            assertThatThrownBy(() -> service.uploadDirectory(session, local, "/runtime"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("远端文件");
+        }
     }
 
     @Test
@@ -228,6 +288,14 @@ class SshServiceTest {
     private SshConnectionSpec spec() {
         return new SshConnectionSpec("127.0.0.1", server.getPort(), "root",
                 Duration.ofSeconds(3), Duration.ofSeconds(3));
+    }
+
+    private static void createSymbolicLinkOrSkip(Path link, Path target) {
+        try {
+            Files.createSymbolicLink(link, target);
+        } catch (UnsupportedOperationException | IOException | SecurityException exception) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(false, "当前平台不能创建符号链接");
+        }
     }
 
     private static final class TestCommand extends AbstractCommandSupport {

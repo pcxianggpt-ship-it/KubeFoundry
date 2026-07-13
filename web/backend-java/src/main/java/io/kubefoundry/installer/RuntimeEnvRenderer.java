@@ -15,7 +15,8 @@ public class RuntimeEnvRenderer {
     }
 
     public String render(Cluster cluster, List<Node> nodes, Node node, RuntimeSettings settings) {
-        Node primary = PrimaryControlPlaneSelector.select(nodes);
+        List<Node> normalizedNodes = InstallationNodes.normalize(nodes);
+        Node primary = PrimaryControlPlaneSelector.select(normalizedNodes);
         Map<String, String> values = new TreeMap<>();
         values.put("KF_ARCH", value(node.getArchitecture(), "amd64"));
         values.put("KF_CLUSTER_NAME", cluster.getName());
@@ -32,7 +33,7 @@ public class RuntimeEnvRenderer {
         values.put("KF_POD_SUBNET", cluster.getPodSubnet());
         values.put("KF_PRIMARY_CONTROL_HOSTNAME", primary == null ? "" : primary.getHostname());
         values.put("KF_PRIMARY_CONTROL_IP", primary == null ? "" : primary.getIp());
-        values.put("KF_REGISTRY_HOSTNAME", value(cluster.getRegistryHostname(), "registry"));
+        values.put("KF_REGISTRY_HOSTNAME", registryHostname(cluster));
         values.put("KF_REGISTRY_IP", cluster.getRegistryIp());
         values.put("KF_REGISTRY_PORT", Integer.toString(cluster.getRegistryPort()));
         values.put("KF_SERVICE_SUBNET", cluster.getServiceSubnet());
@@ -73,6 +74,10 @@ public class RuntimeEnvRenderer {
 
     public static String shellQuote(String value) {
         return "'" + (value == null ? "" : value).replace("'", "'\"'\"'") + "'";
+    }
+
+    static String registryHostname(Cluster cluster) {
+        return value(cluster.getRegistryHostname(), "registry");
     }
 
     private static String value(String value, String fallback) {

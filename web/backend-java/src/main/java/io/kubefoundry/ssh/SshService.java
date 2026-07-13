@@ -16,6 +16,7 @@ import org.apache.sshd.client.channel.ChannelExec;
 import org.apache.sshd.client.channel.ClientChannelEvent;
 import org.apache.sshd.sftp.client.SftpClient;
 import org.apache.sshd.sftp.client.SftpClientFactory;
+import org.apache.sshd.sftp.common.SftpConstants;
 import org.apache.sshd.sftp.common.SftpException;
 import org.springframework.stereotype.Service;
 
@@ -56,6 +57,7 @@ public final class SshService {
             throw new IllegalArgumentException("远端路径不能为空");
         }
         try (SftpClient sftp = SftpClientFactory.instance().createSftpClient(session.delegate())) {
+            requireSafeRemoteFileTarget(sftp, remotePath);
             sftp.put(local, remotePath);
         }
     }
@@ -90,6 +92,7 @@ public final class SshService {
                     String remotePath = remotePathFor(root, file, normalizedRemote);
                     int separator = remotePath.lastIndexOf('/');
                     if (separator > 0) ensureRemoteDirectory(sftp, remotePath.substring(0, separator));
+                    requireSafeRemoteFileTarget(sftp, remotePath);
                     sftp.put(file, remotePath);
                     return FileVisitResult.CONTINUE;
                 }
@@ -176,6 +179,23 @@ public final class SshService {
             String remotePath, SftpClient.Attributes attributes) {
         if (attributes.isSymbolicLink() || !attributes.isDirectory()) {
             throw new IllegalArgumentException("远端目录不是安全的普通目录: " + remotePath);
+        }
+    }
+
+    private static void requireSafeRemoteFileTarget(SftpClient sftp, String remotePath)
+            throws IOException {
+        SftpClient.Attributes attributes;
+        try {
+            attributes = sftp.lstat(remotePath);
+        } catch (SftpException exception) {
+            if (exception.getStatus() == SftpConstants.SSH_FX_NO_SUCH_FILE
+                    || exception.getStatus() == SftpConstants.SSH_FX_NO_SUCH_PATH) {
+                return;
+            }
+            throw exception;
+        }
+        if (attributes.isSymbolicLink() || !attributes.isRegularFile()) {
+            throw new IllegalArgumentException("远端文件不是可安全覆盖的普通文件: " + remotePath);
         }
     }
 

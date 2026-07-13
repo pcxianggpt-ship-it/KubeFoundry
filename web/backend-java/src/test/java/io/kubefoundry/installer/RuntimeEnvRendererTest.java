@@ -50,6 +50,25 @@ class RuntimeEnvRendererTest {
                 "export KF_PRIMARY_CONTROL_IP='10.0.0.10'");
     }
 
+    @Test
+    void normalizesDuplicateIpsBeforeSelectingPrimaryEnvironmentVariables() {
+        Cluster cluster = new Cluster("duplicate-ip-runtime");
+        Node canonicalWorker = node(cluster, "worker-a", "10.0.0.10", "worker", "amd64");
+        Node duplicateControl = node(cluster, "duplicate-control", "10.0.0.10", "control_plane", "amd64");
+        Node canonicalControl = node(cluster, "cp-a", "10.0.0.30", "control_plane", "amd64");
+        ReflectionTestUtils.setField(canonicalWorker, "id", 10L);
+        ReflectionTestUtils.setField(duplicateControl, "id", 20L);
+        ReflectionTestUtils.setField(canonicalControl, "id", 30L);
+
+        String rendered = new RuntimeEnvRenderer().render(
+                cluster, List.of(duplicateControl, canonicalControl, canonicalWorker), canonicalWorker);
+
+        assertThat(rendered).contains(
+                "export KF_PRIMARY_CONTROL_HOSTNAME='cp-a'",
+                "export KF_PRIMARY_CONTROL_IP='10.0.0.30'")
+                .doesNotContain("export KF_PRIMARY_CONTROL_HOSTNAME='duplicate-control'");
+    }
+
     static Node node(
             Cluster cluster, String hostname, String ip, String role, String architecture) {
         Node node = new Node(cluster);

@@ -90,11 +90,12 @@ public class RemoteStepRunner {
             Node node,
             InstallStep step,
             RuntimeSettings settings) {
+        List<Node> normalizedNodes = InstallationNodes.normalize(nodes);
         Path logPath = dataDirectory.resolve("jobs").resolve(Long.toString(jobId))
                 .resolve("logs").resolve(step.key()).resolve(node.getHostname() + ".log");
         try {
             if ("cluster_health".equals(step.builtin())) {
-                return runClusterHealth(jobId, cluster, nodes, node, step.key());
+                return runClusterHealth(jobId, cluster, normalizedNodes, node, step.key());
             }
             Files.createDirectories(logPath.getParent());
             ResourceResolution resources = resolveResources(jobId, step, settings);
@@ -108,9 +109,9 @@ public class RemoteStepRunner {
             Files.createDirectories(workDirectory);
             Path runtimeFile = workDirectory.resolve("runtime.env");
             Path scriptFile = workDirectory.resolve("step.sh");
-            Files.writeString(runtimeFile, runtimeRenderer.render(cluster, nodes, node, settings),
+            Files.writeString(runtimeFile, runtimeRenderer.render(cluster, normalizedNodes, node, settings),
                     StandardCharsets.UTF_8);
-            writeStepScript(scriptFile, cluster, nodes, step);
+            writeStepScript(scriptFile, cluster, normalizedNodes, step);
             String remoteDirectory = "/tmp/kubefoundry/" + jobId + "/";
 
             SshCommandResult result = sessions.withSession(cluster, node, session -> {
@@ -125,7 +126,8 @@ public class RemoteStepRunner {
                     }
                 }
                 SshCommandResult executed = ssh.execute(
-                        session, buildExecutionCommand(remoteDirectory, step, cluster, nodes, node),
+                        session, buildExecutionCommand(
+                                remoteDirectory, step, cluster, normalizedNodes, node),
                         STEP_TIMEOUT);
                 if (executed.exitCode() == 0) collectOutputs(session, jobId, step);
                 return executed;
@@ -307,7 +309,7 @@ public class RemoteStepRunner {
         nodes.stream().sorted(java.util.Comparator.comparing(Node::getHostname,
                 java.util.Comparator.nullsLast(String::compareTo))).forEach(item -> addHostAlias(
                 aliases, item.getIp(), item.getHostname()));
-        addHostAlias(aliases, cluster.getRegistryIp(), cluster.getRegistryHostname());
+        addHostAlias(aliases, cluster.getRegistryIp(), RuntimeEnvRenderer.registryHostname(cluster));
         aliases.forEach((ip, hostnames) -> script.append("  printf '%s\\n' ")
                 .append(RuntimeEnvRenderer.shellQuote(ip + "    " + String.join(" ", hostnames)))
                 .append('\n'));

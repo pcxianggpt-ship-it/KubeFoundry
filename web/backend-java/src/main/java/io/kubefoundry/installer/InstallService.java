@@ -43,7 +43,8 @@ public class InstallService {
     public long start(long clusterId, List<String> selectedSteps) {
         Cluster cluster = clusters.findById(clusterId)
                 .orElseThrow(() -> ResourceNotFoundException.cluster(clusterId));
-        List<Node> configuredNodes = nodes.findByClusterIdOrderById(clusterId);
+        List<Node> configuredNodes = InstallationNodes.normalize(
+                nodes.findByClusterIdOrderById(clusterId));
         InstallationGate.requireSuccessfulNodeTests(cluster, configuredNodes);
         InstallPlan plan = plans.select(selectedSteps);
         List<JobService.StepDefinition> definitions = new ArrayList<>();
