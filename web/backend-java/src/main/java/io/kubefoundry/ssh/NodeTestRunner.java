@@ -7,7 +7,8 @@ public interface NodeTestRunner {
             Node node,
             char[] password,
             ClusterKeyMaterial clusterKey,
-            PhaseReporter reporter) throws Exception;
+            PhaseReporter reporter,
+            long expectedConfigVersion) throws Exception;
 
     @FunctionalInterface
     interface PhaseReporter {

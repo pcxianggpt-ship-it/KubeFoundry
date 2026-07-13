@@ -70,6 +70,18 @@ class HostFingerprintVerifierTest {
                 .isEqualTo(original);
     }
 
+    @Test
+    void refusesToRecordFingerprintAfterNodeConfigurationChanges() throws Exception {
+        long expectedVersion = node.getCluster().getNodeConfigVersion();
+        node.getCluster().markNodeConfigurationChanged();
+        clusters.saveAndFlush(node.getCluster());
+
+        assertThatThrownBy(() -> verifier.verify(
+                node.getId(), node.getHostname(), expectedVersion, newHostKey()))
+                .isInstanceOf(NodeConfigurationChangedException.class);
+        assertThat(nodes.findById(node.getId()).orElseThrow().getHostFingerprint()).isNull();
+    }
+
     private static PublicKey newHostKey() throws Exception {
         KeyPairGenerator generator = KeyPairGenerator.getInstance("EC");
         generator.initialize(new ECGenParameterSpec("secp256r1"));

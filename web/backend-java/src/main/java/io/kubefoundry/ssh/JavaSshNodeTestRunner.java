@@ -34,14 +34,15 @@ public class JavaSshNodeTestRunner implements NodeTestRunner {
             Node node,
             char[] password,
             ClusterKeyMaterial clusterKey,
-            PhaseReporter reporter) throws Exception {
+            PhaseReporter reporter,
+            long expectedConfigVersion) throws Exception {
         SshConnectionSpec spec = new SshConnectionSpec(
                 node.getIp(), node.getSshPort(), node.getSshUser(),
                 CONNECT_TIMEOUT, AUTHENTICATION_TIMEOUT);
 
         reporter.report("password_connecting");
         try (SshClientFactory clients = new SshClientFactory(
-                fingerprints.forNode(node.getId(), node.getHostname()));
+                fingerprints.forNode(node.getId(), node.getHostname(), expectedConfigVersion));
              SshSession session = clients.connectWithPassword(spec, password)) {
             reporter.report("key_installing");
             authorizedKeys.install(session, clusterKey.authorizedKey());
@@ -49,7 +50,7 @@ public class JavaSshNodeTestRunner implements NodeTestRunner {
 
         reporter.report("key_verifying");
         try (SshClientFactory clients = new SshClientFactory(
-                fingerprints.forNode(node.getId(), node.getHostname()));
+                fingerprints.forNode(node.getId(), node.getHostname(), expectedConfigVersion));
              SshSession session = clients.connectWithKey(spec, clusterKey.keyPair())) {
             SshCommandResult result = ssh.execute(session, PROBE_COMMAND, COMMAND_TIMEOUT);
             if (result.exitCode() != 0) {

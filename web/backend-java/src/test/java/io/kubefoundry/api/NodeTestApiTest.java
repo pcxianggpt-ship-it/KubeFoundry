@@ -8,6 +8,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -36,5 +37,22 @@ class NodeTestApiTest {
         mvc.perform(post("/api/nodes/7/node-test"))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.job_id").value(102));
+    }
+
+    @Test
+    void forwardsFailedOnlyAndReturnsActiveJobConflict() throws Exception {
+        when(nodeTests.startClusterTest(9, true)).thenReturn(103L);
+        when(nodeTests.startClusterTest(10, false))
+                .thenThrow(new NodeTestService.ActiveNodeTestException(88L));
+
+        mvc.perform(post("/api/clusters/9/node-test").param("failed_only", "true"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.job_id").value(103));
+        verify(nodeTests).startClusterTest(9, true);
+
+        mvc.perform(post("/api/clusters/10/node-test"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("NODE_TEST_ACTIVE"))
+                .andExpect(jsonPath("$.job_id").value(88));
     }
 }

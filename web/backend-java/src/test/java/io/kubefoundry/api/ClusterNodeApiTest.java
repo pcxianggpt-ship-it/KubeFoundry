@@ -139,6 +139,28 @@ class ClusterNodeApiTest {
     }
 
     @Test
+    void ipAndSshPortUpdatesClearTrustedHostFingerprint() throws Exception {
+        long clusterId = createCluster("fingerprint-on-host-update");
+        long nodeId = createNode(clusterId, "node-1", "192.168.1.11", "Secret123");
+        jdbc.update("update nodes set host_fingerprint=? where id=?", "SHA256:trusted", nodeId);
+
+        mvc.perform(put("/api/nodes/{id}", nodeId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"ip\":\"192.168.1.12\"}"))
+                .andExpect(status().isOk());
+        assertThat(jdbc.queryForObject(
+                "select host_fingerprint from nodes where id=?", String.class, nodeId)).isNull();
+
+        jdbc.update("update nodes set host_fingerprint=? where id=?", "SHA256:trusted-again", nodeId);
+        mvc.perform(put("/api/nodes/{id}", nodeId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"ssh_port\":2222}"))
+                .andExpect(status().isOk());
+        assertThat(jdbc.queryForObject(
+                "select host_fingerprint from nodes where id=?", String.class, nodeId)).isNull();
+    }
+
+    @Test
     void copiedNodeKeepsCredentialButResetsHostBindingAndBecomesFormalAfterEdit() throws Exception {
         long clusterId = createCluster("copy-node");
         long sourceId = createNode(clusterId, "node-1", "192.168.1.11", "Secret123");

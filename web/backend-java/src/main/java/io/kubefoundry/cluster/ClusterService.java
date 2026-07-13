@@ -82,8 +82,9 @@ public class ClusterService {
         replacePasswordIfPresent(node, request.password());
         node.markDraft(false);
         node.markPendingAndClearDiscovery();
-        cluster.markNodeConfigurationChanged();
-        return NodeResponse.from(nodes.save(node));
+        NodeResponse response = NodeResponse.from(nodes.save(node));
+        clusters.markNodeConfigurationChanged(clusterId);
+        return response;
     }
 
     @Transactional
@@ -106,7 +107,7 @@ public class ClusterService {
         if (node.isDraft()) node.markDraft(false);
         if (criticalChanged) {
             node.markTestStale(hostIdentityChanged);
-            node.getCluster().markNodeConfigurationChanged();
+            clusters.markNodeConfigurationChanged(node.getCluster().getId());
         }
         return NodeResponse.from(nodes.save(node));
     }
@@ -114,8 +115,9 @@ public class ClusterService {
     @Transactional
     public void deleteNode(long nodeId) {
         Node node = requireNode(nodeId);
-        node.getCluster().markNodeConfigurationChanged();
+        long clusterId = node.getCluster().getId();
         nodes.delete(node);
+        clusters.markNodeConfigurationChanged(clusterId);
     }
 
     @Transactional
@@ -139,7 +141,7 @@ public class ClusterService {
             target.markPendingAndClearDiscovery();
             return NodeResponse.from(nodes.save(target));
         }).toList();
-        cluster.markNodeConfigurationChanged();
+        clusters.markNodeConfigurationChanged(clusterId);
         return copied;
     }
 

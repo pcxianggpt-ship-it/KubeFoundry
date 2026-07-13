@@ -19,32 +19,46 @@ public class HostFingerprintVerifier {
     }
 
     @Transactional
-    public synchronized boolean verify(long nodeId, String nodeName, PublicKey serverKey) {
+    public boolean verify(long nodeId, String nodeName, PublicKey serverKey) {
+        Node node = nodes.findById(nodeId)
+                .orElseThrow(() -> new IllegalArgumentException("节点不存在: " + nodeId));
+        return verify(nodeId, nodeName, node.getCluster().getNodeConfigVersion(), serverKey);
+    }
+
+    @Transactional
+    public boolean verify(
+            long nodeId, String nodeName, long expectedConfigVersion, PublicKey serverKey) {
         if (serverKey == null) {
             throw new IllegalArgumentException("SSH 主机公钥不能为空");
         }
         Node node = nodes.findById(nodeId)
                 .orElseThrow(() -> new IllegalArgumentException("节点不存在: " + nodeId));
         String fingerprint = KeyUtils.getFingerPrint(BuiltinDigests.sha256, serverKey);
-        String stored = node.getHostFingerprint();
-        if (stored == null || stored.isBlank()) {
-            node.recordHostFingerprint(fingerprint);
-            nodes.save(node);
+        if (nodes.recordHostFingerprintIfConfigurationUnchanged(
+                nodeId, expectedConfigVersion, fingerprint) == 1) {
             return true;
         }
-        if (stored.equals(fingerprint)) {
-            return true;
+        Node current = nodes.findById(nodeId)
+                .orElseThrow(() -> new IllegalArgumentException("节点不存在: " + nodeId));
+        if (current.getCluster().getNodeConfigVersion() != expectedConfigVersion) {
+            throw new NodeConfigurationChangedException(nodeId);
         }
 
-        String effectiveName = node.getHostname() == null || node.getHostname().isBlank()
+        String effectiveName = current.getHostname() == null || current.getHostname().isBlank()
                 ? nodeName
-                : node.getHostname();
+                : current.getHostname();
         throw new HostFingerprintChangedException(
-                "节点 " + effectiveName + " 的 SSH 主机指纹已变化，旧指纹: " + stored
+                "节点 " + effectiveName + " 的 SSH 主机指纹已变化，旧指纹: "
+                        + current.getHostFingerprint()
                         + "，新指纹: " + fingerprint + "。请人工确认服务器身份后再处理。");
     }
 
     public ServerKeyVerifier forNode(long nodeId, String nodeName) {
         return (session, remoteAddress, serverKey) -> verify(nodeId, nodeName, serverKey);
+    }
+
+    public ServerKeyVerifier forNode(long nodeId, String nodeName, long expectedConfigVersion) {
+        return (session, remoteAddress, serverKey) ->
+                verify(nodeId, nodeName, expectedConfigVersion, serverKey);
     }
 }
