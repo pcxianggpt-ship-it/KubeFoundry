@@ -43,22 +43,11 @@
           @save="saveCluster"
         />
 
-        <template v-else-if="activeStage === 'nodes'">
-          <div class="section-heading">
-            <div>
-              <p class="section-kicker">02 / 服务器节点</p>
-              <h2>服务器节点</h2>
-            </div>
-            <el-button type="primary" disabled>测试全部节点</el-button>
-          </div>
-          <div class="inline-state" role="status">
-            <Monitor aria-hidden="true" />
-            <div>
-              <strong>{{ cluster.node_count ?? 0 }} 个节点</strong>
-              <p>节点配置与免密测试将在此阶段集中处理。</p>
-            </div>
-          </div>
-        </template>
+        <NodeConfigView
+          v-else-if="activeStage === 'nodes'"
+          :cluster-id="cluster.id"
+          @cluster-updated="refreshCluster"
+        />
 
         <InstallSettingsStage
           v-else-if="activeStage === 'settings'"
@@ -127,7 +116,6 @@ import {
   CircleCheckFilled,
   Clock,
   EditPen,
-  Monitor,
   Refresh,
   WarningFilled
 } from '@element-plus/icons-vue';
@@ -135,6 +123,7 @@ import {
 import DeploymentPipeline from '../components/deployment/DeploymentPipeline.vue';
 import ClusterInfoStage from '../components/deployment/ClusterInfoStage.vue';
 import InstallSettingsStage from '../components/deployment/InstallSettingsStage.vue';
+import NodeConfigView from './NodeConfigView.vue';
 import { createCluster, getCluster, getJob, updateCluster } from '../api/client';
 import { safeErrorMessage } from '../utils/redaction';
 
@@ -289,6 +278,15 @@ async function saveCluster(payload) {
     errorMessage.value = safeErrorMessage(error);
   } finally {
     savingCluster.value = false;
+  }
+}
+
+async function refreshCluster() {
+  if (!cluster.value?.id || cluster.value.id === 'new') return;
+  try {
+    cluster.value = await getCluster(cluster.value.id);
+  } catch (error) {
+    errorMessage.value = safeErrorMessage(error);
   }
 }
 </script>

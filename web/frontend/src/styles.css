@@ -308,6 +308,112 @@ a:focus-visible {
   border-radius: 6px;
 }
 
+.section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.section-actions .el-button {
+  margin: 0;
+}
+
+.node-table-wrap {
+  margin-top: 18px;
+  overflow-x: auto;
+  border: 1px solid var(--kf-border);
+  border-radius: 6px;
+}
+
+.node-table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.node-table th,
+.node-table td {
+  padding: 12px 14px;
+  text-align: left;
+  border-bottom: 1px solid #e7ebe9;
+}
+
+.node-table th {
+  color: #53605c;
+  background: #f8faf9;
+  font-size: 12px;
+}
+
+.node-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.node-table td strong,
+.node-table td small {
+  display: block;
+}
+
+.node-table td small,
+.node-diagnostic,
+.field-hint {
+  margin-top: 4px;
+  color: var(--kf-muted);
+  font-size: 12px;
+}
+
+.node-actions {
+  white-space: nowrap;
+}
+
+.node-activity {
+  margin-top: 18px;
+  padding: 16px;
+  background: #f8faf9;
+  border: 1px solid var(--kf-border);
+  border-radius: 6px;
+}
+
+.node-activity header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.node-activity h3,
+.node-activity p {
+  margin: 0;
+}
+
+.node-activity ol {
+  display: grid;
+  gap: 8px;
+  max-height: 220px;
+  margin: 14px 0 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.node-activity li {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.node-activity time,
+.connection-state {
+  color: var(--kf-muted);
+  font-size: 12px;
+}
+
+.node-editor-form .el-select,
+.node-editor-form .el-input-number {
+  width: 100%;
+}
+
 .state-panel h2 {
   font-size: 17px;
 }
@@ -790,6 +896,20 @@ a.pipeline-stage:hover {
   .inline-error {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .section-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .section-actions .el-button {
+    width: 100%;
+  }
+
+  .node-activity li {
+    grid-template-columns: 1fr;
+    gap: 2px;
   }
 
   .stage-content {
