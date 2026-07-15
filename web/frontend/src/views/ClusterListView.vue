@@ -183,6 +183,7 @@ async function enrichClusterStatus(cluster) {
 function workspaceRoute(cluster, fallbackStage) {
   const requestedStage = cluster.current_stage;
   const stage = validStages.has(requestedStage) ? requestedStage : fallbackStage;
+  if (stage === 'install') return installConfirmRoute(cluster);
   return {
     name: 'cluster-workspace',
     params: { clusterId: String(cluster.id), stage }
@@ -190,9 +191,17 @@ function workspaceRoute(cluster, fallbackStage) {
 }
 
 function fixedWorkspaceRoute(cluster, stage) {
+  if (stage === 'install') return installConfirmRoute(cluster);
   return {
     name: 'cluster-workspace',
     params: { clusterId: String(cluster.id), stage }
+  };
+}
+
+function installConfirmRoute(cluster) {
+  return {
+    name: 'install-confirm',
+    params: { clusterId: String(cluster.id) }
   };
 }
 

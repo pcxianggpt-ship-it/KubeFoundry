@@ -25,4 +25,16 @@ describe('router', () => {
 
     expect(router.currentRoute.value.fullPath).toBe('/clusters/9/cluster-info');
   });
+
+  it('安装确认和任务执行使用独立页面路由', async () => {
+    const router = createAppRouter(createMemoryHistory());
+    await router.push('/clusters/9/install');
+    await router.isReady();
+    expect(router.currentRoute.value.fullPath).toBe('/clusters/9/install/confirm');
+    expect(router.currentRoute.value.name).toBe('install-confirm');
+
+    await router.push('/jobs/88/execution');
+    expect(router.currentRoute.value.name).toBe('job-execution');
+    expect(router.currentRoute.value.params.jobId).toBe('88');
+  });
 });

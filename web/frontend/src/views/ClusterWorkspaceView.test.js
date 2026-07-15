@@ -5,14 +5,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ClusterWorkspaceView from './ClusterWorkspaceView.vue';
 import { createAppRouter } from '../router';
-import { createCluster, getCluster, getJob, updateCluster } from '../api/client';
+import { createCluster, getCluster, updateCluster } from '../api/client';
 
 vi.mock('../api/client', () => ({
   getCluster: vi.fn(),
-  getJob: vi.fn(),
   createCluster: vi.fn(),
   updateCluster: vi.fn(),
-  listClusters: vi.fn()
+  listClusters: vi.fn(),
+  listJobs: vi.fn().mockResolvedValue({ items: [] }),
+  getPrecheckResults: vi.fn().mockResolvedValue({ items: [] }),
+  startPrecheck: vi.fn()
 }));
 
 async function mountAt(path) {
@@ -47,17 +49,6 @@ describe('ClusterWorkspaceView', () => {
     expect(wrapper.get('[data-stage-key="settings"]').attributes('aria-current')).toBe('step');
     expect(wrapper.get('h1').text()).toBe('生产集群');
     expect(wrapper.get('[data-testid="stage-content"]').text()).toContain('安装配置');
-  });
-
-  it('从任务执行地址恢复任务所属集群和安装阶段', async () => {
-    getJob.mockResolvedValue({ id: 91, cluster_id: 42, job_type: 'install', status: 'running' });
-
-    const { wrapper } = await mountAt('/jobs/91/execution');
-
-    expect(getJob).toHaveBeenCalledWith('91');
-    expect(getCluster).toHaveBeenCalledWith(42);
-    expect(wrapper.get('[data-stage-key="install"]').attributes('aria-current')).toBe('step');
-    expect(wrapper.text()).toContain('正在安装');
   });
 
   it('显示加载、错误重试和阶段禁用状态', async () => {

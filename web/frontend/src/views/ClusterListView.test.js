@@ -56,7 +56,7 @@ describe('ClusterListView', () => {
     ]);
     expect(actions.map((link) => link.props('to'))).toEqual([
       { name: 'cluster-workspace', params: { clusterId: '1', stage: 'nodes' } },
-      { name: 'cluster-workspace', params: { clusterId: '2', stage: 'install' } },
+      { name: 'install-confirm', params: { clusterId: '2' } },
       { name: 'job-execution', params: { jobId: '31' } },
       { name: 'job-execution', params: { jobId: '41' } },
       { name: 'cluster-workspace', params: { clusterId: '5', stage: 'cluster-info' } }
@@ -87,7 +87,7 @@ describe('ClusterListView', () => {
     expect(actions.map((link) => link.text())).toEqual(['查看进度', '开始安装', '查看集群']);
     expect(actions.map((link) => link.props('to'))).toEqual([
       { name: 'job-execution', params: { jobId: '101' } },
-      { name: 'cluster-workspace', params: { clusterId: '11', stage: 'install' } },
+      { name: 'install-confirm', params: { clusterId: '11' } },
       { name: 'cluster-workspace', params: { clusterId: '12', stage: 'cluster-info' } }
     ]);
   });

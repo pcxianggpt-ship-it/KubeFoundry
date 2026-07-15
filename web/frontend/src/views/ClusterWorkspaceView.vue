@@ -54,46 +54,7 @@
           :cluster-id="cluster.id"
         />
 
-        <template v-else-if="activeStage === 'precheck'">
-          <div class="section-heading">
-            <div>
-              <p class="section-kicker">04 / 部署预检查</p>
-              <h2>部署预检查</h2>
-            </div>
-            <el-button type="primary" disabled>开始预检查</el-button>
-          </div>
-          <div class="inline-state" role="status">
-            <CircleCheckFilled aria-hidden="true" />
-            <div>
-              <strong>{{ statusPresentation.text }}</strong>
-              <p>预检查结果会按节点和检查项展示，并保留可操作的失败原因。</p>
-            </div>
-          </div>
-        </template>
-
-        <template v-else>
-          <div class="section-heading">
-            <div>
-              <p class="section-kicker">05 / 执行安装</p>
-              <h2>执行安装</h2>
-            </div>
-            <el-button type="primary" :disabled="!canStartInstall">开始安装</el-button>
-          </div>
-          <div class="execution-summary">
-            <div>
-              <span>任务</span>
-              <strong>{{ currentJob?.id || '尚未创建' }}</strong>
-            </div>
-            <div>
-              <span>当前状态</span>
-              <strong>{{ statusPresentation.text }}</strong>
-            </div>
-            <div>
-              <span>集群节点</span>
-              <strong>{{ cluster.node_count ?? '-' }}</strong>
-            </div>
-          </div>
-        </template>
+        <PrecheckView v-else-if="activeStage === 'precheck'" :cluster-id="cluster.id" />
       </section>
     </template>
 
@@ -124,26 +85,25 @@ import DeploymentPipeline from '../components/deployment/DeploymentPipeline.vue'
 import ClusterInfoStage from '../components/deployment/ClusterInfoStage.vue';
 import InstallSettingsStage from '../components/deployment/InstallSettingsStage.vue';
 import NodeConfigView from './NodeConfigView.vue';
-import { createCluster, getCluster, getJob, updateCluster } from '../api/client';
+import PrecheckView from './PrecheckView.vue';
+import { createCluster, getCluster, updateCluster } from '../api/client';
 import { safeErrorMessage } from '../utils/redaction';
 
 const route = useRoute();
 const router = useRouter();
 const cluster = ref(null);
-const currentJob = ref(null);
 const loading = ref(true);
 const savingCluster = ref(false);
 const errorMessage = ref('');
 let loadSequence = 0;
 
-const activeStage = computed(() => route.name === 'job-execution' ? 'install' : route.params.stage || 'cluster-info');
+const activeStage = computed(() => route.params.stage || 'cluster-info');
 
 const effectiveStatus = computed(() => {
-  if (currentJob.value?.status === 'running' || currentJob.value?.status === 'pending') return 'installing';
-  if (currentJob.value?.status === 'failed' || currentJob.value?.status === 'interrupted') return 'install_failed';
-  if (currentJob.value?.status === 'success') return 'installed';
   return cluster.value?.status || 'draft';
 });
+
+const nodeReady = computed(() => cluster.value?.node_test_status === 'success');
 
 const statusPresentation = computed(() => {
   const status = effectiveStatus.value;
@@ -158,6 +118,12 @@ const statusPresentation = computed(() => {
   }
   if (['installed', 'success'].includes(status)) {
     return { icon: CircleCheckFilled, text: '安装成功', tone: 'success' };
+  }
+  if (nodeReady.value && activeStage.value === 'precheck') {
+    return { icon: CircleCheckFilled, text: '可执行预检查', tone: 'ready' };
+  }
+  if (nodeReady.value) {
+    return { icon: CircleCheckFilled, text: '节点测试通过', tone: 'ready' };
   }
   return { icon: EditPen, text: '配置未完成', tone: 'incomplete' };
 });
@@ -209,6 +175,15 @@ const stageStates = computed(() => {
       install: 'completed'
     };
   }
+  if (nodeReady.value) {
+    return {
+      'cluster-info': 'completed',
+      nodes: 'completed',
+      settings: activeStage.value === 'settings' ? 'current' : 'completed',
+      precheck: activeStage.value === 'precheck' ? 'current' : 'pending',
+      install: 'blocked'
+    };
+  }
   return {
     'cluster-info': activeStage.value === 'cluster-info' ? 'current' : 'completed',
     nodes: activeStage.value === 'nodes' ? 'current' : 'pending',
@@ -218,8 +193,6 @@ const stageStates = computed(() => {
   };
 });
 
-const canStartInstall = computed(() => ['precheck_passed', 'precheck_success'].includes(effectiveStatus.value));
-
 watch(() => route.fullPath, loadWorkspace, { immediate: true });
 
 async function loadWorkspace() {
@@ -227,13 +200,8 @@ async function loadWorkspace() {
   loading.value = true;
   errorMessage.value = '';
   cluster.value = null;
-  currentJob.value = null;
   try {
-    let clusterId = route.params.clusterId;
-    if (route.name === 'job-execution') {
-      currentJob.value = await getJob(route.params.jobId);
-      clusterId = currentJob.value?.cluster_id;
-    }
+    const clusterId = route.params.clusterId;
     if (!clusterId) throw new Error('未找到任务所属集群');
     if (clusterId === 'new') {
       cluster.value = {

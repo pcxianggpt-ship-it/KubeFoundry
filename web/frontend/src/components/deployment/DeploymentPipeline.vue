@@ -81,6 +81,12 @@ function resolveState(stageKey, index) {
 }
 
 function stageRoute(stage) {
+  if (stage === 'install') {
+    return {
+      name: 'install-confirm',
+      params: { clusterId: String(props.clusterId) }
+    };
+  }
   return {
     name: 'cluster-workspace',
     params: {

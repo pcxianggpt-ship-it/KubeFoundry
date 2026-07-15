@@ -3,8 +3,10 @@ import { createRouter, createWebHistory } from 'vue-router';
 import AppShell from './layouts/AppShell.vue';
 import ClusterListView from './views/ClusterListView.vue';
 import ClusterWorkspaceView from './views/ClusterWorkspaceView.vue';
+import InstallConfirmView from './views/InstallConfirmView.vue';
+import JobExecutionView from './views/JobExecutionView.vue';
 
-const STAGE_PATTERN = 'cluster-info|nodes|settings|precheck|install';
+const STAGE_PATTERN = 'cluster-info|nodes|settings|precheck';
 
 export const routes = [
   {
@@ -29,9 +31,18 @@ export const routes = [
         component: ClusterWorkspaceView
       },
       {
+        path: 'clusters/:clusterId/install',
+        redirect: (to) => ({ name: 'install-confirm', params: { clusterId: to.params.clusterId } })
+      },
+      {
+        path: 'clusters/:clusterId/install/confirm',
+        name: 'install-confirm',
+        component: InstallConfirmView
+      },
+      {
         path: 'jobs/:jobId/execution',
         name: 'job-execution',
-        component: ClusterWorkspaceView
+        component: JobExecutionView
       }
     ]
   },

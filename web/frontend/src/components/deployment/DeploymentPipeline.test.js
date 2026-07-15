@@ -30,12 +30,13 @@ describe('DeploymentPipeline', () => {
     expect(stages[2].attributes('aria-current')).toBe('step');
 
     const links = wrapper.findAllComponents(RouterLinkStub);
-    expect(links.map((link) => link.props('to'))).toEqual(
-      expectedStages.map(([stage]) => ({
+    expect(links.map((link) => link.props('to'))).toEqual([
+      ...expectedStages.slice(0, 4).map(([stage]) => ({
         name: 'cluster-workspace',
         params: { clusterId: '42', stage }
-      }))
-    );
+      })),
+      { name: 'install-confirm', params: { clusterId: '42' } }
+    ]);
   });
 
   it('把英文阶段状态显示为中文文字', () => {
