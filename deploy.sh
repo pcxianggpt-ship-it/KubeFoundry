@@ -92,7 +92,9 @@ run_service_action() {
 
 check_environment() {
     [ "${TEST_MODE}" = "1" ] || [ "$(id -u)" -eq 0 ] || { log_error "部署 systemd 服务需要 root 权限"; return 1; }
-    for name in tar sha256sum; do command -v "${name}" >/dev/null 2>&1 || { log_error "缺少命令: ${name}"; return 1; }; done
+    for name in tar sha256sum find readlink; do
+        command -v "${name}" >/dev/null 2>&1 || { log_error "缺少命令: ${name}"; return 1; }
+    done
     [ -n "${PACKAGE_FILE}" ] || { log_error "请指定发布包"; return 1; }
     PACKAGE_FILE="$(cd "$(dirname "${PACKAGE_FILE}")" && pwd -P)/$(basename "${PACKAGE_FILE}")"
     [ -f "${PACKAGE_FILE}" ] || { log_error "发布包不存在: ${PACKAGE_FILE}"; return 1; }
@@ -105,12 +107,31 @@ validate_archive_entries() {
     done < <(tar -tzf "${PACKAGE_FILE}")
 }
 
+validate_extracted_links() {
+    local release_dir="$1"
+    local link resolved
+    while IFS= read -r -d '' link; do
+        resolved="$(readlink -f "${link}")" || {
+            log_error "发布包包含无法解析的符号链接: ${link#${release_dir}/}"
+            return 1
+        }
+        case "${resolved}" in
+            "${release_dir}"/*) ;;
+            *)
+                log_error "发布包包含越界符号链接: ${link#${release_dir}/}"
+                return 1
+                ;;
+        esac
+    done < <(find "${release_dir}" -type l -print0)
+}
+
 extract_and_validate_package() {
     TEMP_DIR="$(mktemp -d)"
     tar -xzf "${PACKAGE_FILE}" -C "${TEMP_DIR}"
     local release_dir package_arch host_arch
     release_dir="$(find "${TEMP_DIR}" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
     [ -n "${release_dir}" ] || { log_error "发布包中未找到发布目录"; return 1; }
+    validate_extracted_links "${release_dir}" || return 1
     for path in runtime/bin/java runtime/.architecture app/kubefoundry.jar web/index.html scripts/steps deploy.sh VERSION ARCHITECTURE SHA256SUMS; do
         [ -e "${release_dir}/${path}" ] || { log_error "发布包缺少: ${path}"; return 1; }
     done

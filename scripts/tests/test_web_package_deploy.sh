@@ -103,6 +103,20 @@ if (
 fi
 grep -q '发布包文件校验失败' "${TEST_ROOT}/tampered.log" || fail "校验和失败错误不清晰"
 
+mkdir -p "${TEST_ROOT}/unsafe-link"
+tar -xzf "${PACKAGE}" -C "${TEST_ROOT}/unsafe-link"
+ln -s /etc/passwd "${TEST_ROOT}/unsafe-link/kubefoundry-web-v0.2.0-x86_64/web/outside-link"
+tar -czf "${TEST_ROOT}/unsafe-link.tar.gz" -C "${TEST_ROOT}/unsafe-link" \
+    kubefoundry-web-v0.2.0-x86_64
+if (
+    cd "${TEST_ROOT}/deployment"
+    KF_DEPLOY_TEST_MODE=1 bash "${PROJECT_ROOT}/deploy.sh" "${TEST_ROOT}/unsafe-link.tar.gz"
+) >"${TEST_ROOT}/unsafe-link.log" 2>&1; then
+    fail "部署脚本未拒绝指向发布目录外的符号链接"
+fi
+grep -q '发布包包含越界符号链接' "${TEST_ROOT}/unsafe-link.log" ||
+    fail "越界符号链接错误不清晰"
+
 mkdir -p "${TEST_ROOT}/production-rejection"
 if (
     cd "${TEST_ROOT}/production-rejection"
