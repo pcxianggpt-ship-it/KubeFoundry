@@ -113,7 +113,7 @@ public class JobService {
 
     public Job get(long jobId) {
         return jobs.findById(jobId)
-                .orElseThrow(() -> new IllegalArgumentException("任务不存在: " + jobId));
+                .orElseThrow(() -> new JobNotFoundException(jobId));
     }
 
     public List<JobStep> listSteps(long jobId) {

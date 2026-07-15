@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import io.kubefoundry.installer.PrecheckResult;
 import io.kubefoundry.installer.PrecheckResultRepository;
 import io.kubefoundry.job.Job;
+import io.kubefoundry.job.JobLogService;
 import io.kubefoundry.job.JobService;
 import io.kubefoundry.job.JobStep;
 import io.kubefoundry.job.JobStepNode;
@@ -19,10 +20,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class JobController {
 
     private final JobService jobs;
+    private final JobLogService logs;
     private final PrecheckResultRepository precheckResults;
 
-    public JobController(JobService jobs, PrecheckResultRepository precheckResults) {
+    public JobController(JobService jobs, JobLogService logs, PrecheckResultRepository precheckResults) {
         this.jobs = jobs;
+        this.logs = logs;
         this.precheckResults = precheckResults;
     }
 
@@ -47,6 +50,11 @@ public class JobController {
         jobs.get(jobId);
         return new Items<>(precheckResults.findByJobIdOrderByNodeIdAscIdAsc(jobId)
                 .stream().map(PrecheckResultResponse::from).toList());
+    }
+
+    @GetMapping("/{jobId}/logs")
+    public Items<JobLogService.LogEntry> logs(@PathVariable long jobId) {
+        return new Items<>(logs.list(jobId));
     }
 
     public record Items<T>(List<T> items) {

@@ -91,13 +91,6 @@ export function copyNodes(clusterId, nodeIds) {
   });
 }
 
-export function upsertSshCredentials(clusterId, data) {
-  return request(`/api/clusters/${clusterId}/ssh-credentials`, {
-    method: 'PUT',
-    body: JSON.stringify(data)
-  });
-}
-
 export function getSettings() {
   return request('/api/settings');
 }
@@ -148,17 +141,6 @@ export function getInstallPlan() {
   return request('/api/install-plan');
 }
 
-export function getClusterConfigYaml(clusterId) {
-  return request(`/api/clusters/${clusterId}/config-yaml`);
-}
-
-export function importClusterYaml(clusterId, content) {
-  return request(`/api/clusters/${clusterId}/import-yaml`, {
-    method: 'POST',
-    body: JSON.stringify({ content })
-  });
-}
-
 export function getJob(jobId) {
   return request(`/api/jobs/${jobId}`);
 }
@@ -173,12 +155,4 @@ export function getJobLogs(jobId) {
 
 export function getPrecheckResults(jobId) {
   return request(`/api/jobs/${jobId}/precheck-results`);
-}
-
-export function getJobStepNodeLog(itemId) {
-  return request(`/api/job-step-nodes/${itemId}/log`);
-}
-
-export function getJobConfigYaml(jobId) {
-  return request(`/api/jobs/${jobId}/config-yaml`);
 }

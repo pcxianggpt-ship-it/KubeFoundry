@@ -2,6 +2,7 @@ package io.kubefoundry.api;
 
 import io.kubefoundry.cluster.ClusterService.ResourceNotFoundException;
 import io.kubefoundry.job.JobQueueFullException;
+import io.kubefoundry.job.JobNotFoundException;
 import io.kubefoundry.installer.ActiveInstallerJobException;
 import io.kubefoundry.ssh.NodeTestService.ActiveNodeTestException;
 import java.util.Map;
@@ -18,6 +19,12 @@ public class ApiExceptionHandler {
     public ResponseEntity<Map<String, String>> notFound(ResourceNotFoundException exception) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(Map.of("code", exception.code(), "message", exception.getMessage()));
+    }
+
+    @ExceptionHandler(JobNotFoundException.class)
+    public ResponseEntity<Map<String, String>> jobNotFound(JobNotFoundException exception) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("code", "JOB_NOT_FOUND", "message", exception.getMessage()));
     }
 
     @ExceptionHandler({IllegalArgumentException.class, HttpMessageNotReadableException.class})

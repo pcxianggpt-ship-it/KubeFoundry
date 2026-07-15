@@ -125,7 +125,7 @@ public class EventService implements AutoCloseable {
 
     private Job requireJob(long jobId) {
         return jobs.findById(jobId)
-                .orElseThrow(() -> new IllegalArgumentException("任务不存在: " + jobId));
+                .orElseThrow(() -> new JobNotFoundException(jobId));
     }
 
     private Object lockFor(long jobId) {

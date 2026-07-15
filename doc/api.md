@@ -19,50 +19,69 @@
 
 ## Web Wizard API
 
-基础路径：`/api`
+v0.2.0 基础路径为 `/api`，后端实现为 Java 17 + Spring Boot。前端不再调用 Python 后端专有接口。
 
-核心接口：
+### 健康检查
 
-`POST /api/clusters` 保存集群时会按集群名称复用已有记录；同名集群已存在时更新并返回该集群，不再新增重复记录。
+| 方法 | 路径 | 成功响应 |
+|------|------|----------|
+| GET | `/api/health` | `200`，包含 `status=ok` 与 `version=0.2.0` |
 
-```text
-GET    /api/health
-GET    /api/clusters
-POST   /api/clusters
-GET    /api/clusters/{cluster_id}
-PUT    /api/clusters/{cluster_id}
-DELETE /api/clusters/{cluster_id}
-POST   /api/clusters/{cluster_id}/precheck
-POST   /api/clusters/{cluster_id}/install
-GET    /api/jobs/{job_id}
-GET    /api/jobs/{job_id}/steps
-GET    /api/jobs/{job_id}/events
-GET    /api/jobs/{job_id}/logs
-GET    /api/jobs/{job_id}/config-yaml
-GET    /api/jobs/{job_id}/config-snapshot
-```
+### 集群与节点
 
-创建安装任务：
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/clusters` | 返回 `{items: [...]}` |
+| POST | `/api/clusters` | 创建集群；同名时更新已有集群 |
+| GET | `/api/clusters/{cluster_id}` | 查询集群 |
+| PUT | `/api/clusters/{cluster_id}` | 更新集群 |
+| DELETE | `/api/clusters/{cluster_id}` | 删除集群及关联数据 |
+| GET | `/api/clusters/{cluster_id}/nodes` | 查询节点 |
+| POST | `/api/clusters/{cluster_id}/nodes` | 新增节点并加密保存登录密码 |
+| PUT | `/api/nodes/{node_id}` | 更新节点；空密码保留已有凭据 |
+| DELETE | `/api/nodes/{node_id}` | 删除节点 |
+| POST | `/api/clusters/{cluster_id}/nodes/copy` | 批量复制节点及加密凭据，副本为草稿 |
+| POST | `/api/clusters/{cluster_id}/node-test` | 创建全部节点免密测试任务 |
 
-```text
-POST /api/clusters/{cluster_id}/install
-202: 安装任务创建成功
-400: 配置、节点或安装介质校验失败
-409: 同一集群已有 pending/running 安装任务
-```
+节点响应仅返回 `has_password`，不返回密码、密文、IV 或私钥。节点测试通过密码首次连接，安装集群级 Ed25519 公钥，再用私钥验证免密登录。
 
-409 响应示例：
+### 设置、预检查与安装
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/settings` | 查询全局白名单设置 |
+| PUT | `/api/settings` | 更新全局白名单设置 |
+| GET | `/api/clusters/{cluster_id}/settings` | 查询合并后的集群设置 |
+| PUT | `/api/clusters/{cluster_id}/settings` | 更新集群覆盖设置 |
+| GET | `/api/install-plan` | 返回固定 14 步安装计划 |
+| POST | `/api/clusters/{cluster_id}/precheck` | 创建预检查任务，返回 `202` |
+| POST | `/api/clusters/{cluster_id}/install` | 创建安装任务，返回 `202` |
+
+预检查和安装要求节点免密测试成功且配置版本未过期。同一集群只能存在一个 `pending` 或 `running` 的预检查/安装任务；冲突返回 `409`、稳定错误码和现有 `job_id`。
+
+### 任务、SSE 与日志
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/jobs?cluster_id={cluster_id}` | 查询全部任务或指定集群任务 |
+| GET | `/api/jobs/{job_id}` | 查询任务快照 |
+| GET | `/api/jobs/{job_id}/steps` | 查询阶段和逐节点执行快照 |
+| GET | `/api/jobs/{job_id}/precheck-results` | 查询结构化预检查结果 |
+| GET | `/api/jobs/{job_id}/events` | SSE 事件流，支持 `Last-Event-ID` 续传 |
+| GET | `/api/jobs/{job_id}/logs` | 返回结构化、脱敏后的逐行日志 |
+
+日志读取只允许 `${KF_DATA_DIR}/jobs/{job_id}/logs/` 内的普通文件，拒绝目录越界和符号链接；单文件最多读取末尾 2 MiB、返回 2000 行。密码、口令、令牌、私钥等字段在响应前替换为 `[REDACTED]`。
+
+任务不存在统一返回：
 
 ```json
 {
-  "error": "cluster already has an active install job",
-  "job_id": 42
+  "code": "JOB_NOT_FOUND",
+  "message": "任务不存在: 42"
 }
 ```
 
-后端启动时会把遗留的 `pending` 或 `running` 任务标记为 `failed`，并在 `jobs.failure_reason` 中记录中断原因。
-
-安装计划最后一步为 `web-verify-cluster-health`，最多等待 5 分钟，检查节点 Ready、Flannel 和系统 Pod 状态。
+服务重启后，遗留的 `pending` 或 `running` 任务标记为 `interrupted`；页面通过任务快照恢复现场，再订阅 SSE。
 
 ---
 
