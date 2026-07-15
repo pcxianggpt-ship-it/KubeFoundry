@@ -90,4 +90,27 @@ if KF_DEPLOY_TEST_MODE=1 KF_TEST_HOST_ARCH=aarch64 bash "${PROJECT_ROOT}/deploy.
 fi
 grep -q '架构不匹配' "${TEST_ROOT}/mismatch.log" || fail "架构不匹配错误不清晰"
 
+mkdir -p "${TEST_ROOT}/tampered"
+tar -xzf "${PACKAGE}" -C "${TEST_ROOT}/tampered"
+printf 'tampered\n' >> "${TEST_ROOT}/tampered/kubefoundry-web-v0.2.0-x86_64/app/kubefoundry.jar"
+tar -czf "${TEST_ROOT}/tampered.tar.gz" -C "${TEST_ROOT}/tampered" \
+    kubefoundry-web-v0.2.0-x86_64
+if (
+    cd "${TEST_ROOT}/deployment"
+    KF_DEPLOY_TEST_MODE=1 bash "${PROJECT_ROOT}/deploy.sh" "${TEST_ROOT}/tampered.tar.gz"
+) >"${TEST_ROOT}/tampered.log" 2>&1; then
+    fail "部署脚本未拒绝校验和被篡改的发布包"
+fi
+grep -q '发布包文件校验失败' "${TEST_ROOT}/tampered.log" || fail "校验和失败错误不清晰"
+
+mkdir -p "${TEST_ROOT}/production-rejection"
+if (
+    cd "${TEST_ROOT}/production-rejection"
+    bash "${PROJECT_ROOT}/deploy.sh" "${PACKAGE}"
+) >"${TEST_ROOT}/test-runtime.log" 2>&1; then
+    fail "部署脚本允许测试运行时进入生产"
+fi
+grep -q '测试运行时不能用于生产部署' "${TEST_ROOT}/test-runtime.log" ||
+    fail "测试运行时拒绝错误不清晰"
+
 echo "Java Web 双架构打包部署脚本测试通过"

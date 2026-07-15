@@ -34,7 +34,7 @@
 
 **产出接口：** `GET /api/health` 返回 `{"status":"ok","version":"0.2.0"}`。
 
-- [ ] **步骤 1：先写失败的健康检查测试**
+- [x] **步骤 1：先写失败的健康检查测试**
 
 ```java
 @SpringBootTest
@@ -52,23 +52,23 @@ class HealthControllerTest {
 }
 ```
 
-- [ ] **步骤 2：运行测试并确认失败**
+- [x] **步骤 2：运行测试并确认失败**
 
 运行：`cd web/backend-java && mvn -q -Dtest=HealthControllerTest test`
 
 预期：FAIL，应用类或控制器尚不存在。
 
-- [ ] **步骤 3：创建最小 Spring Boot 应用和配置**
+- [x] **步骤 3：创建最小 Spring Boot 应用和配置**
 
 `pom.xml` 至少锁定 `spring-boot-starter-web`、`spring-boot-starter-validation`、`spring-boot-starter-test`，并通过 `<maven.compiler.release>17</maven.compiler.release>` 固定 Java 版本。`application.yml` 默认监听 `10001`，数据目录从 `KF_DATA_DIR` 读取。
 
-- [ ] **步骤 4：实现健康检查并运行全部 Java 测试**
+- [x] **步骤 4：实现健康检查并运行全部 Java 测试**
 
 运行：`cd web/backend-java && mvn test`
 
 预期：BUILD SUCCESS。
 
-- [ ] **步骤 5：提交**
+- [x] **步骤 5：提交**
 
 ```bash
 git add web/backend-java
@@ -86,7 +86,7 @@ git commit -m "后端：建立Java服务骨架与健康检查"
 
 **产出接口：** H2 文件库包含 `clusters`、`nodes`、`cluster_settings`、`ssh_keys`、`jobs`、`job_steps`、`job_step_nodes`、`events` 和 Flyway 历史表。
 
-- [ ] **步骤 1：写数据库迁移失败测试**
+- [x] **步骤 1：写数据库迁移失败测试**
 
 ```java
 @SpringBootTest(properties = "spring.datasource.url=jdbc:h2:mem:schema-test;MODE=PostgreSQL")
@@ -103,23 +103,23 @@ class SchemaMigrationTest {
 }
 ```
 
-- [ ] **步骤 2：运行测试并确认缺少表**
+- [x] **步骤 2：运行测试并确认缺少表**
 
 运行：`cd web/backend-java && mvn -q -Dtest=SchemaMigrationTest test`
 
 预期：FAIL，`CLUSTERS` 不存在。
 
-- [ ] **步骤 3：加入 H2、JPA、Flyway 并创建 V1 迁移**
+- [x] **步骤 3：加入 H2、JPA、Flyway 并创建 V1 迁移**
 
 字段状态使用 `varchar` 保存稳定英文枚举；所有表包含创建和更新时间；外键按集群、任务级联删除，日志文件本身不存入数据库。
 
-- [ ] **步骤 4：验证文件模式和内存测试模式**
+- [x] **步骤 4：验证文件模式和内存测试模式**
 
 运行：`cd web/backend-java && mvn test`
 
 预期：迁移测试通过，测试结束后不在仓库产生数据库文件。
 
-- [ ] **步骤 5：提交**
+- [x] **步骤 5：提交**
 
 ```bash
 git add web/backend-java
@@ -143,7 +143,7 @@ char[] decrypt(EncryptedCredential credential);
 SecretKey loadOrCreate(Path dataDir);
 ```
 
-- [ ] **步骤 1：写加密往返、随机 IV 和错误密钥测试**
+- [x] **步骤 1：写加密往返、随机 IV 和错误密钥测试**
 
 ```java
 @Test
@@ -157,21 +157,21 @@ void encryptsWithUniqueIvAndRejectsWrongKey() {
 }
 ```
 
-- [ ] **步骤 2：确认测试失败后实现 AES/GCM/NoPadding**
+- [x] **步骤 2：确认测试失败后实现 AES/GCM/NoPadding**
 
 主密钥为 256 位；IV 为 12 字节随机值；解密后的 `char[]` 使用后立即覆盖；异常不得包含明文或密文。
 
-- [ ] **步骤 3：实现 `data/secrets/master.key` 首次创建与权限检查**
+- [x] **步骤 3：实现 `data/secrets/master.key` 首次创建与权限检查**
 
 Linux 上创建后设置仅所有者读写权限；现有文件权限过宽时拒绝启动并输出中文修复建议。
 
-- [ ] **步骤 4：运行凭据测试和密钥文件测试**
+- [x] **步骤 4：运行凭据测试和密钥文件测试**
 
 运行：`cd web/backend-java && mvn -q -Dtest='*Credential*Test,*MasterKey*Test' test`
 
 预期：全部 PASS。
 
-- [ ] **步骤 5：提交**
+- [x] **步骤 5：提交**
 
 ```bash
 git add web/backend-java
@@ -193,15 +193,15 @@ git commit -m "安全：实现节点凭据加密与主密钥管理"
 
 **产出接口：** 保持设计文档中的集群、节点 CRUD 和 `/nodes/copy` 路径。
 
-- [ ] **步骤 1：写 API 契约测试**
+- [x] **步骤 1：写 API 契约测试**
 
 测试创建集群、添加节点、更新节点时保留空密码、API 只返回 `hasPassword`，以及复制节点后凭据存在但指纹、免密和测试状态清空。
 
-- [ ] **步骤 2：运行契约测试并确认 404 或 Bean 缺失**
+- [x] **步骤 2：运行契约测试并确认 404 或 Bean 缺失**
 
 运行：`cd web/backend-java && mvn -q -Dtest=ClusterNodeApiTest test`
 
-- [ ] **步骤 3：实现实体、仓储、DTO 和服务**
+- [x] **步骤 3：实现实体、仓储、DTO 和服务**
 
 控制器禁止直接返回 JPA 实体。复制方法固定签名：
 
@@ -211,13 +211,13 @@ public NodeResponse copyNode(long clusterId, long sourceNodeId)
 
 复制结果设置 `draft=true`、`testStatus=PENDING`，并清空主机绑定字段。
 
-- [ ] **步骤 4：运行测试并对照 v0.1.0 前端请求格式**
+- [x] **步骤 4：运行测试并对照 v0.1.0 前端请求格式**
 
 运行：`cd web/backend-java && mvn test`
 
 预期：API 测试通过，JSON 中不存在 `password`、`ciphertext`、`privateKey`。
 
-- [ ] **步骤 5：提交**
+- [x] **步骤 5：提交**
 
 ```bash
 git add web/backend-java
@@ -244,25 +244,25 @@ SshCommandResult execute(SshSession session, String command, Duration timeout);
 void upload(SshSession session, Path local, String remotePath);
 ```
 
-- [ ] **步骤 1：建立测试 SSH 服务器并写密码、公钥、命令和 SFTP 测试**
+- [x] **步骤 1：建立测试 SSH 服务器并写密码、公钥、命令和 SFTP 测试**
 
 测试服务只监听回环随机端口，不使用生产密码；同时验证超时和认证失败映射为稳定异常类型。
 
-- [ ] **步骤 2：运行测试确认实现缺失**
+- [x] **步骤 2：运行测试确认实现缺失**
 
 运行：`cd web/backend-java && mvn -q -Dtest=SshServiceTest test`
 
-- [ ] **步骤 3：加入 Apache MINA SSHD 并实现连接生命周期**
+- [x] **步骤 3：加入 Apache MINA SSHD 并实现连接生命周期**
 
 每次会话必须显式关闭；连接、认证、命令分别设置超时；标准输出和错误输出设置最大采集尺寸，超限写入日志文件。
 
-- [ ] **步骤 4：验证项目不调用系统 SSH 工具**
+- [x] **步骤 4：验证项目不调用系统 SSH 工具**
 
 运行：`rg -n "ProcessBuilder.*(ssh|scp|sshpass|expect)|Runtime.getRuntime" web/backend-java/src`
 
 预期：无匹配。
 
-- [ ] **步骤 5：运行全部测试并提交**
+- [x] **步骤 5：运行全部测试并提交**
 
 ```bash
 cd web/backend-java && mvn test
@@ -281,17 +281,17 @@ git commit -m "SSH：实现Java连接命令与文件传输"
 
 **产出接口：** 首次连接记录 SHA-256 指纹，后续变化抛出 `HostFingerprintChangedException`；每集群创建并复用 Ed25519 密钥对。
 
-- [ ] **步骤 1：写首次接受、重复接受、指纹变化拒绝测试**
-- [ ] **步骤 2：写 Ed25519 密钥创建、复用和私钥不明文落库测试**
-- [ ] **步骤 3：运行测试确认失败**
+- [x] **步骤 1：写首次接受、重复接受、指纹变化拒绝测试**
+- [x] **步骤 2：写 Ed25519 密钥创建、复用和私钥不明文落库测试**
+- [x] **步骤 3：运行测试确认失败**
 
 运行：`cd web/backend-java && mvn -q -Dtest='HostFingerprintVerifierTest,ClusterKeyServiceTest' test`
 
-- [ ] **步骤 4：实现指纹校验和密钥服务**
+- [x] **步骤 4：实现指纹校验和密钥服务**
 
 指纹变化错误消息包含节点名、旧指纹、新指纹和人工确认建议，不自动覆盖旧指纹。
 
-- [ ] **步骤 5：运行测试并提交**
+- [x] **步骤 5：运行测试并提交**
 
 ```bash
 cd web/backend-java && mvn test
@@ -313,17 +313,17 @@ git commit -m "SSH：实现主机指纹与集群密钥管理"
 
 **产出接口：** `submit(JobDefinition)` 返回任务 ID；SSE 支持最后事件 ID；应用启动时把遗留 `running` 任务改为 `interrupted`。
 
-- [ ] **步骤 1：写并发上限、部分失败汇总和启动中断恢复测试**
-- [ ] **步骤 2：写 SSE 顺序、断线续传和心跳测试**
-- [ ] **步骤 3：运行测试确认失败**
+- [x] **步骤 1：写并发上限、部分失败汇总和启动中断恢复测试**
+- [x] **步骤 2：写 SSE 顺序、断线续传和心跳测试**
+- [x] **步骤 3：运行测试确认失败**
 
 运行：`cd web/backend-java && mvn -q -Dtest='JobExecutorTest,JobEventApiTest' test`
 
-- [ ] **步骤 4：实现有界线程池和事务状态更新**
+- [x] **步骤 4：实现有界线程池和事务状态更新**
 
 默认工作线程 5，队列容量 100；拒绝新任务时返回中文“任务队列已满，请稍后重试”，不得静默丢弃。
 
-- [ ] **步骤 5：运行测试并提交**
+- [x] **步骤 5：运行测试并提交**
 
 ```bash
 cd web/backend-java && mvn test
@@ -343,20 +343,20 @@ git commit -m "任务：实现状态机并发执行与SSE事件"
 
 **产出接口：** `POST /api/clusters/{clusterId}/node-test` 和 `POST /api/nodes/{nodeId}/node-test`。
 
-- [ ] **步骤 1：写状态序列和幂等公钥写入测试**
+- [x] **步骤 1：写状态序列和幂等公钥写入测试**
 
 断言事件顺序为 `password_connecting -> key_installing -> key_verifying -> success`；重复测试不会重复写入同一公钥。
 
-- [ ] **步骤 2：写部分失败、只重试失败节点和日志脱敏测试**
-- [ ] **步骤 3：运行测试确认失败**
+- [x] **步骤 2：写部分失败、只重试失败节点和日志脱敏测试**
+- [x] **步骤 3：运行测试确认失败**
 
 运行：`cd web/backend-java && mvn -q -Dtest='NodeTestServiceTest,NodeTestApiTest' test`
 
-- [ ] **步骤 4：实现密码连接、公钥追加、私钥复连和环境探测**
+- [x] **步骤 4：实现密码连接、公钥追加、私钥复连和环境探测**
 
 环境探测返回主机名、`/etc/os-release` 和 `uname -m`；命令失败时保留具体节点和阶段，但不输出认证数据。
 
-- [ ] **步骤 5：运行全部测试和敏感词扫描后提交**
+- [x] **步骤 5：运行全部测试和敏感词扫描后提交**
 
 ```bash
 cd web/backend-java && mvn test
@@ -381,24 +381,24 @@ git commit -m "节点：实现Java免密配置与并发测试"
 
 **产出接口：** 生成与 v0.1.0 等价的步骤顺序、节点范围和 `runtime.env`，通过 SFTP 分发并远程执行现有脚本。
 
-- [ ] **步骤 1：把现有 Python 安装计划行为固化为 Java 测试样例**
+- [x] **步骤 1：把现有 Python 安装计划行为固化为 Java 测试样例**
 
 至少覆盖 `13-install-k8s-deps`、`16-install-containerd` 并发，以及控制面初始化和控制节点加入串行。
 
-- [ ] **步骤 2：写 Shell 安全转义和 runtime.env 渲染测试**
-- [ ] **步骤 3：运行测试确认失败**
+- [x] **步骤 2：写 Shell 安全转义和 runtime.env 渲染测试**
+- [x] **步骤 3：运行测试确认失败**
 
 运行：`cd web/backend-java && mvn -q -Dtest='InstallPlanFactoryTest,RemoteStepRunnerTest' test`
 
-- [ ] **步骤 4：实现最小安装闭环**
+- [x] **步骤 4：实现最小安装闭环**
 
 远端目录固定为 `/tmp/kubefoundry/{jobId}/`；执行命令固定采用 `bash -lc`；每节点日志写入 `data/jobs/{jobId}/logs/{stepKey}/{hostname}.log`。
 
-- [ ] **步骤 5：用本地假 SSH 服务验证步骤分发、退出码和失败汇总**
+- [x] **步骤 5：用本地假 SSH 服务验证步骤分发、退出码和失败汇总**
 
 运行：`cd web/backend-java && mvn test`
 
-- [ ] **步骤 6：提交**
+- [x] **步骤 6：提交**
 
 ```bash
 git add web/backend-java
@@ -421,19 +421,19 @@ git commit -m "安装：迁移预检查与Bash步骤编排"
 
 **产出接口：** 首页按状态直接跳转；集群空间显示五阶段流水线；路由状态可刷新恢复。
 
-- [ ] **步骤 1：写流水线中文阶段和状态入口测试**
+- [x] **步骤 1：写流水线中文阶段和状态入口测试**
 
 测试 `配置未完成 -> 继续配置`、`预检查通过 -> 开始安装`、`正在安装 -> 查看进度`、`失败 -> 查看失败原因`、`成功 -> 查看集群`。
 
-- [ ] **步骤 2：运行 Vitest 确认组件不存在**
+- [x] **步骤 2：运行 Vitest 确认组件不存在**
 
 运行：`cd web/frontend && npm test -- DeploymentPipeline.test.js ClusterListView.test.js`
 
-- [ ] **步骤 3：引入 Vue Router 并实现应用框架和流水线组件**
+- [x] **步骤 3：引入 Vue Router 并实现应用框架和流水线组件**
 
 流水线阶段固定使用 `cluster-info`、`nodes`、`settings`、`precheck`、`install`；可见标题使用中文。
 
-- [ ] **步骤 4：运行组件测试和生产构建**
+- [x] **步骤 4：运行组件测试和生产构建**
 
 ```bash
 cd web/frontend
@@ -443,7 +443,7 @@ npm run build
 
 预期：测试与构建通过，无控制台错误。
 
-- [ ] **步骤 5：提交**
+- [x] **步骤 5：提交**
 
 ```bash
 git add web/frontend
@@ -463,20 +463,20 @@ git commit -m "前端：建立流水线部署布局与首页入口"
 
 **产出接口：** 节点增删改复制、加密密码占位、测试全部节点、失败重试和逐节点中文状态。
 
-- [ ] **步骤 1：写复制密码语义和状态映射测试**
+- [x] **步骤 1：写复制密码语义和状态映射测试**
 
 编辑已有密码时空输入不发送 `password`；复制结果显示“密码已保存”；英文枚举映射为设计文档中的中文状态。
 
-- [ ] **步骤 2：写测试任务 SSE 更新表格状态测试**
-- [ ] **步骤 3：运行测试确认失败**
+- [x] **步骤 2：写测试任务 SSE 更新表格状态测试**
+- [x] **步骤 3：运行测试确认失败**
 
 运行：`cd web/frontend && npm test -- NodeConfigView.test.js`
 
-- [ ] **步骤 4：实现节点页面、编辑器和活动日志**
+- [x] **步骤 4：实现节点页面、编辑器和活动日志**
 
 主操作固定为“测试全部节点”；失败消息必须包含原因和“编辑节点”或“重试失败节点”入口。
 
-- [ ] **步骤 5：运行测试和构建后提交**
+- [x] **步骤 5：运行测试和构建后提交**
 
 ```bash
 cd web/frontend && npm test && npm run build
@@ -499,19 +499,19 @@ git commit -m "前端：实现节点配置与免密测试状态"
 
 **产出接口：** 预检查成功自动跳转，安装必须人工确认；执行页支持快照加载、SSE 更新和刷新恢复。
 
-- [ ] **步骤 1：写预检查成功跳转但不调用安装 API 的测试**
-- [ ] **步骤 2：写点击“开始安装”后进入 `/jobs/{jobId}/execution` 的测试**
-- [ ] **步骤 3：写刷新时先读快照再订阅 SSE 的测试**
-- [ ] **步骤 4：运行测试确认失败**
+- [x] **步骤 1：写预检查成功跳转但不调用安装 API 的测试**
+- [x] **步骤 2：写点击“开始安装”后进入 `/jobs/{jobId}/execution` 的测试**
+- [x] **步骤 3：写刷新时先读快照再订阅 SSE 的测试**
+- [x] **步骤 4：运行测试确认失败**
 
 运行：`cd web/frontend && npm test -- InstallFlow.test.js`
 
-- [ ] **步骤 5：实现确认页、执行页、节点状态和日志过滤**
-- [ ] **步骤 6：运行全部前端测试和构建**
+- [x] **步骤 5：实现确认页、执行页、节点状态和日志过滤**
+- [x] **步骤 6：运行全部前端测试和构建**
 
 运行：`cd web/frontend && npm test && npm run build`
 
-- [ ] **步骤 7：提交**
+- [x] **步骤 7：提交**
 
 ```bash
 git add web/frontend
@@ -530,8 +530,8 @@ git commit -m "前端：实现预检查跳转与安装执行页"
 
 **产出接口：** 前端不再依赖 Python 专有响应；健康、集群、节点、任务、SSE 和日志接口通过契约与冒烟测试。
 
-- [ ] **步骤 1：列出前端使用的全部 API 并写契约测试**
-- [ ] **步骤 2：启动 Java 后端和 Vite 代理执行冒烟测试**
+- [x] **步骤 1：列出前端使用的全部 API 并写契约测试**
+- [x] **步骤 2：启动 Java 后端和 Vite 代理执行冒烟测试**
 
 运行：
 
@@ -543,8 +543,8 @@ bash scripts/tests/test_java_web_smoke.sh
 
 预期：健康检查、创建集群、添加节点、任务查询和 SSE 均返回预期状态码。
 
-- [ ] **步骤 3：更新 API 文档和 v0.2.0 验收清单**
-- [ ] **步骤 4：运行 Java、前端和 Bash 测试**
+- [x] **步骤 3：更新 API 文档和 v0.2.0 验收清单**
+- [x] **步骤 4：运行 Java、前端和 Bash 测试**
 
 ```bash
 cd web/backend-java && mvn test
@@ -554,7 +554,7 @@ bash scripts/ci/check-lf.sh
 bash scripts/ci/check-secrets.sh
 ```
 
-- [ ] **步骤 5：提交**
+- [x] **步骤 5：提交**
 
 ```bash
 git add web/backend-java web/frontend scripts/tests doc/api.md doc/v0.2.0
@@ -574,7 +574,7 @@ git commit -m "测试：完成Java接口契约与Web闭环验收"
 
 **产出接口：** `dist/kubefoundry-web-v0.2.0-{x86_64|aarch64}.tar.gz`，包含精简 JRE、Java JAR、前端、脚本和校验文件。
 
-- [ ] **步骤 1：先修改打包测试声明目标结构**
+- [x] **步骤 1：先修改打包测试声明目标结构**
 
 归档必须包含：
 
@@ -588,21 +588,21 @@ VERSION
 SHA256SUMS
 ```
 
-- [ ] **步骤 2：运行测试确认仍输出 Python 包结构**
+- [x] **步骤 2：运行测试确认仍输出 Python 包结构**
 
 运行：`KF_PACKAGE_TEST_MODE=1 bash package.sh`
 
 预期：FAIL，缺少 Java 运行时和 JAR。
 
-- [ ] **步骤 3：实现 Maven 构建、前端构建、jlink 和按架构归档**
+- [x] **步骤 3：实现 Maven 构建、前端构建、jlink 和按架构归档**
 
 构建机显式指定 `KF_TARGET_ARCH=x86_64` 或 `KF_TARGET_ARCH=aarch64`；禁止将一个架构的 JRE 标记成另一个架构。
 
-- [ ] **步骤 4：修改部署脚本和 systemd 服务**
+- [x] **步骤 4：修改部署脚本和 systemd 服务**
 
 `ExecStart` 使用 `${APP_DIR}/runtime/bin/java -jar ${APP_DIR}/app/kubefoundry.jar`；环境变量至少包含 `KF_DATA_DIR`、`KF_LOG_DIR` 和监听端口；移除 Python 和 Gunicorn 检查。
 
-- [ ] **步骤 5：运行测试模式打包和部署测试**
+- [x] **步骤 5：运行测试模式打包和部署测试**
 
 ```bash
 KF_PACKAGE_TEST_MODE=1 KF_TARGET_ARCH=x86_64 bash package.sh
@@ -613,7 +613,7 @@ bash scripts/tests/test_web_package_deploy.sh
 
 每个架构执行部署、`GET /api/health`、H2 文件创建、SSH 测试服务器连接、前端加载和服务重启恢复。结果记录到验收清单，不用一个架构的结果代替另一个架构。
 
-- [ ] **步骤 7：更新部署文档并运行最终检查**
+- [x] **步骤 7：更新部署文档并运行最终检查**
 
 ```bash
 cd web/backend-java && mvn clean test package
@@ -623,7 +623,7 @@ bash scripts/ci/check-secrets.sh
 git diff --check
 ```
 
-- [ ] **步骤 8：提交**
+- [x] **步骤 8：提交**
 
 ```bash
 git add package.sh deploy.sh scripts README.md doc/v0.2.0

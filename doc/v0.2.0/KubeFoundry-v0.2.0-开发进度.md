@@ -171,4 +171,4 @@
 - Java 部署：systemd 直接启动包内 Java，配置 `KF_DATA_DIR`、`KF_LOG_DIR`、`KF_WEB_DIR` 和监听端口，目标机不依赖 Python、Gunicorn、Node.js 或 `sshpass`。
 - 数据保护：升级替换程序和步骤脚本，保留 H2、主密钥、SSH 私钥、任务数据与日志；数据和日志目录权限设为 `0700`。
 - 前端托管：Spring Boot 读取外部 `web/` 目录，并为集群、安装确认和任务执行路由提供刷新回退。
-- 验证：Java 137 项测试、前端 38 项测试、双架构脚本测试和 x86_64 发布包运行时冒烟通过；x86-64 与 ARM aarch64 ELF 已分别核验。Kylin systemd/SSH 因两台服务器网络不可达待补，ARM64 实机待提供。
+- 验证：Java 137 项测试、前端 38 项测试、双架构脚本测试和 x86_64 发布包运行时冒烟通过；x86-64 与 ARM aarch64 ELF 已分别核验。部署负向测试覆盖架构不匹配、包内文件篡改和测试运行时误入生产。Kylin systemd/SSH 因两台服务器网络不可达待补，ARM64 实机待提供。
