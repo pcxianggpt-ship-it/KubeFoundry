@@ -57,8 +57,11 @@ public final class SshService {
             throw new IllegalArgumentException("远端路径不能为空");
         }
         try (SftpClient sftp = SftpClientFactory.instance().createSftpClient(session.delegate())) {
-            requireSafeRemoteFileTarget(sftp, remotePath);
-            sftp.put(local, remotePath);
+            String normalizedRemote = normalizeRemoteFile(remotePath);
+            int separator = normalizedRemote.lastIndexOf('/');
+            if (separator > 0) ensureRemoteDirectory(sftp, normalizedRemote.substring(0, separator));
+            requireSafeRemoteFileTarget(sftp, normalizedRemote);
+            sftp.put(local, normalizedRemote);
         }
     }
 
@@ -145,6 +148,14 @@ public final class SshService {
         return "/" + String.join("/", segments);
     }
 
+    private static String normalizeRemoteFile(String remotePath) {
+        if (remotePath.endsWith("/") || remotePath.endsWith("\\")) {
+            throw new IllegalArgumentException("远端文件路径不能为空");
+        }
+        String normalized = normalizeRemoteDirectory(remotePath);
+        return normalized;
+    }
+
     private static String remotePathFor(Path root, Path path, String remoteRoot) {
         Path relative = root.relativize(path.toAbsolutePath().normalize());
         if (relative.getNameCount() == 0) return remoteRoot;
@@ -164,10 +175,16 @@ public final class SshService {
             try {
                 attributes = sftp.lstat(current);
             } catch (SftpException exception) {
+                if (exception.getStatus() != SftpConstants.SSH_FX_NO_SUCH_FILE
+                        && exception.getStatus() != SftpConstants.SSH_FX_NO_SUCH_PATH) {
+                    throw exception;
+                }
                 try {
                     sftp.mkdir(current);
                 } catch (SftpException mkdirException) {
-                    attributes = sftp.lstat(current);
+                    if (mkdirException.getStatus() != SftpConstants.SSH_FX_FILE_ALREADY_EXISTS) {
+                        throw mkdirException;
+                    }
                 }
                 attributes = sftp.lstat(current);
             }

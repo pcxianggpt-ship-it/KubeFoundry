@@ -3,6 +3,7 @@ package io.kubefoundry.ssh;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -138,6 +139,26 @@ class SshServiceTest {
     }
 
     @Test
+    void rejectsParentRemoteSymlinkForSingleFileUpload() throws Exception {
+        Path local = Files.writeString(
+                temporaryDirectory.resolve("parent-symlink-source.txt"),
+                "replacement",
+                StandardCharsets.UTF_8);
+        Path remoteParent = Files.createDirectory(remoteRoot.resolve("safe-upload"));
+        Path outside = Files.createDirectory(remoteRoot.resolve("outside-upload"));
+        createSymbolicLinkOrSkip(remoteParent.resolve("redirect"), Path.of("../outside-upload"));
+
+        try (SshSession session = clients.connectWithPassword(spec(), "secret".toCharArray())) {
+            assertThatThrownBy(() -> service.upload(
+                    session, local, "/safe-upload/redirect/payload.txt"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("远端目录");
+        }
+
+        assertThat(outside.resolve("payload.txt")).doesNotExist();
+    }
+
+    @Test
     void uploadsDirectoryTreeOverSftpIncludingEmptyDirectories() throws Exception {
         Path local = Files.createDirectory(temporaryDirectory.resolve("payload"));
         Files.createDirectories(local.resolve("bin/tools"));
@@ -243,7 +264,8 @@ class SshServiceTest {
                     .hasMessageContaining("远端目录");
         }
 
-        assertThat(remoteParent.resolve("nested/payload.txt")).doesNotExist();
+        assertThat(Files.exists(
+                remoteParent.resolve("nested/payload.txt"), LinkOption.NOFOLLOW_LINKS)).isFalse();
     }
 
     @Test

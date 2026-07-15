@@ -5,6 +5,7 @@ import io.kubefoundry.cluster.Node;
 import java.nio.file.Path;
 import java.nio.file.Files;
 import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -17,7 +18,12 @@ class InstallPlanFactoryTest {
     @TempDir
     Path temporaryDirectory;
 
-    private final InstallPlanFactory factory = new InstallPlanFactory(Path.of("D:/repo"));
+    private InstallPlanFactory factory;
+
+    @BeforeEach
+    void createFactory() {
+        factory = new InstallPlanFactory(temporaryDirectory);
+    }
 
     @Test
     void mapsAllFourteenPythonStepsInOrder() {
@@ -67,7 +73,8 @@ class InstallPlanFactoryTest {
         InstallPlan plan = factory.create();
 
         assertThat(plan.require("10-setup-yum-source").script())
-                .isEqualTo(Path.of("D:/repo/scripts/steps/phase2_k8s_base/10-setup-yum-source.sh"));
+                .isEqualTo(temporaryDirectory.resolve(
+                        "scripts/steps/phase2_k8s_base/10-setup-yum-source.sh"));
         assertThat(plan.require("10-setup-yum-source").resources())
                 .containsExactly(new InstallStep.Resource(
                         "repo_source", null, "file", "/tmp/k8s/k8s-repo-source.tar.gz"));

@@ -62,6 +62,9 @@ class MasterKeyProviderTest {
         Files.createDirectories(keyFile.getParent());
         Files.setPosixFilePermissions(keyFile.getParent(), OWNER_READ_WRITE_EXECUTE);
         Files.writeString(keyFile, Base64.getEncoder().encodeToString(new byte[31]));
+        Files.setPosixFilePermissions(keyFile, Set.of(
+                PosixFilePermission.OWNER_READ,
+                PosixFilePermission.OWNER_WRITE));
         MasterKeyProvider provider = new MasterKeyProvider();
 
         assertThatThrownBy(() -> provider.loadOrCreate(temporaryDirectory))
