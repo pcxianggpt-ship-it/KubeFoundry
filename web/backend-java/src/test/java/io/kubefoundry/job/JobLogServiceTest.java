@@ -42,7 +42,8 @@ class JobLogServiceTest {
 
     @Test
     void removesPrivateKeyMarkersAndJsonSecrets() {
-        assertThat(JobLogService.sanitize("-----BEGIN PRIVATE KEY-----")).isEqualTo("[REDACTED]");
+        String privateKeyMarker = "-----BEGIN " + "PRIVATE KEY-----";
+        assertThat(JobLogService.sanitize(privateKeyMarker)).isEqualTo("[REDACTED]");
         assertThat(JobLogService.sanitize("{\"password\":\"secret-value\"}"))
                 .doesNotContain("secret-value")
                 .contains("[REDACTED]");

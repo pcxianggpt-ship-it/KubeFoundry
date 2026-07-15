@@ -1,8 +1,8 @@
 # KubeFoundry
 
-K8S 集群一键安装工具 - 基于 Bash 脚本，支持高可用集群部署。
+K8S 集群一键安装工具，支持通过网页流水线完成高可用集群部署。
 
-项目同时提供 Web Wizard v0.1.0：使用 Flask、SQLite、Vue 3 和现有 Bash step 脚本完成可视化预检查、安装编排、实时日志与失败定位。
+Web Wizard v0.2.0 使用 Java 17、Spring Boot、H2 和 Vue 3，复用现有 Bash step 脚本完成节点免密、预检查、并发安装、实时日志与失败定位。目标服务器使用包内 Java 运行时，不要求安装 Java、Python、Node.js 或 `sshpass`。
 
 ## 功能特性
 
@@ -36,31 +36,36 @@ K8S 集群一键安装工具 - 基于 Bash 脚本，支持高可用集群部署�
 在可联网的构建机上执行：
 
 ```bash
-bash package.sh
+KF_TARGET_ARCH=x86_64 KF_JAVA_HOME=/opt/jdk-17 bash package.sh
+# x86_64 主机交叉构建 ARM64，目标 JDK 必须是真实 ARM64 JDK 17
+KF_TARGET_ARCH=aarch64 KF_JAVA_HOME=/opt/jdk-17-x86_64 \
+  KF_TARGET_JDK_HOME=/opt/jdk-17-aarch64 bash package.sh
 ```
 
-脚本会完成前端测试与构建，收集后端源码和纯 Python 依赖，并生成：
+脚本会运行 Java 与前端测试、构建 JAR，并通过 `jlink` 生成当前架构的精简 Java 17 运行时：
 
 ```text
-dist/kubefoundry-web-v0.1.0.tar.gz
+dist/kubefoundry-web-v0.2.0-x86_64.tar.gz
+dist/kubefoundry-web-v0.2.0-aarch64.tar.gz
 ```
 
-将压缩包和 `deploy.sh` 复制到目标 Linux 服务器，在计划安装目录中执行：
+将匹配服务器架构的压缩包复制到目标 Linux 服务器，在计划安装目录中执行：
 
 ```bash
-sudo bash deploy.sh dist/kubefoundry-web-v0.1.0.tar.gz
+tar -xzf kubefoundry-web-v0.2.0-x86_64.tar.gz
+cp kubefoundry-web-v0.2.0-x86_64/deploy.sh .
+sudo bash deploy.sh kubefoundry-web-v0.2.0-x86_64.tar.gz
 ```
 
-服务默认监听 `10001`，应用安装在当前目录的 `app`，数据库位于当前目录的 `data`，日志位于当前目录的 `logs`。目标服务器只需提供 Python 3.7 或更高版本，无需安装 Node.js，也无需连接互联网。
+也可以把发布包内的 `deploy.sh` 与压缩包放到独立部署目录后执行。服务默认监听 `10001`，程序位于当前目录的 `app`，H2 数据、主密钥和任务数据位于 `data`，日志位于 `logs`。重复部署保留 `data` 和 `logs`。完整说明见 [v0.2.0 部署手册](doc/v0.2.0/KubeFoundry-v0.2.0-部署手册.md)。
 
 ### Web Wizard
 
-后端要求 Python 3.7：
+后端开发环境要求 JDK 17 和 Maven：
 
 ```bash
-cd web/backend
-python3 -m pip install -r requirements.txt
-python3 app.py
+cd web/backend-java
+mvn spring-boot:run
 ```
 
 前端要求 Node.js 18+：
@@ -71,7 +76,7 @@ npm ci
 npm run dev
 ```
 
-v0.1.0 Web Wizard 固定离线安装，节点配置页录入 `root` 密码并通过“测试全部节点”生成集群 SSH 密钥、分发公钥和识别系统信息；后续预检查与安装使用集群私钥。安装范围为 Kubernetes Phase 2、Flannel 和最终健康检查。安装介质必须位于运行后端的 Linux 管理节点本地。详细说明见 `doc/v0.1.0/web-wizard-v0.1.0-usage.md`。
+v0.2.0 节点配置页录入密码并加密保存；“测试全部节点”由 Java SSH 实现首次连接、分发 Ed25519 公钥并验证免密。后续预检查和安装使用集群私钥，不依赖系统 `sshpass`。安装介质必须位于运行后端的 Linux 管理节点本地。
 
 ### 1. 克隆项目
 

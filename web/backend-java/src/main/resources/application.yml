@@ -9,6 +9,9 @@ kubefoundry:
     heartbeat-ms: ${KF_SSE_HEARTBEAT_MS:15000}
 
 spring:
+  web:
+    resources:
+      static-locations: file:${KF_WEB_DIR:web}/,classpath:/static/
   datasource:
     url: jdbc:h2:file:${KF_DATA_DIR:data}/kubefoundry;MODE=PostgreSQL
     username: sa
@@ -20,3 +23,7 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+
+logging:
+  file:
+    name: ${KF_LOG_DIR:logs}/kubefoundry.log

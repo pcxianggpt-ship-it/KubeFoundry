@@ -4,10 +4,10 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TEST_ROOT="$(mktemp -d)"
+DIST_DIR="${TEST_ROOT}/dist"
 
 cleanup() {
     rm -rf "${TEST_ROOT}"
-    rm -rf "${PROJECT_ROOT}/dist"
 }
 trap cleanup EXIT
 
@@ -16,97 +16,78 @@ fail() {
     exit 1
 }
 
-[ -f "${PROJECT_ROOT}/package.sh" ] || fail "package.sh 不存在"
-[ -f "${PROJECT_ROOT}/deploy.sh" ] || fail "deploy.sh 不存在"
-
-grep -q 'KF_PACKAGE_BASH_REEXEC' "${PROJECT_ROOT}/package.sh" ||
-    fail "package.sh 缺少 sh 到 Bash 的兼容切换"
-grep -q 'KF_DEPLOY_BASH_REEXEC' "${PROJECT_ROOT}/deploy.sh" ||
-    fail "deploy.sh 缺少 sh 到 Bash 的兼容切换"
-if grep -q '< <(' "${PROJECT_ROOT}/deploy.sh"; then
-    fail "deploy.sh 仍包含易被 sh 误解析的进程替换"
-fi
-if grep -q '\[\[' "${PROJECT_ROOT}/deploy.sh"; then
-    fail "deploy.sh 仍包含易被 sh 误解析的双中括号"
-fi
-
-for requirement in \
-    "Jinja2==3.1.2" \
-    "itsdangerous==2.1.2" \
-    "click==8.1.7" \
-    "MarkupSafe==2.1.5" \
-    "importlib-metadata==6.7.0" \
-    "zipp==3.15.0" \
-    "packaging==23.2" \
-    "typing_extensions==4.7.1" \
-    "pyaes==1.6.1"; do
-    grep -qx "${requirement}" "${PROJECT_ROOT}/web/backend/requirements.txt" ||
-        fail "缺少 Python 3.7 兼容依赖锁定: ${requirement}"
+for file in package.sh deploy.sh scripts/build/build-jre.sh; do
+    [ -f "${PROJECT_ROOT}/${file}" ] || fail "缺少 ${file}"
 done
 
-bash "${PROJECT_ROOT}/package.sh" --help | grep -q "kubefoundry-web-v" ||
-    fail "package.sh 帮助信息缺少发布包名称"
-bash "${PROJECT_ROOT}/deploy.sh" --help | grep -q -- "--port PORT" ||
-    fail "deploy.sh 帮助信息缺少端口参数"
-bash "${PROJECT_ROOT}/deploy.sh" --help | grep -q "10001" ||
-    fail "deploy.sh 默认端口不是 10001"
-sh "${PROJECT_ROOT}/package.sh" --help | grep -q "kubefoundry-web-v" ||
-    fail "package.sh 不支持通过 sh 启动"
-sh "${PROJECT_ROOT}/deploy.sh" --help | grep -q -- "--port PORT" ||
-    fail "deploy.sh 不支持通过 sh 启动"
-if sh "${PROJECT_ROOT}/deploy.sh" 2>&1 | grep -q "syntax error"; then
-    fail "deploy.sh 无参数通过 sh 启动时仍出现语法错误"
+grep -q 'KF_PACKAGE_BASH_REEXEC' "${PROJECT_ROOT}/package.sh" || fail "package.sh 缺少 Bash 兼容切换"
+grep -q 'KF_DEPLOY_BASH_REEXEC' "${PROJECT_ROOT}/deploy.sh" || fail "deploy.sh 缺少 Bash 兼容切换"
+if grep -Eqi 'python|gunicorn|production_wsgi' "${PROJECT_ROOT}/package.sh" "${PROJECT_ROOT}/deploy.sh"; then
+    fail "Java 发布脚本仍包含 Python 或 Gunicorn"
 fi
 
-KF_PACKAGE_TEST_MODE=1 bash "${PROJECT_ROOT}/package.sh"
-PACKAGE="${PROJECT_ROOT}/dist/kubefoundry-web-v0.1.0.tar.gz"
-[ -f "${PACKAGE}" ] || fail "测试发布包未生成"
+bash "${PROJECT_ROOT}/package.sh" --help | grep -Fq 'v0.2.0-{x86_64|aarch64}' ||
+    fail "打包帮助缺少双架构包名"
+bash "${PROJECT_ROOT}/deploy.sh" --help | grep -q -- '--port PORT' || fail "部署帮助缺少端口参数"
+sh "${PROJECT_ROOT}/package.sh" --help >/dev/null || fail "package.sh 不支持 sh 启动"
+sh "${PROJECT_ROOT}/deploy.sh" --help >/dev/null || fail "deploy.sh 不支持 sh 启动"
 
-package_list="$(tar -tzf "${PACKAGE}")"
-for expected in \
-    "kubefoundry-web-v0.1.0/deploy.sh" \
-    "kubefoundry-web-v0.1.0/backend/app.py" \
-    "kubefoundry-web-v0.1.0/frontend-dist/index.html" \
-    "kubefoundry-web-v0.1.0/vendor/.keep" \
-    "kubefoundry-web-v0.1.0/requirements.txt" \
-    "kubefoundry-web-v0.1.0/VERSION" \
-    "kubefoundry-web-v0.1.0/SHA256SUMS"; do
-    grep -q "${expected}" <<< "${package_list}" ||
-        fail "发布包缺少 ${expected}"
+for arch in x86_64 aarch64; do
+    KF_PACKAGE_TEST_MODE=1 KF_TARGET_ARCH="${arch}" KF_DIST_DIR="${DIST_DIR}" \
+        bash "${PROJECT_ROOT}/package.sh"
+    package="${DIST_DIR}/kubefoundry-web-v0.2.0-${arch}.tar.gz"
+    [ -f "${package}" ] || fail "未生成 ${arch} 测试包"
+
+    package_list="$(tar -tzf "${package}")"
+    prefix="kubefoundry-web-v0.2.0-${arch}"
+    for expected in \
+        "${prefix}/runtime/bin/java" \
+        "${prefix}/runtime/.architecture" \
+        "${prefix}/app/kubefoundry.jar" \
+        "${prefix}/web/index.html" \
+        "${prefix}/scripts/steps/" \
+        "${prefix}/deploy.sh" \
+        "${prefix}/VERSION" \
+        "${prefix}/ARCHITECTURE" \
+        "${prefix}/SHA256SUMS"; do
+        grep -Fq "${expected}" <<< "${package_list}" || fail "${arch} 包缺少 ${expected}"
+    done
+
+    mkdir -p "${TEST_ROOT}/inspect-${arch}"
+    tar -xzf "${package}" -C "${TEST_ROOT}/inspect-${arch}"
+    release="${TEST_ROOT}/inspect-${arch}/${prefix}"
+    [ "$(cat "${release}/ARCHITECTURE")" = "${arch}" ] || fail "包架构文件错误"
+    [ "$(cat "${release}/runtime/.architecture")" = "${arch}" ] || fail "运行时架构错误"
+    (cd "${release}" && sha256sum -c SHA256SUMS >/dev/null) || fail "包内校验和错误"
 done
 
+PACKAGE="${DIST_DIR}/kubefoundry-web-v0.2.0-x86_64.tar.gz"
 mkdir -p "${TEST_ROOT}/deployment/data"
-echo "keep" > "${TEST_ROOT}/deployment/data/keep.txt"
+printf 'keep\n' > "${TEST_ROOT}/deployment/data/keep.txt"
 (
     cd "${TEST_ROOT}/deployment"
     KF_DEPLOY_TEST_MODE=1 bash "${PROJECT_ROOT}/deploy.sh" --port 11001 "${PACKAGE}"
 )
 
-[ -f "${TEST_ROOT}/deployment/data/keep.txt" ] ||
-    fail "重复部署删除了 data 目录"
-[ -f "${TEST_ROOT}/deployment/app/backend/production_wsgi.py" ] ||
-    fail "未生成生产 WSGI 入口"
+[ -f "${TEST_ROOT}/deployment/data/keep.txt" ] || fail "重复部署删除了 data 目录"
+[ -x "${TEST_ROOT}/deployment/app/runtime/bin/java" ] || fail "运行时 Java 不可执行"
+[ -f "${TEST_ROOT}/deployment/app/app/kubefoundry.jar" ] || fail "未安装 Java JAR"
+[ -f "${TEST_ROOT}/deployment/app/web/index.html" ] || fail "未安装前端"
+[ -d "${TEST_ROOT}/deployment/scripts/steps" ] || fail "未安装步骤脚本"
 
 SERVICE_FILE="${TEST_ROOT}/deployment/logs/kubefoundry-web.service.test"
 [ -f "${SERVICE_FILE}" ] || fail "测试 service 文件未生成"
-grep -q "WorkingDirectory=${TEST_ROOT}/deployment/app/backend" "${SERVICE_FILE}" ||
-    fail "service 工作目录不正确"
-grep -q "KF_DB_PATH=${TEST_ROOT}/deployment/data/kubefoundry.db" "${SERVICE_FILE}" ||
-    fail "service 数据库路径不正确"
-grep -q "0.0.0.0:11001" "${SERVICE_FILE}" ||
-    fail "service 自定义端口不正确"
-grep -q 'tail -n 100 "${LOG_DIR}/error.log"' "${PROJECT_ROOT}/deploy.sh" ||
-    fail "deploy.sh 健康检查失败时未输出 Gunicorn 错误日志"
-grep -q 'journalctl -u "${SERVICE_NAME}" -n 100 --no-pager' "${PROJECT_ROOT}/deploy.sh" ||
-    fail "deploy.sh 健康检查失败时未输出 systemd 日志"
+grep -Fq "WorkingDirectory=${TEST_ROOT}/deployment/app" "${SERVICE_FILE}" || fail "工作目录错误"
+grep -Fq "Environment=KF_DATA_DIR=${TEST_ROOT}/deployment/data" "${SERVICE_FILE}" || fail "数据目录错误"
+grep -Fq "Environment=KF_LOG_DIR=${TEST_ROOT}/deployment/logs" "${SERVICE_FILE}" || fail "日志目录错误"
+grep -Fq "Environment=KF_WEB_DIR=${TEST_ROOT}/deployment/app/web" "${SERVICE_FILE}" || fail "前端目录错误"
+grep -Fq -- "--server.port=11001" "${SERVICE_FILE}" || fail "自定义端口错误"
+grep -Fq '/runtime/bin/java -jar ' "${SERVICE_FILE}" || fail "服务未使用包内 Java"
 
-grep -q "bash package.sh" "${PROJECT_ROOT}/README.md" ||
-    fail "README 缺少一键打包命令"
-grep -q "sudo bash deploy.sh" "${PROJECT_ROOT}/README.md" ||
-    fail "README 缺少一键部署命令"
-grep -q "10001" "${PROJECT_ROOT}/doc/v0.1.0/web-wizard-v0.1.0-usage.md" ||
-    fail "使用说明缺少生产端口"
-grep -q '${PWD}/data' "${PROJECT_ROOT}/doc/v0.1.0/web-wizard-v0.1.0-usage.md" ||
-    fail "使用说明缺少数据目录"
+if KF_DEPLOY_TEST_MODE=1 KF_TEST_HOST_ARCH=aarch64 bash "${PROJECT_ROOT}/deploy.sh" "${PACKAGE}" \
+    >"${TEST_ROOT}/mismatch.log" 2>&1; then
+    fail "部署脚本未拒绝架构不匹配的发布包"
+fi
+grep -q '架构不匹配' "${TEST_ROOT}/mismatch.log" || fail "架构不匹配错误不清晰"
 
-echo "Web 打包部署脚本测试通过"
+echo "Java Web 双架构打包部署脚本测试通过"
