@@ -192,11 +192,13 @@ public class JobService {
             }
             job.markSuccess();
             jobs.saveAndFlush(job);
+            updateInstallStatus(job, true);
             events.publish(jobId, "job.status", Map.of("status", "success"));
         } catch (RuntimeException exception) {
             failRunningStepsAndNodes(jobId, stableMessage(exception));
             job.markFailed();
             jobs.saveAndFlush(job);
+            updateInstallStatus(job, false);
             events.publish(jobId, "job.status", Map.of("status", "failed"));
         }
     }
@@ -209,7 +211,16 @@ public class JobService {
                 "step_id", step.getId(), "status", "failed"));
         job.markFailed();
         jobs.saveAndFlush(job);
+        updateInstallStatus(job, false);
         events.publish(jobId, "job.status", Map.of("status", "failed"));
+    }
+
+    private void updateInstallStatus(Job job, boolean success) {
+        if (!"install".equals(job.getType())) return;
+        clusters.findById(job.getCluster().getId()).ifPresent(cluster -> {
+            cluster.markInstallationFinished(success);
+            clusters.saveAndFlush(cluster);
+        });
     }
 
     private void failRunningStepsAndNodes(long jobId, String message) {

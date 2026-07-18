@@ -154,6 +154,7 @@ async function loadClusters() {
 }
 
 async function enrichClusterStatus(cluster) {
+  if (cluster.configuration_locked === false) return cluster;
   try {
     const jobs = normalizeList(await listJobs(cluster.id))
       .slice()
@@ -242,11 +243,11 @@ function presentation(cluster) {
   }
   if (['installed', 'success'].includes(status)) {
     return {
-      actionText: '查看集群',
+      actionText: '查看执行记录',
       icon: CircleCheckFilled,
       statusText: '安装成功',
       tone: 'success',
-      to: fixedWorkspaceRoute(cluster, 'cluster-info')
+      to: jobRoute(cluster)
     };
   }
   return {

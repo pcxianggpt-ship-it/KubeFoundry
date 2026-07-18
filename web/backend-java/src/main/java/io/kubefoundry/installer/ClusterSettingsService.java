@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.kubefoundry.cluster.Cluster;
 import io.kubefoundry.cluster.ClusterRepository;
+import io.kubefoundry.cluster.ClusterService.ClusterConfigurationLockedException;
 import io.kubefoundry.cluster.ClusterService.ResourceNotFoundException;
 import io.kubefoundry.cluster.Node;
 import java.util.LinkedHashMap;
@@ -55,6 +56,9 @@ public class ClusterSettingsService {
     @Transactional
     public Map<String, Object> updateClusterSettings(long clusterId, Map<String, Object> incoming) {
         Cluster cluster = requireCluster(clusterId);
+        if (cluster.isInstallationLocked()) {
+            throw new ClusterConfigurationLockedException("安装任务已开始，重置集群后才能修改安装配置");
+        }
         if (incoming == null) return mergedSettings(clusterId);
         validateIncoming(incoming);
         for (Map.Entry<String, Object> entry : incoming.entrySet()) {

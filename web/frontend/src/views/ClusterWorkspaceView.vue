@@ -13,6 +13,14 @@
         <component :is="statusPresentation.icon" aria-hidden="true" />
         {{ statusPresentation.text }}
       </span>
+      <el-button
+        v-if="configurationLocked"
+        data-testid="reset-cluster"
+        type="danger"
+        plain
+        :loading="resetting"
+        @click="reset"
+      >重置集群</el-button>
     </header>
 
     <section v-if="loading" class="workspace-loading" aria-busy="true" aria-label="正在加载集群工作区">
@@ -33,6 +41,7 @@
         :cluster-id="cluster.id"
         :active-stage="activeStage"
         :stage-states="stageStates"
+        :install-job-id="latestInstallJobId"
       />
 
       <section class="stage-content" data-testid="stage-content">
@@ -40,18 +49,21 @@
           v-if="activeStage === 'cluster-info'"
           :cluster="cluster"
           :saving="savingCluster"
+          :locked="configurationLocked"
           @save="saveCluster"
         />
 
         <NodeConfigView
           v-else-if="activeStage === 'nodes'"
           :cluster-id="cluster.id"
+          :locked="configurationLocked"
           @cluster-updated="refreshCluster"
         />
 
         <InstallSettingsStage
           v-else-if="activeStage === 'settings'"
           :cluster-id="cluster.id"
+          :locked="configurationLocked"
         />
 
         <PrecheckView v-else-if="activeStage === 'precheck'" :cluster-id="cluster.id" />
@@ -80,13 +92,14 @@ import {
   Refresh,
   WarningFilled
 } from '@element-plus/icons-vue';
+import { ElMessage, ElMessageBox } from 'element-plus';
 
 import DeploymentPipeline from '../components/deployment/DeploymentPipeline.vue';
 import ClusterInfoStage from '../components/deployment/ClusterInfoStage.vue';
 import InstallSettingsStage from '../components/deployment/InstallSettingsStage.vue';
 import NodeConfigView from './NodeConfigView.vue';
 import PrecheckView from './PrecheckView.vue';
-import { createCluster, getCluster, updateCluster } from '../api/client';
+import { createCluster, getCluster, listJobs, resetCluster, updateCluster } from '../api/client';
 import { safeErrorMessage } from '../utils/redaction';
 
 const route = useRoute();
@@ -94,12 +107,22 @@ const router = useRouter();
 const cluster = ref(null);
 const loading = ref(true);
 const savingCluster = ref(false);
+const resetting = ref(false);
 const errorMessage = ref('');
+const jobs = ref([]);
 let loadSequence = 0;
 
 const activeStage = computed(() => route.params.stage || 'cluster-info');
 
+const latestInstall = computed(() => jobs.value.find((job) => job.job_type === 'install') || null);
+const configurationLocked = computed(() => Boolean(cluster.value?.configuration_locked));
+const latestInstallJobId = computed(() => configurationLocked.value ? latestInstall.value?.id ?? null : null);
 const effectiveStatus = computed(() => {
+  if (!configurationLocked.value) return cluster.value?.status || 'draft';
+  const install = latestInstall.value;
+  if (install?.status === 'success') return 'installed';
+  if (['failed', 'interrupted', 'canceled'].includes(install?.status)) return 'install_failed';
+  if (['pending', 'running'].includes(install?.status)) return 'installing';
   return cluster.value?.status || 'draft';
 });
 
@@ -215,10 +238,15 @@ async function loadWorkspace() {
         registry_ip: '',
         registry_port: 5000
       };
+      jobs.value = [];
       return;
     }
     const loadedCluster = await getCluster(clusterId);
-    if (sequence === loadSequence) cluster.value = loadedCluster?.data || loadedCluster;
+    const jobPayload = await listJobs(clusterId);
+    if (sequence === loadSequence) {
+      cluster.value = loadedCluster?.data || loadedCluster;
+      jobs.value = Array.isArray(jobPayload) ? jobPayload : jobPayload?.items || [];
+    }
   } catch (error) {
     if (sequence === loadSequence) errorMessage.value = safeErrorMessage(error);
   } finally {
@@ -252,9 +280,37 @@ async function saveCluster(payload) {
 async function refreshCluster() {
   if (!cluster.value?.id || cluster.value.id === 'new') return;
   try {
-    cluster.value = await getCluster(cluster.value.id);
+    const [loadedCluster, jobPayload] = await Promise.all([
+      getCluster(cluster.value.id), listJobs(cluster.value.id)
+    ]);
+    cluster.value = loadedCluster?.data || loadedCluster;
+    jobs.value = Array.isArray(jobPayload) ? jobPayload : jobPayload?.items || [];
   } catch (error) {
     errorMessage.value = safeErrorMessage(error);
+  }
+}
+
+async function reset() {
+  if (resetting.value || !cluster.value?.id) return;
+  try {
+    await ElMessageBox.confirm(
+      '重置后会解除安装锁，并要求重新执行节点测试和部署预检查；现有服务器和安装配置会保留。',
+      '重置集群',
+      { type: 'warning', confirmButtonText: '确认重置', cancelButtonText: '取消' }
+    );
+    resetting.value = true;
+    cluster.value = await resetCluster(cluster.value.id);
+    jobs.value = [];
+    await router.replace({
+      name: 'cluster-workspace',
+      params: { clusterId: String(cluster.value.id), stage: 'cluster-info' }
+    });
+    ElMessage.success('集群已重置，请重新测试节点并执行预检查');
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return;
+    errorMessage.value = safeErrorMessage(error, '集群重置失败。');
+  } finally {
+    resetting.value = false;
   }
 }
 </script>

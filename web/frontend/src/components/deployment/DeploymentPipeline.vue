@@ -61,6 +61,10 @@ const props = defineProps({
   stageStates: {
     type: Object,
     default: () => ({})
+  },
+  installJobId: {
+    type: [String, Number],
+    default: null
   }
 });
 
@@ -82,6 +86,9 @@ function resolveState(stageKey, index) {
 
 function stageRoute(stage) {
   if (stage === 'install') {
+    if (props.installJobId !== null && props.installJobId !== undefined) {
+      return { name: 'job-execution', params: { jobId: String(props.installJobId) } };
+    }
     return {
       name: 'install-confirm',
       params: { clusterId: String(props.clusterId) }

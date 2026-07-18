@@ -3,6 +3,7 @@ package io.kubefoundry.cluster;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.kubefoundry.credential.AesGcmCredentialCipher;
 import io.kubefoundry.credential.EncryptedCredential;
+import io.kubefoundry.job.JobRepository;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
@@ -17,25 +18,28 @@ public class ClusterService {
 
     private final ClusterRepository clusters;
     private final NodeRepository nodes;
+    private final JobRepository jobs;
     private final ObjectProvider<AesGcmCredentialCipher> credentialCipherProvider;
 
     public ClusterService(
             ClusterRepository clusters,
             NodeRepository nodes,
+            JobRepository jobs,
             ObjectProvider<AesGcmCredentialCipher> credentialCipherProvider) {
         this.clusters = clusters;
         this.nodes = nodes;
+        this.jobs = jobs;
         this.credentialCipherProvider = credentialCipherProvider;
     }
 
     @Transactional(readOnly = true)
     public List<ClusterResponse> listClusters() {
-        return clusters.findAll().stream().map(ClusterResponse::from).toList();
+        return clusters.findAll().stream().map(this::response).toList();
     }
 
     @Transactional(readOnly = true)
     public ClusterResponse getCluster(long id) {
-        return ClusterResponse.from(requireCluster(id));
+        return response(requireCluster(id));
     }
 
     @Transactional
@@ -47,17 +51,18 @@ public class ClusterService {
         cluster.update(name, request.description(), request.k8sVersion(), request.podSubnet(),
                 request.serviceSubnet(), request.registryHostname(), request.registryIp(),
                 request.registryPort(), request.status());
-        return new UpsertClusterResult(ClusterResponse.from(clusters.save(cluster)), created);
+        return new UpsertClusterResult(response(clusters.save(cluster)), created);
     }
 
     @Transactional
     public ClusterResponse updateCluster(long id, ClusterRequest request) {
         Cluster cluster = requireCluster(id);
+        requireConfigurationMutable(cluster);
         String name = request.name() == null ? null : required(request.name(), "集群名称不能为空");
         cluster.update(name, request.description(), request.k8sVersion(), request.podSubnet(),
                 request.serviceSubnet(), request.registryHostname(), request.registryIp(),
                 request.registryPort(), request.status());
-        return ClusterResponse.from(clusters.save(cluster));
+        return response(clusters.save(cluster));
     }
 
     @Transactional
@@ -75,6 +80,7 @@ public class ClusterService {
     @Transactional
     public NodeResponse createNode(long clusterId, NodeRequest request) {
         Cluster cluster = requireCluster(clusterId);
+        requireConfigurationMutable(cluster);
         validateNode(request, true);
         Node node = new Node(cluster);
         node.update(request.hostname(), request.ip(), valueOrEmpty(request.ipv6()), request.role(),
@@ -90,6 +96,7 @@ public class ClusterService {
     @Transactional
     public NodeResponse updateNode(long nodeId, NodeRequest request) {
         Node node = requireNode(nodeId);
+        requireConfigurationMutable(node.getCluster());
         boolean hostIdentityChanged = changed(request.ip(), node.getIp())
                 || (request.sshPort() != null && request.sshPort() != node.getSshPort());
         boolean criticalChanged = changed(request.hostname(), node.getHostname())
@@ -115,6 +122,7 @@ public class ClusterService {
     @Transactional
     public void deleteNode(long nodeId) {
         Node node = requireNode(nodeId);
+        requireConfigurationMutable(node.getCluster());
         long clusterId = node.getCluster().getId();
         nodes.delete(node);
         clusters.markNodeConfigurationChanged(clusterId);
@@ -123,6 +131,7 @@ public class ClusterService {
     @Transactional
     public List<NodeResponse> copyNodes(long clusterId, List<Long> nodeIds) {
         Cluster cluster = requireCluster(clusterId);
+        requireConfigurationMutable(cluster);
         if (nodeIds == null || nodeIds.isEmpty()) {
             throw new IllegalArgumentException("请选择需要复制的节点");
         }
@@ -143,6 +152,24 @@ public class ClusterService {
         }).toList();
         clusters.markNodeConfigurationChanged(clusterId);
         return copied;
+    }
+
+    @Transactional
+    public ClusterResponse resetCluster(long id) {
+        Cluster cluster = requireCluster(id);
+        if (!isConfigurationLocked(cluster)) {
+            throw new IllegalArgumentException("集群尚未开始安装，无需重置");
+        }
+        if (jobs.findFirstByClusterIdAndTypeInAndStatusInOrderByIdDesc(
+                id, List.of("install", "precheck"), List.of("pending", "running")).isPresent()) {
+            throw new ClusterConfigurationLockedException("当前安装或预检查任务仍在执行，暂不能重置集群");
+        }
+        for (Node node : nodes.findByClusterIdOrderById(id)) {
+            node.markTestStale(false);
+            nodes.save(node);
+        }
+        cluster.resetInstallation();
+        return response(clusters.save(cluster));
     }
 
     private void replacePasswordIfPresent(Node node, String password) {
@@ -180,6 +207,20 @@ public class ClusterService {
 
     private Node requireNode(long id) {
         return nodes.findById(id).orElseThrow(() -> ResourceNotFoundException.node(id));
+    }
+
+    private ClusterResponse response(Cluster cluster) {
+        return ClusterResponse.from(cluster, isConfigurationLocked(cluster));
+    }
+
+    private void requireConfigurationMutable(Cluster cluster) {
+        if (isConfigurationLocked(cluster)) {
+            throw new ClusterConfigurationLockedException("安装任务已开始，重置集群后才能修改集群信息、服务器节点或安装配置");
+        }
+    }
+
+    private boolean isConfigurationLocked(Cluster cluster) {
+        return cluster.isInstallationLocked();
     }
 
     private static String required(String value, String message) {
@@ -238,12 +279,14 @@ public class ClusterService {
             @JsonProperty("registry_port") int registryPort,
             String status,
             @JsonProperty("node_config_version") long nodeConfigVersion,
-            @JsonProperty("node_test_status") String nodeTestStatus) {
-        static ClusterResponse from(Cluster value) {
+            @JsonProperty("node_test_status") String nodeTestStatus,
+            @JsonProperty("configuration_locked") boolean configurationLocked) {
+        static ClusterResponse from(Cluster value, boolean configurationLocked) {
             return new ClusterResponse(value.getId(), value.getName(), value.getDescription(),
                     value.getKubernetesVersion(), value.getPodSubnet(), value.getServiceSubnet(),
                     value.getRegistryHostname(), value.getRegistryIp(), value.getRegistryPort(),
-                    value.getStatus(), value.getNodeConfigVersion(), value.getNodeTestStatus());
+                    value.getStatus(), value.getNodeConfigVersion(), value.getNodeTestStatus(),
+                    configurationLocked);
         }
     }
 
@@ -283,6 +326,10 @@ public class ClusterService {
     }
 
     public record UpsertClusterResult(ClusterResponse cluster, boolean created) {}
+
+    public static final class ClusterConfigurationLockedException extends RuntimeException {
+        public ClusterConfigurationLockedException(String message) { super(message); }
+    }
 
     public static final class ResourceNotFoundException extends RuntimeException {
         private final String code;

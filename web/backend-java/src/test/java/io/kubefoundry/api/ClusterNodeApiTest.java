@@ -208,6 +208,35 @@ class ClusterNodeApiTest {
                 .andExpect(jsonPath("$.message").value(containsString("节点")));
     }
 
+    @Test
+    void locksConfigurationAfterInstallationStartsUntilClusterIsReset() throws Exception {
+        long clusterId = createCluster("locked-cluster");
+        long nodeId = createNode(clusterId, "node-1", "192.168.1.11", "Secret123");
+        jdbc.update("update clusters set installation_locked=true, status='installed' where id=?", clusterId);
+
+        mvc.perform(put("/api/clusters/{id}", clusterId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"description\":\"should not save\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CLUSTER_CONFIGURATION_LOCKED"));
+        mvc.perform(put("/api/nodes/{id}", nodeId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"hostname\":\"changed\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CLUSTER_CONFIGURATION_LOCKED"));
+
+        mvc.perform(post("/api/clusters/{id}/reset", clusterId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.configuration_locked").value(false))
+                .andExpect(jsonPath("$.node_test_status").value("stale"));
+
+        mvc.perform(put("/api/clusters/{id}", clusterId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"description\":\"editable again\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.description").value("editable again"));
+    }
+
     private long createCluster(String name) throws Exception {
         String body = mvc.perform(post("/api/clusters")
                         .contentType(MediaType.APPLICATION_JSON)

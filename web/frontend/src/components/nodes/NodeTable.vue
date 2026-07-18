@@ -20,6 +20,7 @@
               :data-testid="`select-node-${node.id}`"
               :model-value="selectedIds.includes(node.id)"
               :aria-label="`选择 ${node.hostname || '草稿节点'}`"
+              :disabled="locked"
               @change="$emit('toggle', node.id, $event)"
             />
           </td>
@@ -40,6 +41,7 @@
                 :icon="Edit"
                 circle
                 aria-label="编辑节点"
+                :disabled="locked"
                 @click="$emit('edit', node)"
               />
             </el-tooltip>
@@ -50,6 +52,7 @@
                 circle
                 type="danger"
                 aria-label="删除节点"
+                :disabled="locked"
                 @click="$emit('delete', node)"
               />
             </el-tooltip>
@@ -66,7 +69,8 @@ import { nodeStatusLabel, nodeStatusTone } from './nodeStatus';
 
 defineProps({
   nodes: { type: Array, default: () => [] },
-  selectedIds: { type: Array, default: () => [] }
+  selectedIds: { type: Array, default: () => [] },
+  locked: { type: Boolean, default: false }
 });
 defineEmits(['toggle', 'edit', 'delete']);
 

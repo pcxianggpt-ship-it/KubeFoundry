@@ -6,11 +6,11 @@
         <h2>服务器节点</h2>
       </div>
       <div class="section-actions">
-        <el-button data-testid="add-node" :icon="Plus" @click="openEditor()">添加节点</el-button>
+        <el-button data-testid="add-node" :icon="Plus" :disabled="locked" @click="openEditor()">添加节点</el-button>
         <el-button
           data-testid="copy-selected-nodes"
           :icon="CopyDocument"
-          :disabled="!selectedIds.length || running"
+          :disabled="locked || !selectedIds.length || running"
           @click="copySelected"
         >
           复制所选
@@ -20,7 +20,7 @@
           type="primary"
           :icon="Connection"
           :loading="running"
-          :disabled="!canTest"
+        :disabled="!canTest"
           @click="runTest"
         >
           测试全部节点
@@ -53,6 +53,7 @@
       <NodeTable
         :nodes="nodes"
         :selected-ids="selectedIds"
+        :locked="locked"
         @toggle="toggleNode"
         @edit="openEditor"
         @delete="removeNode"
@@ -75,7 +76,10 @@ import { nodeStatusLabel } from '../components/nodes/nodeStatus';
 import { copyNodes, createNode, deleteNode, listNodes, startNodeTest, updateNode } from '../api/client';
 import { safeErrorMessage } from '../utils/redaction';
 
-const props = defineProps({ clusterId: { type: [String, Number], required: true } });
+const props = defineProps({
+  clusterId: { type: [String, Number], required: true },
+  locked: { type: Boolean, default: false }
+});
 const emit = defineEmits(['cluster-updated']);
 const nodes = ref([]);
 const selectedIds = ref([]);
@@ -93,7 +97,7 @@ const failedNodes = computed(() => nodes.value.filter((node) => node.node_test_s
 const failedSummary = computed(() => failedNodes.value
   .map((node) => `${node.hostname || '草稿节点'}：${node.node_test_message || '请查看活动日志'}`)
   .join('；'));
-const canTest = computed(() => !running.value && nodes.value.length > 0 && nodes.value.every((node) =>
+const canTest = computed(() => !props.locked && !running.value && nodes.value.length > 0 && nodes.value.every((node) =>
   !node.is_draft && node.hostname && node.ip && node.has_password));
 
 onMounted(loadNodes);
@@ -120,11 +124,13 @@ async function loadNodes() {
 }
 
 function openEditor(node = null) {
+  if (props.locked) return;
   editingNode.value = node;
   editorOpen.value = true;
 }
 
 async function saveNode(payload, nodeId) {
+  if (props.locked) return;
   try {
     if (nodeId) await updateNode(nodeId, payload);
     else await createNode(props.clusterId, payload);
@@ -144,6 +150,7 @@ function toggleNode(nodeId, checked) {
 }
 
 async function copySelected() {
+  if (props.locked) return;
   try {
     await copyNodes(props.clusterId, selectedIds.value);
     selectedIds.value = [];
@@ -156,6 +163,7 @@ async function copySelected() {
 }
 
 async function removeNode(node) {
+  if (props.locked) return;
   try {
     await ElMessageBox.confirm(`确认删除节点 ${node.hostname || '草稿节点'}？`, '删除节点', { type: 'warning' });
     await deleteNode(node.id);
@@ -168,7 +176,7 @@ async function removeNode(node) {
 }
 
 async function runTest() {
-  if (running.value || !nodes.value.length) return;
+  if (props.locked || running.value || !nodes.value.length) return;
   running.value = true;
   activities.value = [];
   errorMessage.value = '';

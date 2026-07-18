@@ -32,7 +32,7 @@ describe('ClusterListView', () => {
         { id: 2, name: '待安装', status: 'precheck_passed', current_stage: 'nodes' },
         { id: 3, name: '安装中', status: 'installing', active_job_id: 31 },
         { id: 4, name: '安装失败', status: 'install_failed', latest_job_id: 41 },
-        { id: 5, name: '生产集群', status: 'installed' }
+        { id: 5, name: '生产集群', status: 'installed', latest_job_id: 51 }
       ]
     });
 
@@ -52,14 +52,14 @@ describe('ClusterListView', () => {
       '开始安装',
       '查看进度',
       '查看失败原因',
-      '查看集群'
+      '查看执行记录'
     ]);
     expect(actions.map((link) => link.props('to'))).toEqual([
       { name: 'cluster-workspace', params: { clusterId: '1', stage: 'nodes' } },
       { name: 'install-confirm', params: { clusterId: '2' } },
       { name: 'job-execution', params: { jobId: '31' } },
       { name: 'job-execution', params: { jobId: '41' } },
-      { name: 'cluster-workspace', params: { clusterId: '5', stage: 'cluster-info' } }
+      { name: 'job-execution', params: { jobId: '51' } }
     ]);
     expect(wrapper.getComponent('[data-testid="create-cluster"]').props('to')).toEqual({
       name: 'cluster-workspace',
@@ -84,11 +84,11 @@ describe('ClusterListView', () => {
 
     const actions = wrapper.findAllComponents(RouterLinkStub)
       .filter((link) => link.classes('cluster-row__action'));
-    expect(actions.map((link) => link.text())).toEqual(['查看进度', '开始安装', '查看集群']);
+    expect(actions.map((link) => link.text())).toEqual(['查看进度', '开始安装', '查看执行记录']);
     expect(actions.map((link) => link.props('to'))).toEqual([
       { name: 'job-execution', params: { jobId: '101' } },
       { name: 'install-confirm', params: { clusterId: '11' } },
-      { name: 'cluster-workspace', params: { clusterId: '12', stage: 'cluster-info' } }
+      { name: 'job-execution', params: { jobId: '121' } }
     ]);
   });
 

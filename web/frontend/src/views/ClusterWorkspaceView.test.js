@@ -5,12 +5,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ClusterWorkspaceView from './ClusterWorkspaceView.vue';
 import { createAppRouter } from '../router';
-import { createCluster, getCluster, updateCluster } from '../api/client';
+import { createCluster, getCluster, listJobs, resetCluster, updateCluster } from '../api/client';
 
 vi.mock('../api/client', () => ({
   getCluster: vi.fn(),
   createCluster: vi.fn(),
   updateCluster: vi.fn(),
+  resetCluster: vi.fn(),
   listClusters: vi.fn(),
   listJobs: vi.fn().mockResolvedValue({ items: [] }),
   getPrecheckResults: vi.fn().mockResolvedValue({ items: [] }),
@@ -98,5 +99,23 @@ describe('ClusterWorkspaceView', () => {
 
     expect(updateCluster).toHaveBeenCalledWith('42', expect.objectContaining({ name: '更新后的集群' }));
     expect(wrapper.get('h1').text()).toBe('更新后的集群');
+  });
+
+  it('安装开始后以只读方式展示配置并提供重置入口', async () => {
+    getCluster.mockResolvedValue({
+      id: 42,
+      name: '已安装集群',
+      status: 'installed',
+      configuration_locked: true,
+      k8s_version: '1.30.14'
+    });
+    listJobs.mockResolvedValue({ items: [{ id: 200, job_type: 'install', status: 'success' }] });
+
+    const { wrapper } = await mountAt('/clusters/42/cluster-info');
+
+    expect(wrapper.get('[data-testid="cluster-name"]').attributes('disabled')).toBeDefined();
+    expect(wrapper.get('[data-testid="save-cluster"]').attributes('disabled')).toBeDefined();
+    expect(wrapper.get('[data-testid="reset-cluster"]')).toBeTruthy();
+    expect(wrapper.get('[data-stage-key="install"] a').attributes('href')).toContain('/jobs/200/execution');
   });
 });

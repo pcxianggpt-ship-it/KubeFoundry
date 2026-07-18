@@ -1,6 +1,7 @@
 package io.kubefoundry.api;
 
 import io.kubefoundry.cluster.ClusterService.ResourceNotFoundException;
+import io.kubefoundry.cluster.ClusterService.ClusterConfigurationLockedException;
 import io.kubefoundry.job.JobQueueFullException;
 import io.kubefoundry.job.JobNotFoundException;
 import io.kubefoundry.installer.ActiveInstallerJobException;
@@ -58,5 +59,13 @@ public class ApiExceptionHandler {
                 "code", "INSTALLER_JOB_ACTIVE",
                 "message", exception.getMessage(),
                 "job_id", exception.jobId()));
+    }
+
+    @ExceptionHandler(ClusterConfigurationLockedException.class)
+    public ResponseEntity<Map<String, String>> configurationLocked(
+            ClusterConfigurationLockedException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                "code", "CLUSTER_CONFIGURATION_LOCKED",
+                "message", exception.getMessage()));
     }
 }

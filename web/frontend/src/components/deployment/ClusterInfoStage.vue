@@ -9,7 +9,7 @@
         data-testid="save-cluster"
         type="primary"
         :loading="saving"
-        :disabled="!form.name.trim()"
+        :disabled="locked || !form.name.trim()"
         @click="submit"
       >
         保存集群信息
@@ -19,29 +19,29 @@
     <el-form label-position="top" class="stage-form" @submit.prevent="submit">
       <div class="form-grid">
         <el-form-item label="集群名称" required>
-          <el-input data-testid="cluster-name" v-model="form.name" maxlength="100" />
+          <el-input data-testid="cluster-name" v-model="form.name" maxlength="100" :disabled="locked" />
         </el-form-item>
         <el-form-item label="Kubernetes 版本" required>
-          <el-input v-model="form.k8s_version" placeholder="1.30.14" />
+          <el-input v-model="form.k8s_version" placeholder="1.30.14" :disabled="locked" />
         </el-form-item>
         <el-form-item label="Pod 网段" required>
-          <el-input v-model="form.pod_subnet" placeholder="10.244.0.0/16" />
+          <el-input v-model="form.pod_subnet" placeholder="10.244.0.0/16" :disabled="locked" />
         </el-form-item>
         <el-form-item label="Service 网段" required>
-          <el-input v-model="form.service_subnet" placeholder="10.96.0.0/16" />
+          <el-input v-model="form.service_subnet" placeholder="10.96.0.0/16" :disabled="locked" />
         </el-form-item>
         <el-form-item label="镜像仓库主机名">
-          <el-input v-model="form.registry_hostname" placeholder="registry" />
+          <el-input v-model="form.registry_hostname" placeholder="registry" :disabled="locked" />
         </el-form-item>
         <el-form-item label="镜像仓库 IP">
-          <el-input v-model="form.registry_ip" placeholder="192.168.1.10" />
+          <el-input v-model="form.registry_ip" placeholder="192.168.1.10" :disabled="locked" />
         </el-form-item>
         <el-form-item label="镜像仓库端口">
-          <el-input-number v-model="form.registry_port" :min="1" :max="65535" controls-position="right" />
+          <el-input-number v-model="form.registry_port" :min="1" :max="65535" controls-position="right" :disabled="locked" />
         </el-form-item>
       </div>
       <el-form-item label="说明">
-        <el-input v-model="form.description" type="textarea" :rows="3" maxlength="500" show-word-limit />
+        <el-input v-model="form.description" type="textarea" :rows="3" maxlength="500" show-word-limit :disabled="locked" />
       </el-form-item>
     </el-form>
   </section>
@@ -52,7 +52,8 @@ import { reactive, watch } from 'vue';
 
 const props = defineProps({
   cluster: { type: Object, required: true },
-  saving: { type: Boolean, default: false }
+  saving: { type: Boolean, default: false },
+  locked: { type: Boolean, default: false }
 });
 const emit = defineEmits(['save']);
 
@@ -73,7 +74,7 @@ watch(() => props.cluster, (cluster) => {
 }, { immediate: true, deep: true });
 
 function submit() {
-  if (props.saving || !form.name.trim()) return;
+  if (props.locked || props.saving || !form.name.trim()) return;
   emit('save', {
     name: form.name.trim(),
     description: form.description,

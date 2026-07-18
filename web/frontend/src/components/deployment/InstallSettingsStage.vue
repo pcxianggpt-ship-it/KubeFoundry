@@ -9,7 +9,7 @@
         data-testid="save-settings"
         type="primary"
         :loading="saving"
-        :disabled="loading || Boolean(errorMessage)"
+        :disabled="locked || loading || Boolean(errorMessage)"
         @click="save"
       >
         保存安装配置
@@ -26,26 +26,26 @@
       <el-form label-position="top" class="stage-form">
         <div class="form-grid">
           <el-form-item label="Kubernetes 工作目录">
-            <el-input data-testid="k8s-home" v-model="settings.paths.k8s_home" />
+            <el-input data-testid="k8s-home" v-model="settings.paths.k8s_home" :disabled="locked" />
           </el-form-item>
           <el-form-item label="离线介质目录">
-            <el-input data-testid="install-media" v-model="settings.paths.install_media" />
+            <el-input data-testid="install-media" v-model="settings.paths.install_media" :disabled="locked" />
           </el-form-item>
           <el-form-item label="kubelet 数据目录">
-            <el-input v-model="settings.env.kubelet_root" />
+            <el-input v-model="settings.env.kubelet_root" :disabled="locked" />
           </el-form-item>
           <el-form-item label="containerd 数据目录">
-            <el-input v-model="settings.env.containerd_root" />
+            <el-input v-model="settings.env.containerd_root" :disabled="locked" />
           </el-form-item>
           <el-form-item label="etcd 数据目录">
-            <el-input v-model="settings.env.etcd_data_dir" />
+            <el-input v-model="settings.env.etcd_data_dir" :disabled="locked" />
           </el-form-item>
           <el-form-item label="仓库源目录">
-            <el-input v-model="settings.paths.repo_source" />
+            <el-input v-model="settings.paths.repo_source" :disabled="locked" />
           </el-form-item>
         </div>
         <el-form-item label="IPv4 / IPv6 双栈">
-          <el-switch v-model="settings.advanced.enable_ipv6_dual_stack" />
+          <el-switch v-model="settings.advanced.enable_ipv6_dual_stack" :disabled="locked" />
         </el-form-item>
       </el-form>
     </template>
@@ -58,7 +58,10 @@ import { Refresh } from '@element-plus/icons-vue';
 import { getClusterSettings, updateClusterSettings } from '../../api/client';
 import { safeErrorMessage } from '../../utils/redaction';
 
-const props = defineProps({ clusterId: { type: [String, Number], required: true } });
+const props = defineProps({
+  clusterId: { type: [String, Number], required: true },
+  locked: { type: Boolean, default: false }
+});
 const loading = ref(true);
 const saving = ref(false);
 const saved = ref(false);
@@ -99,7 +102,7 @@ async function load() {
 }
 
 async function save() {
-  if (loading.value || saving.value || errorMessage.value) return;
+  if (props.locked || loading.value || saving.value || errorMessage.value) return;
   saving.value = true;
   saved.value = false;
   try {

@@ -67,7 +67,12 @@ public class InstallService {
             definitions.add(new JobService.StepDefinition(
                     step.name(), index + 1, step.maxWorkers(), step.failFast(), operations));
         }
-        return admission.submit(clusterId, () ->
-                jobService.submit(new JobService.JobDefinition(clusterId, "install", definitions)));
+        return admission.submit(clusterId, () -> {
+            Cluster admittedCluster = clusters.findById(clusterId)
+                    .orElseThrow(() -> ResourceNotFoundException.cluster(clusterId));
+            admittedCluster.markInstallationStarted();
+            clusters.save(admittedCluster);
+            return jobService.submit(new JobService.JobDefinition(clusterId, "install", definitions));
+        });
     }
 }

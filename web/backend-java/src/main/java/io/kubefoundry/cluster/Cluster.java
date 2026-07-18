@@ -43,6 +43,9 @@ public class Cluster {
     @Column(nullable = false, length = 32)
     private String status = "draft";
 
+    @Column(name = "installation_locked", nullable = false)
+    private boolean installationLocked;
+
     @Column(name = "node_config_version", nullable = false)
     private long nodeConfigVersion;
 
@@ -72,6 +75,7 @@ public class Cluster {
     public String getRegistryIp() { return registryIp; }
     public int getRegistryPort() { return registryPort; }
     public String getStatus() { return status; }
+    public boolean isInstallationLocked() { return installationLocked; }
     public long getNodeConfigVersion() { return nodeConfigVersion; }
     public String getNodeTestStatus() { return nodeTestStatus; }
 
@@ -103,5 +107,21 @@ public class Cluster {
 
     public void markNodeTestStatus(String value) {
         nodeTestStatus = value;
+    }
+
+    public void markInstallationStarted() {
+        status = "installing";
+        installationLocked = true;
+    }
+
+    public void markInstallationFinished(boolean success) {
+        status = success ? "installed" : "install_failed";
+    }
+
+    public void resetInstallation() {
+        status = "draft";
+        installationLocked = false;
+        nodeTestStatus = "stale";
+        nodeConfigVersion++;
     }
 }

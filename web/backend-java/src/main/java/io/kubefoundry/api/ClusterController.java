@@ -49,4 +49,9 @@ public class ClusterController {
         service.deleteCluster(id);
         return ResponseEntity.noContent().build();
     }
+
+    @PostMapping("/{id}/reset")
+    public ClusterResponse reset(@PathVariable long id) {
+        return service.resetCluster(id);
+    }
 }

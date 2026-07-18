@@ -60,6 +60,12 @@ export function updateCluster(clusterId, data) {
   });
 }
 
+export function resetCluster(clusterId) {
+  return request(`/api/clusters/${clusterId}/reset`, {
+    method: 'POST'
+  });
+}
+
 export function listNodes(clusterId) {
   return request(`/api/clusters/${clusterId}/nodes`);
 }
