@@ -279,6 +279,7 @@ class RemoteStepRunnerTest {
     @Test
     void writesNodeAndRegistryNamesWhenTheyShareTheSameIp() throws Exception {
         cluster.update(null, null, null, null, null, "registry-alias", "127.0.0.1", null, null);
+        node.replaceRoles(List.of("control_plane", "registry"));
         InstallStep step = InstallStep.builtin("hostname", "主机名", "k8s_base", "all_nodes",
                 "setup_hostname", "serial", 1, true, "");
 
@@ -286,7 +287,7 @@ class RemoteStepRunnerTest {
 
         assertThat(outcome.success()).isTrue();
         assertThat(Files.readString(remoteRoot.resolve("tmp/kubefoundry/42/step.sh")))
-                .contains("'127.0.0.1    cp-a registry-alias'");
+                .contains("'127.0.0.1    cp-a registry'");
     }
 
     @Test

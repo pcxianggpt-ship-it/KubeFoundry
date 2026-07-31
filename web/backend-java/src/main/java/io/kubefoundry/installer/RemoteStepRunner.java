@@ -310,7 +310,10 @@ public class RemoteStepRunner {
                 java.util.Comparator.nullsLast(String::compareTo))).forEach(item -> addHostAlias(
                 aliases, item.getIp(), item.getHostname()));
         Node registry = RegistryNodeSelector.select(nodes);
-        if (registry != null) addHostAlias(aliases, registry.getIp(), registry.getHostname());
+        if (registry != null) {
+            addHostAlias(aliases, registry.getIp(), registry.getHostname());
+            addHostAlias(aliases, registry.getIp(), "registry");
+        }
         else addHostAlias(aliases, cluster.getRegistryIp(), RuntimeEnvRenderer.registryHostname(cluster));
         aliases.forEach((ip, hostnames) -> script.append("  printf '%s\\n' ")
                 .append(RuntimeEnvRenderer.shellQuote(ip + "    " + String.join(" ", hostnames)))
