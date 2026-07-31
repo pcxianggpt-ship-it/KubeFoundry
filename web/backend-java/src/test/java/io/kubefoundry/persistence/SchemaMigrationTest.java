@@ -11,6 +11,7 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -157,6 +158,94 @@ class SchemaMigrationTest {
             assertThat(columnExists(metadata, "NODE_ROLES", "NODE_ID")).isTrue();
             assertThat(columnExists(metadata, "CLUSTER_COMPONENTS", "COMPONENT_KEY")).isTrue();
             assertThat(columnExists(metadata, "INSTALLATION_SNAPSHOTS", "SNAPSHOT_JSON")).isTrue();
+        }
+    }
+
+    @Test
+    void upgradesAnExistingV7DatabaseAndDerivesRegistryRolesSafely() throws SQLException {
+        String databaseUrl = "jdbc:h2:mem:schema-v7-incremental;MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
+        Flyway.configure()
+                .dataSource(databaseUrl, "sa", "")
+                .target("7")
+                .load()
+                .migrate();
+
+        try (Connection connection = DriverManager.getConnection(databaseUrl, "sa", "")) {
+            long matchedCluster = insertCluster(connection, "matched", "10.0.0.10", true);
+            long unmatchedCluster = insertCluster(connection, "unmatched", "10.0.0.99", true);
+            long installedCluster = insertCluster(connection, "installed", "", true);
+            insertNode(connection, matchedCluster, "registry-node", "10.0.0.10");
+            insertNode(connection, unmatchedCluster, "worker-node", "10.0.0.10");
+            insertInstallJob(connection, installedCluster, "success");
+        }
+
+        Flyway.configure().dataSource(databaseUrl, "sa", "").load().migrate();
+
+        try (Connection connection = DriverManager.getConnection(databaseUrl, "sa", "")) {
+            assertThat(successfulMigration(connection, "8")).isTrue();
+            assertThat(countRows(connection, "SELECT COUNT(*) FROM node_roles WHERE role = 'registry'"))
+                    .isEqualTo(1);
+            assertThat(countRows(connection, "SELECT COUNT(*) FROM node_roles WHERE role = 'registry' "
+                    + "AND node_id = (SELECT id FROM nodes WHERE name = 'registry-node')")).isEqualTo(1);
+            assertThat(countRows(connection, "SELECT COUNT(*) FROM node_roles WHERE role = 'registry' "
+                    + "AND node_id = (SELECT id FROM nodes WHERE name = 'worker-node')")).isZero();
+            assertThat(booleanValue(connection, "SELECT installation_locked FROM clusters WHERE name = 'matched'"))
+                    .isFalse();
+            assertThat(booleanValue(connection, "SELECT installation_locked FROM clusters WHERE name = 'unmatched'"))
+                    .isFalse();
+            assertThat(booleanValue(connection, "SELECT installation_locked FROM clusters WHERE name = 'installed'"))
+                    .isTrue();
+        }
+    }
+
+    private static long insertCluster(Connection connection, String name, String registryIp, boolean locked)
+            throws SQLException {
+        try (var statement = connection.prepareStatement(
+                "INSERT INTO clusters (name, status, registry_ip, installation_locked) VALUES (?, 'draft', ?, ?)",
+                java.sql.Statement.RETURN_GENERATED_KEYS)) {
+            statement.setString(1, name);
+            statement.setString(2, registryIp);
+            statement.setBoolean(3, locked);
+            statement.executeUpdate();
+            try (ResultSet keys = statement.getGeneratedKeys()) {
+                keys.next();
+                return keys.getLong(1);
+            }
+        }
+    }
+
+    private static void insertNode(Connection connection, long clusterId, String name, String host)
+            throws SQLException {
+        try (var statement = connection.prepareStatement(
+                "INSERT INTO nodes (cluster_id, name, host, username, node_role, status) "
+                        + "VALUES (?, ?, ?, 'root', 'worker', 'draft')")) {
+            statement.setLong(1, clusterId);
+            statement.setString(2, name);
+            statement.setString(3, host);
+            statement.executeUpdate();
+        }
+    }
+
+    private static void insertInstallJob(Connection connection, long clusterId, String status) throws SQLException {
+        try (var statement = connection.prepareStatement(
+                "INSERT INTO jobs (cluster_id, job_type, status) VALUES (?, 'install', ?)")) {
+            statement.setLong(1, clusterId);
+            statement.setString(2, status);
+            statement.executeUpdate();
+        }
+    }
+
+    private static long countRows(Connection connection, String sql) throws SQLException {
+        try (var statement = connection.prepareStatement(sql); ResultSet result = statement.executeQuery()) {
+            result.next();
+            return result.getLong(1);
+        }
+    }
+
+    private static boolean booleanValue(Connection connection, String sql) throws SQLException {
+        try (var statement = connection.prepareStatement(sql); ResultSet result = statement.executeQuery()) {
+            result.next();
+            return result.getBoolean(1);
         }
     }
 
