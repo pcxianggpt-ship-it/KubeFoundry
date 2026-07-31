@@ -35,7 +35,10 @@ class SchemaMigrationTest {
             "job_steps",
             "job_step_nodes",
             "precheck_results",
-            "events");
+            "events",
+            "node_roles",
+            "cluster_components",
+            "installation_snapshots");
     private static List<String> h2FilesBeforeTest;
 
     @BeforeAll
@@ -141,6 +144,19 @@ class SchemaMigrationTest {
             assertThat(successfulMigration(connection, "6")).isTrue();
             assertThat(columnExists(connection.getMetaData(), "APP_SETTINGS", "SETTING_KEY")).isTrue();
             assertThat(columnExists(connection.getMetaData(), "APP_SETTINGS", "SETTING_VALUE")).isTrue();
+        }
+    }
+
+    @Test
+    void createsClusterConfigurationStructuresInV8() throws SQLException {
+        try (Connection connection = openConnection()) {
+            DatabaseMetaData metadata = connection.getMetaData();
+            assertThat(successfulMigration(connection, "8")).isTrue();
+            assertThat(columnExists(metadata, "CLUSTERS", "KUBERNETES_WORK_DIR")).isTrue();
+            assertThat(columnExists(metadata, "CLUSTERS", "IMAGE_REGISTRY_TYPE")).isTrue();
+            assertThat(columnExists(metadata, "NODE_ROLES", "NODE_ID")).isTrue();
+            assertThat(columnExists(metadata, "CLUSTER_COMPONENTS", "COMPONENT_KEY")).isTrue();
+            assertThat(columnExists(metadata, "INSTALLATION_SNAPSHOTS", "SNAPSHOT_JSON")).isTrue();
         }
     }
 

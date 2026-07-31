@@ -30,13 +30,16 @@ public class RuntimeEnvRenderer {
         values.put("KF_NODE_HOSTNAME", node.getHostname());
         values.put("KF_NODE_IP", node.getIp());
         values.put("KF_NODE_ROLE", node.getRole());
-        values.put("KF_POD_SUBNET", cluster.getPodSubnet());
+        values.put("KF_NODE_ROLES", String.join(",", new java.util.TreeSet<>(node.getRoles())));
         values.put("KF_PRIMARY_CONTROL_HOSTNAME", primary == null ? "" : primary.getHostname());
         values.put("KF_PRIMARY_CONTROL_IP", primary == null ? "" : primary.getIp());
-        values.put("KF_REGISTRY_HOSTNAME", registryHostname(cluster));
-        values.put("KF_REGISTRY_IP", cluster.getRegistryIp());
-        values.put("KF_REGISTRY_PORT", Integer.toString(cluster.getRegistryPort()));
-        values.put("KF_SERVICE_SUBNET", cluster.getServiceSubnet());
+        Node registry = RegistryNodeSelector.select(nodes);
+        values.put("KF_REGISTRY_HOSTNAME", registry == null
+                ? registryHostname(cluster) : value(registry.getHostname(), "registry"));
+        values.put("KF_REGISTRY_IP", registry == null
+                ? value(cluster.getRegistryIp(), "") : value(registry.getIp(), value(cluster.getRegistryIp(), "")));
+        values.put("KF_REGISTRY_PORT", Integer.toString(cluster.getRegistryPort() > 0
+                ? cluster.getRegistryPort() : 5000));
 
         Map<String, String> compatibility = new TreeMap<>();
         compatibility.put("ARCH", "KF_ARCH");
@@ -48,13 +51,11 @@ public class RuntimeEnvRenderer {
         compatibility.put("K8S_SOFT", "KF_K8S_HOME");
         compatibility.put("K8S_VERSION", "KF_K8S_VERSION");
         compatibility.put("KUBELET_ROOT", "KF_KUBELET_ROOT");
-        compatibility.put("POD_SUBNET", "KF_POD_SUBNET");
         compatibility.put("PRIMARY_CONTROL_HOSTNAME", "KF_PRIMARY_CONTROL_HOSTNAME");
         compatibility.put("PRIMARY_CONTROL_IP", "KF_PRIMARY_CONTROL_IP");
         compatibility.put("REGISTRY_HOSTNAME", "KF_REGISTRY_HOSTNAME");
         compatibility.put("REGISTRY_IP", "KF_REGISTRY_IP");
         compatibility.put("REGISTRY_PORT", "KF_REGISTRY_PORT");
-        compatibility.put("SERVICE_SUBNET", "KF_SERVICE_SUBNET");
 
         StringBuilder output = new StringBuilder();
         output.append("#!/bin/bash\n\n")
@@ -76,6 +77,7 @@ public class RuntimeEnvRenderer {
         return "'" + (value == null ? "" : value).replace("'", "'\"'\"'") + "'";
     }
 
+    /** Legacy fallback for existing persisted clusters; new runtime values come from registry-role nodes. */
     static String registryHostname(Cluster cluster) {
         return value(cluster.getRegistryHostname(), "registry");
     }
@@ -86,7 +88,7 @@ public class RuntimeEnvRenderer {
 
     private static final class RuntimeSettingsFromDefaults {
         private static RuntimeSettings create(Cluster cluster, Node node) {
-            String k8sHome = "/data/k8s_install";
+            String k8sHome = value(cluster.getKubernetesWorkDir(), "/data/k8s_install");
             String installMedia = "/root/kube-media";
             String architecture = value(node.getArchitecture(), "amd64");
             return new RuntimeSettings(
@@ -103,8 +105,8 @@ public class RuntimeEnvRenderer {
                             Map.entry("flannel_config", installMedia + "/03.setup_file/kube-flannel.yml")),
                     Map.of(
                             "kubelet_root", k8sHome + "/kubelet_root",
-                            "containerd_root", k8sHome + "/containerd-data",
-                            "etcd_data_dir", k8sHome + "/etcd_backup"),
+                            "containerd_root", k8sHome + "/containerd_root",
+                            "etcd_data_dir", k8sHome + "/etcd_root"),
                     Map.of("enable_ipv6_dual_stack", false));
         }
     }

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { copyNodes, getJob, startInstall, startNodeTest } from './client';
+import { copyNodes, getJob, resetCluster, startInstall, startNodeTest } from './client';
 
 
 describe('API client', () => {
@@ -63,5 +63,21 @@ describe('API client', () => {
 
     await startNodeTest(1);
     expect(fetch).toHaveBeenCalledWith('/api/clusters/1/node-test', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('sends both server-side remote reset confirmations', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      text: async () => JSON.stringify({ job_id: 9, status: 'pending' })
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await resetCluster(7, true, 'RESET production');
+
+    expect(fetch).toHaveBeenCalledWith('/api/clusters/7/reset', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ acknowledged: true, confirmation_phrase: 'RESET production' })
+    }));
   });
 });

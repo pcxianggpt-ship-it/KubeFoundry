@@ -44,7 +44,7 @@ import { RouterLink } from 'vue-router';
 const stages = [
   { key: 'cluster-info', title: '集群信息' },
   { key: 'nodes', title: '服务器节点' },
-  { key: 'settings', title: '安装配置' },
+  { key: 'components', title: 'Kubemate 组件' },
   { key: 'precheck', title: '部署预检查' },
   { key: 'install', title: '执行安装' }
 ];

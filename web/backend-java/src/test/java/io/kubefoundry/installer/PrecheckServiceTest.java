@@ -69,6 +69,14 @@ class PrecheckServiceTest {
         node.update("cp-a", "10.0.0.1", "", "control_plane", "root", 22);
         node.completeNodeTest("kylin", "V10", "amd64");
         node = nodes.saveAndFlush(node);
+        Node worker = new Node(cluster);
+        worker.update("worker-a", "10.0.0.2", "", "worker", "root", 22);
+        worker.completeNodeTest("kylin", "V10", "amd64");
+        nodes.saveAndFlush(worker);
+        Node registry = new Node(cluster);
+        registry.update("registry", "10.0.0.9", "", "registry", "root", 22);
+        registry.completeNodeTest("kylin", "V10", "amd64");
+        nodes.saveAndFlush(registry);
     }
 
     @AfterEach
@@ -91,7 +99,8 @@ class PrecheckServiceTest {
 
         assertThat(jobs.findById(jobId).orElseThrow().getStatus()).isEqualTo("success");
         assertThat(results.findByJobIdOrderByNodeIdAscIdAsc(jobId))
-                .filteredOn(result -> List.of("user", "swap").contains(result.getCheckKey()))
+                .filteredOn(result -> "cp-a".equals(result.getNode().getHostname())
+                        && List.of("user", "swap").contains(result.getCheckKey()))
                 .extracting(PrecheckResult::getStatus)
                 .containsExactly("warning", "warning");
         assertThat(events.findTop100ByJobIdAndIdGreaterThanOrderById(jobId, 0))

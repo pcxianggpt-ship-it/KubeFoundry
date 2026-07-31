@@ -107,7 +107,7 @@ class InstallPlanFactoryTest {
                 .extracting(Node::getHostname)
                 .containsExactly("cp-b", "worker-a", "cp-a", "registry");
         assertThat(factory.resolveTargets(plan.require("17-install-registry"), cluster, nodes))
-                .extracting(Node::getHostname).containsExactly("worker-a", "registry");
+                .extracting(Node::getHostname).containsExactly("registry");
     }
 
     @Test

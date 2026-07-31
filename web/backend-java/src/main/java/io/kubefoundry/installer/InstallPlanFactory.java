@@ -111,20 +111,22 @@ public class InstallPlanFactory {
 
     public List<Node> resolveTargets(InstallStep step, Cluster cluster, List<Node> configuredNodes) {
         List<Node> nodes = InstallationNodes.normalize(configuredNodes);
-        List<Node> controls = filter(nodes, node -> "control_plane".equals(node.getRole()));
+        List<Node> controls = filter(nodes, node -> hasRole(node, "control_plane"));
         Node primary = PrimaryControlPlaneSelector.select(nodes);
-        String registryIp = cluster == null ? "" : cluster.getRegistryIp();
         return switch (step.targetScope()) {
             case "all_nodes" -> nodes;
             case "all_k8s_nodes" -> filter(nodes,
-                    node -> Set.of("control_plane", "worker").contains(node.getRole()));
+                    node -> hasRole(node, "control_plane") || hasRole(node, "worker"));
             case "control_plane" -> controls;
-            case "workers" -> filter(nodes, node -> "worker".equals(node.getRole()));
+            case "workers" -> filter(nodes, node -> hasRole(node, "worker"));
             case "non_primary_k8s_nodes" -> filter(nodes,
-                    node -> Set.of("control_plane", "worker").contains(node.getRole())
+                    node -> (hasRole(node, "control_plane") || hasRole(node, "worker"))
                             && (primary == null || !node.getId().equals(primary.getId())));
-            case "registry" -> filter(nodes, node -> "registry".equals(node.getRole())
-                    || (!registryIp.isBlank() && registryIp.equals(node.getIp())));
+            case "registry" -> {
+                List<Node> registries = filter(nodes, node -> hasRole(node, "registry"));
+                yield registries.isEmpty() && cluster != null && !cluster.getRegistryIp().isBlank()
+                        ? filter(nodes, node -> cluster.getRegistryIp().equals(node.getIp())) : registries;
+            }
             case "primary_control_plane" -> primary == null ? List.of() : List.of(primary);
             case "other_control_planes" -> filter(controls,
                     node -> primary == null || !node.getId().equals(primary.getId()));
@@ -160,6 +162,10 @@ public class InstallPlanFactory {
 
     private static List<Node> filter(List<Node> nodes, Predicate<Node> predicate) {
         return nodes.stream().filter(predicate).toList();
+    }
+
+    private static boolean hasRole(Node node, String role) {
+        return node.hasRole(role) || role.equals(node.getRole());
     }
 
     private static void validateArtifactDependencies(List<InstallStep> steps) {

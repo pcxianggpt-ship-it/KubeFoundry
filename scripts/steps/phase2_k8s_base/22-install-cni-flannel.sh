@@ -8,9 +8,10 @@
 # 版本：1.0.0
 # 环境变量依赖（由 exec_script_on_single_node 注入）：
 #   INSTALL_MEDIA - 安装介质包根目录
-#   POD_SUBNET    - Pod IPv4网段
 #   DUAL_STACK    - 是否双栈 (Y/N)
 #===============================================================================
+
+readonly POD_SUBNET="10.244.0.0/16"
 
 log_info "开始安装Flannel CNI插件..."
 

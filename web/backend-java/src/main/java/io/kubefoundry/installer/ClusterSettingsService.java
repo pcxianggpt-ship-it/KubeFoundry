@@ -11,6 +11,7 @@ import io.kubefoundry.cluster.Node;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,16 +24,19 @@ public class ClusterSettingsService {
     private final ClusterSettingRepository settings;
     private final AppSettingRepository appSettings;
     private final ObjectMapper objectMapper;
+    private final String appDirectory;
 
     public ClusterSettingsService(
             ClusterRepository clusters,
             ClusterSettingRepository settings,
             AppSettingRepository appSettings,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            @Value("${kubefoundry.app-dir}") String appDirectory) {
         this.clusters = clusters;
         this.settings = settings;
         this.appSettings = appSettings;
         this.objectMapper = objectMapper;
+        this.appDirectory = java.nio.file.Path.of(appDirectory).toAbsolutePath().normalize().toString();
     }
 
     @Transactional(readOnly = true)
@@ -212,7 +216,7 @@ public class ClusterSettingsService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("paths", new LinkedHashMap<>(Map.ofEntries(
                 Map.entry("k8s_home", "/data/k8s_install"),
-                Map.entry("install_media", "/root/kube-media"),
+                Map.entry("install_media", java.nio.file.Path.of(appDirectory, "kube-media").toString()),
                 Map.entry("arch", "amd64"),
                 Map.entry("repo_source", "${install_media}/01.rpm_package/k8srepo_kylinos_sp3_${arch}.tar.gz"),
                 Map.entry("kubeadm_100y", "${install_media}/01.rpm_package/kubeadm-v${k8s_version}-100y-${arch}"),
@@ -221,8 +225,8 @@ public class ClusterSettingsService {
                 Map.entry("flannel_config", "${install_media}/03.setup_file/kube-flannel.yml"))));
         result.put("env", new LinkedHashMap<>(Map.of(
                 "kubelet_root", "${k8s_home}/kubelet_root",
-                "containerd_root", "${k8s_home}/containerd-data",
-                "etcd_data_dir", "${k8s_home}/etcd_backup")));
+                "containerd_root", "${k8s_home}/containerd_root",
+                "etcd_data_dir", "${k8s_home}/etcd_root")));
         result.put("advanced", new LinkedHashMap<>(Map.of(
                 "enable_ipv6_dual_stack", false)));
         return result;

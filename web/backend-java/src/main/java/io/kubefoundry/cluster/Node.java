@@ -1,6 +1,7 @@
 package io.kubefoundry.cluster;
 
 import io.kubefoundry.credential.EncryptedCredential;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -10,7 +11,11 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Lob;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
+import java.util.Collection;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 @Entity
 @Table(name = "nodes")
@@ -35,6 +40,9 @@ public class Node {
 
     @Column(name = "node_role", nullable = false, length = 32)
     private String role;
+
+    @OneToMany(mappedBy = "node", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    private Set<NodeRole> roleAssignments = new LinkedHashSet<>();
 
     @Column(name = "username", nullable = false, length = 128)
     private String sshUser;
@@ -89,6 +97,13 @@ public class Node {
     public String getIp() { return ip; }
     public String getIpv6() { return ipv6; }
     public String getRole() { return role; }
+    public Set<String> getRoles() {
+        return roleAssignments.stream().map(NodeRole::getRole)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+    public boolean hasRole(String expectedRole) {
+        return expectedRole != null && getRoles().contains(expectedRole);
+    }
     public String getSshUser() { return sshUser; }
     public int getSshPort() { return sshPort; }
     public boolean isDraft() { return draft; }
@@ -115,6 +130,18 @@ public class Node {
         if (role != null) this.role = role;
         if (sshUser != null) this.sshUser = sshUser.trim();
         if (sshPort != null) this.sshPort = sshPort;
+    }
+
+    public void replaceRoles(Collection<String> values) {
+        Set<String> desired = values == null ? Set.of() : values.stream()
+                .filter(value -> value != null && !value.isBlank()).map(String::trim)
+                .collect(java.util.stream.Collectors.toSet());
+        roleAssignments.removeIf(assignment -> !desired.contains(assignment.getRole()));
+        desired.stream().filter(value -> roleAssignments.stream()
+                .noneMatch(existing -> value.equals(existing.getRole())))
+                .forEach(value -> roleAssignments.add(new NodeRole(this, value)));
+        // node_role remains only as a database compatibility column during the v0.2.1 migration.
+        role = roleAssignments.stream().map(NodeRole::getRole).sorted().findFirst().orElse(null);
     }
 
     public void replacePassword(EncryptedCredential credential) {

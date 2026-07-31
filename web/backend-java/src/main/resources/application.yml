@@ -2,6 +2,7 @@ server:
   port: "10001"
 
 kubefoundry:
+  app-dir: ${KF_APP_DIR:${user.dir}}
   data-dir: ${KF_DATA_DIR:data}
   jobs:
     workers: ${KF_JOB_WORKERS:5}

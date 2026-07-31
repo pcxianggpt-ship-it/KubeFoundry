@@ -18,7 +18,7 @@
           <el-input v-model="form.ipv6" />
         </el-form-item>
         <el-form-item label="角色" required>
-          <el-select v-model="form.role">
+          <el-select v-model="form.roles" multiple>
             <el-option label="控制节点" value="control_plane" />
             <el-option label="工作节点" value="worker" />
             <el-option label="镜像仓库" value="registry" />
@@ -73,7 +73,7 @@ watch(() => [props.modelValue, props.node], () => {
 }, { immediate: true, deep: true });
 
 const canSave = computed(() => Boolean(
-  form.hostname.trim() && form.ip.trim() && form.role && form.ssh_user.trim()
+  form.hostname.trim() && form.ip.trim() && form.roles.length && form.ssh_user.trim()
   && form.ssh_port && (form.id || form.password)
 ));
 const passwordPlaceholder = computed(() => form.has_password
@@ -86,7 +86,7 @@ function emptyNode() {
     hostname: '',
     ip: '',
     ipv6: '',
-    role: 'worker',
+    roles: ['worker'],
     ssh_user: 'root',
     ssh_port: 22,
     password: '',
@@ -104,7 +104,7 @@ function save() {
     hostname: form.hostname.trim(),
     ip: form.ip.trim(),
     ipv6: form.ipv6.trim(),
-    role: form.role,
+    roles: form.roles,
     ssh_user: form.ssh_user.trim(),
     ssh_port: form.ssh_port
   };

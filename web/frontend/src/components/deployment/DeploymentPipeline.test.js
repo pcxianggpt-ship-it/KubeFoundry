@@ -6,7 +6,7 @@ import DeploymentPipeline from './DeploymentPipeline.vue';
 const expectedStages = [
   ['cluster-info', '集群信息'],
   ['nodes', '服务器节点'],
-  ['settings', '安装配置'],
+  ['components', 'Kubemate 组件'],
   ['precheck', '部署预检查'],
   ['install', '执行安装']
 ];
@@ -16,7 +16,7 @@ describe('DeploymentPipeline', () => {
     const wrapper = mount(DeploymentPipeline, {
       props: {
         clusterId: 42,
-        activeStage: 'settings'
+        activeStage: 'components'
       },
       global: {
         stubs: { RouterLink: RouterLinkStub }
@@ -47,7 +47,7 @@ describe('DeploymentPipeline', () => {
         stageStates: {
           'cluster-info': 'completed',
           nodes: 'current',
-          settings: 'blocked',
+          components: 'blocked',
           precheck: 'error',
           install: 'pending'
         }

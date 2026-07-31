@@ -18,6 +18,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -31,6 +33,7 @@ class InstallServiceTest {
     RemoteStepRunner runner;
     InstallPlanFactory plans;
     InstallerAdmission admission;
+    InstallationSnapshotService snapshots;
     Cluster cluster;
     List<Node> configuredNodes;
 
@@ -43,6 +46,7 @@ class InstallServiceTest {
         runner = mock(RemoteStepRunner.class);
         plans = new InstallPlanFactory(Path.of("D:/repo"));
         admission = mock(InstallerAdmission.class);
+        snapshots = mock(InstallationSnapshotService.class);
         cluster = new Cluster("service-test");
         cluster.markNodeTestStatus("success");
         Node control = node("cp-a", "10.0.0.1", "control_plane");
@@ -98,6 +102,8 @@ class InstallServiceTest {
         assertThat(definition.steps().get(10).maxWorkers()).isEqualTo(1);
         assertThat(definition.steps().get(13).name()).isEqualTo("验证 Kubernetes 集群健康");
         assertThat(definition.steps().get(13).maxWorkers()).isEqualTo(1);
+        verify(snapshots).capture(eq(99L), eq(cluster), argThat(captured -> captured.stream()
+                .map(Node::getId).toList().equals(List.of(1L, 2L, 3L))));
     }
 
     @Test
@@ -118,7 +124,7 @@ class InstallServiceTest {
     }
 
     private InstallService installService() {
-        return new InstallService(clusters, nodes, jobService, plans, runner, null, admission);
+        return new InstallService(clusters, nodes, jobService, plans, runner, null, admission, snapshots);
     }
 
     private PrecheckService precheckService() {

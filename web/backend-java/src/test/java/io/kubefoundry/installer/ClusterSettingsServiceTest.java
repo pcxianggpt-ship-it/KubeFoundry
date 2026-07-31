@@ -13,6 +13,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
+
+import java.nio.file.Path;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest(properties = {
@@ -49,9 +51,9 @@ class ClusterSettingsServiceTest {
         Map<String, Object> defaults = settings.getGlobalSettings();
         assertThat(defaults).containsKeys("paths", "env", "advanced");
         assertThat(group(defaults, "paths")).containsEntry("k8s_home", "/data/k8s_install")
-                .containsEntry("install_media", "/root/kube-media");
+                .containsEntry("install_media", Path.of(System.getProperty("user.dir"), "kube-media").toString());
         assertThat(group(defaults, "env")).containsEntry("containerd_root",
-                "/data/k8s_install/containerd-data");
+                "/data/k8s_install/containerd_root");
 
         settings.updateClusterSettings(cluster.getId(), Map.of(
                 "paths", Map.of(

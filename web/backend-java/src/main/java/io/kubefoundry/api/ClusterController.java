@@ -3,6 +3,7 @@ package io.kubefoundry.api;
 import io.kubefoundry.cluster.ClusterService;
 import io.kubefoundry.cluster.ClusterService.ClusterRequest;
 import io.kubefoundry.cluster.ClusterService.ClusterResponse;
+import io.kubefoundry.installer.ClusterResetService;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
@@ -21,8 +22,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class ClusterController {
 
     private final ClusterService service;
+    private final ClusterResetService resets;
 
-    public ClusterController(ClusterService service) { this.service = service; }
+    public ClusterController(ClusterService service, ClusterResetService resets) {
+        this.service = service;
+        this.resets = resets;
+    }
 
     @GetMapping
     public Map<String, List<ClusterResponse>> list() {
@@ -51,7 +56,15 @@ public class ClusterController {
     }
 
     @PostMapping("/{id}/reset")
-    public ClusterResponse reset(@PathVariable long id) {
-        return service.resetCluster(id);
+    public ResponseEntity<ResetAccepted> reset(
+            @PathVariable long id, @RequestBody(required = false) ResetRequest request) {
+        return ResponseEntity.accepted().body(new ResetAccepted(
+                resets.start(id, request != null && request.acknowledged(),
+                        request == null ? null : request.confirmationPhrase()), "pending"));
     }
+
+    public record ResetRequest(boolean acknowledged,
+            @com.fasterxml.jackson.annotation.JsonProperty("confirmation_phrase") String confirmationPhrase) { }
+    public record ResetAccepted(@com.fasterxml.jackson.annotation.JsonProperty("job_id") long jobId,
+            String status) { }
 }

@@ -5,6 +5,7 @@ import io.kubefoundry.cluster.ClusterService.ClusterConfigurationLockedException
 import io.kubefoundry.job.JobQueueFullException;
 import io.kubefoundry.job.JobNotFoundException;
 import io.kubefoundry.installer.ActiveInstallerJobException;
+import io.kubefoundry.installer.ResetConfirmationMismatchException;
 import io.kubefoundry.ssh.NodeTestService.ActiveNodeTestException;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
@@ -59,6 +60,14 @@ public class ApiExceptionHandler {
                 "code", "INSTALLER_JOB_ACTIVE",
                 "message", exception.getMessage(),
                 "job_id", exception.jobId()));
+    }
+
+    @ExceptionHandler(ResetConfirmationMismatchException.class)
+    public ResponseEntity<Map<String, String>> resetConfirmation(
+            ResetConfirmationMismatchException exception) {
+        return ResponseEntity.badRequest().body(Map.of(
+                "code", "RESET_CONFIRMATION_MISMATCH",
+                "message", exception.getMessage()));
     }
 
     @ExceptionHandler(ClusterConfigurationLockedException.class)

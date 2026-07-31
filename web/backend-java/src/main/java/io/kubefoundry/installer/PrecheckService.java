@@ -77,6 +77,9 @@ public class PrecheckService {
                 .orElseThrow(() -> ResourceNotFoundException.cluster(clusterId));
         List<Node> configuredNodes = InstallationNodes.normalize(
                 nodes.findByClusterIdOrderById(clusterId));
+        if (configuredNodes.stream().anyMatch(node -> !node.getRoles().isEmpty())) {
+            ClusterTopologyValidator.requireValid(configuredNodes, cluster.getImageRegistryType());
+        }
         InstallationGate.requireSuccessfulNodeTests(cluster, configuredNodes);
         List<JobService.NodeOperation> operations = configuredNodes.stream()
                 .map(node -> JobService.NodeOperation.withOutcome(node.getId(), jobId ->

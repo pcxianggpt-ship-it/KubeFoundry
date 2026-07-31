@@ -6,7 +6,7 @@ import ClusterWorkspaceView from './views/ClusterWorkspaceView.vue';
 import InstallConfirmView from './views/InstallConfirmView.vue';
 import JobExecutionView from './views/JobExecutionView.vue';
 
-const STAGE_PATTERN = 'cluster-info|nodes|settings|precheck';
+const STAGE_PATTERN = 'cluster-info|nodes|components|precheck';
 
 export const routes = [
   {

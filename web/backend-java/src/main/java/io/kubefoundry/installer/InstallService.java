@@ -21,6 +21,7 @@ public class InstallService {
     private final RemoteStepRunner runner;
     private final ClusterSettingsService settings;
     private final InstallerAdmission admission;
+    private final InstallationSnapshotService snapshots;
 
     @Autowired
     public InstallService(
@@ -30,7 +31,8 @@ public class InstallService {
             InstallPlanFactory plans,
             RemoteStepRunner runner,
             ClusterSettingsService settings,
-            InstallerAdmission admission) {
+            InstallerAdmission admission,
+            InstallationSnapshotService snapshots) {
         this.clusters = clusters;
         this.nodes = nodes;
         this.jobService = jobService;
@@ -38,15 +40,17 @@ public class InstallService {
         this.runner = runner;
         this.settings = settings;
         this.admission = admission;
+        this.snapshots = snapshots;
     }
 
     public long start(long clusterId, List<String> selectedSteps) {
         Cluster cluster = clusters.findById(clusterId)
                 .orElseThrow(() -> ResourceNotFoundException.cluster(clusterId));
+        InstallPlan plan = plans.select(selectedSteps);
         List<Node> configuredNodes = InstallationNodes.normalize(
                 nodes.findByClusterIdOrderById(clusterId));
+        ClusterTopologyValidator.requireValid(configuredNodes, cluster.getImageRegistryType());
         InstallationGate.requireSuccessfulNodeTests(cluster, configuredNodes);
-        InstallPlan plan = plans.select(selectedSteps);
         List<JobService.StepDefinition> definitions = new ArrayList<>();
         for (int index = 0; index < plan.steps().size(); index++) {
             InstallStep step = plan.steps().get(index);
@@ -72,7 +76,9 @@ public class InstallService {
                     .orElseThrow(() -> ResourceNotFoundException.cluster(clusterId));
             admittedCluster.markInstallationStarted();
             clusters.save(admittedCluster);
-            return jobService.submit(new JobService.JobDefinition(clusterId, "install", definitions));
+            long jobId = jobService.submit(new JobService.JobDefinition(clusterId, "install", definitions));
+            snapshots.capture(jobId, admittedCluster, configuredNodes);
+            return jobId;
         });
     }
 }

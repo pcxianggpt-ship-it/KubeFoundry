@@ -97,7 +97,16 @@ public class JobService {
     }
 
     public int recoverInterruptedJobs() {
-        return jobs.replaceStatus("running");
+        List<Job> resetJobs = jobs.findByTypeAndStatusIn("reset", List.of("pending", "running"));
+        for (Job job : resetJobs) {
+            job.markInterrupted();
+            jobs.save(job);
+            clusters.findById(job.getCluster().getId()).ifPresent(cluster -> {
+                cluster.markResetFailed();
+                clusters.save(cluster);
+            });
+        }
+        return resetJobs.size() + jobs.replaceStatus("running");
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -216,9 +225,21 @@ public class JobService {
     }
 
     private void updateInstallStatus(Job job, boolean success) {
-        if (!"install".equals(job.getType())) return;
+        if (!"install".equals(job.getType()) && !"reset".equals(job.getType())) return;
         clusters.findById(job.getCluster().getId()).ifPresent(cluster -> {
-            cluster.markInstallationFinished(success);
+            if ("reset".equals(job.getType())) {
+                if (success) {
+                    for (Node node : nodes.findByClusterIdOrderById(cluster.getId())) {
+                        node.markTestStale(false);
+                        nodes.save(node);
+                    }
+                    cluster.resetInstallation();
+                } else {
+                    cluster.markResetFailed();
+                }
+            } else {
+                cluster.markInstallationFinished(success);
+            }
             clusters.saveAndFlush(cluster);
         });
     }

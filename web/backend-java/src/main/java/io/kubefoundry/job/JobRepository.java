@@ -15,6 +15,7 @@ public interface JobRepository extends JpaRepository<Job, Long> {
             long clusterId, String type, List<String> statuses);
     Optional<Job> findFirstByClusterIdAndTypeInAndStatusInOrderByIdDesc(
             long clusterId, List<String> types, List<String> statuses);
+    List<Job> findByTypeAndStatusIn(String type, List<String> statuses);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional

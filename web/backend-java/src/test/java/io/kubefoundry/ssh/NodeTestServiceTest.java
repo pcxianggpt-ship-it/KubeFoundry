@@ -505,7 +505,7 @@ class NodeTestServiceTest {
 
     private Node createNode(String hostname, String ip, String password) {
         clusterService.createNode(cluster.getId(), new ClusterService.NodeRequest(
-                hostname, ip, "", "worker", "root", 22, password));
+                hostname, ip, "", java.util.List.of("worker"), "root", 22, password));
         return nodes.findByClusterIdOrderById(cluster.getId()).stream()
                 .filter(node -> hostname.equals(node.getHostname())).findFirst().orElseThrow();
     }

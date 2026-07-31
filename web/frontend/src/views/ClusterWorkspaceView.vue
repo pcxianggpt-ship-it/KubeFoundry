@@ -60,10 +60,11 @@
           @cluster-updated="refreshCluster"
         />
 
-        <InstallSettingsStage
-          v-else-if="activeStage === 'settings'"
+        <KubemateComponentsView
+          v-else-if="activeStage === 'components'"
           :cluster-id="cluster.id"
           :locked="configurationLocked"
+          @next="router.push({ name: 'cluster-workspace', params: { clusterId: cluster.id, stage: 'precheck' } })"
         />
 
         <PrecheckView v-else-if="activeStage === 'precheck'" :cluster-id="cluster.id" />
@@ -96,7 +97,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 
 import DeploymentPipeline from '../components/deployment/DeploymentPipeline.vue';
 import ClusterInfoStage from '../components/deployment/ClusterInfoStage.vue';
-import InstallSettingsStage from '../components/deployment/InstallSettingsStage.vue';
+import KubemateComponentsView from './KubemateComponentsView.vue';
 import NodeConfigView from './NodeConfigView.vue';
 import PrecheckView from './PrecheckView.vue';
 import { createCluster, getCluster, listJobs, resetCluster, updateCluster } from '../api/client';
@@ -156,7 +157,7 @@ const stageStates = computed(() => {
     return {
       'cluster-info': 'current',
       nodes: 'blocked',
-      settings: 'blocked',
+      components: 'blocked',
       precheck: 'blocked',
       install: 'blocked'
     };
@@ -166,7 +167,7 @@ const stageStates = computed(() => {
     return {
       'cluster-info': 'completed',
       nodes: 'completed',
-      settings: 'completed',
+      components: 'completed',
       precheck: 'completed',
       install: 'current'
     };
@@ -175,7 +176,7 @@ const stageStates = computed(() => {
     return {
       'cluster-info': 'completed',
       nodes: 'completed',
-      settings: 'completed',
+      components: 'completed',
       precheck: 'completed',
       install: 'current'
     };
@@ -184,7 +185,7 @@ const stageStates = computed(() => {
     return {
       'cluster-info': 'completed',
       nodes: 'completed',
-      settings: 'completed',
+      components: 'completed',
       precheck: 'completed',
       install: 'error'
     };
@@ -193,7 +194,7 @@ const stageStates = computed(() => {
     return {
       'cluster-info': 'completed',
       nodes: 'completed',
-      settings: 'completed',
+      components: 'completed',
       precheck: 'completed',
       install: 'completed'
     };
@@ -202,7 +203,7 @@ const stageStates = computed(() => {
     return {
       'cluster-info': 'completed',
       nodes: 'completed',
-      settings: activeStage.value === 'settings' ? 'current' : 'completed',
+      components: activeStage.value === 'components' ? 'current' : 'completed',
       precheck: activeStage.value === 'precheck' ? 'current' : 'pending',
       install: 'blocked'
     };
@@ -210,7 +211,7 @@ const stageStates = computed(() => {
   return {
     'cluster-info': activeStage.value === 'cluster-info' ? 'current' : 'completed',
     nodes: activeStage.value === 'nodes' ? 'current' : 'pending',
-    settings: activeStage.value === 'settings' ? 'current' : 'blocked',
+    components: activeStage.value === 'components' ? 'current' : 'blocked',
     precheck: 'blocked',
     install: 'blocked'
   };
@@ -232,11 +233,8 @@ async function loadWorkspace() {
         name: '',
         status: 'draft',
         k8s_version: '1.30.14',
-        pod_subnet: '10.244.0.0/16',
-        service_subnet: '10.96.0.0/16',
-        registry_hostname: 'registry',
-        registry_ip: '',
-        registry_port: 5000
+        kubernetes_work_dir: '/data/k8s_install',
+        image_registry_type: 'REGISTRY'
       };
       jobs.value = [];
       return;
@@ -267,8 +265,10 @@ async function saveCluster(payload) {
     if (creating) {
       await router.replace({
         name: 'cluster-workspace',
-        params: { clusterId: String(cluster.value.id), stage: 'cluster-info' }
+        params: { clusterId: String(cluster.value.id), stage: 'nodes' }
       });
+    } else {
+      await router.push({ name: 'cluster-workspace', params: { clusterId: String(cluster.value.id), stage: 'nodes' } });
     }
   } catch (error) {
     errorMessage.value = safeErrorMessage(error);
@@ -299,13 +299,12 @@ async function reset() {
       { type: 'warning', confirmButtonText: '确认重置', cancelButtonText: '取消' }
     );
     resetting.value = true;
-    cluster.value = await resetCluster(cluster.value.id);
-    jobs.value = [];
-    await router.replace({
-      name: 'cluster-workspace',
-      params: { clusterId: String(cluster.value.id), stage: 'cluster-info' }
-    });
-    ElMessage.success('集群已重置，请重新测试节点并执行预检查');
+    const expected = `RESET ${cluster.value.name}`;
+    const confirmation = window.prompt(`请输入 ${expected} 确认远程重置：`);
+    if (confirmation !== expected) return;
+    const accepted = await resetCluster(cluster.value.id, true, confirmation);
+    await router.push({ name: 'job-execution', params: { jobId: accepted.job_id } });
+    ElMessage.success('远程重置任务已创建，请等待任务完成后重新测试节点并执行预检查');
   } catch (error) {
     if (error === 'cancel' || error === 'close') return;
     errorMessage.value = safeErrorMessage(error, '集群重置失败。');

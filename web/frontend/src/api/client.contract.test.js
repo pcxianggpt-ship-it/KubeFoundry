@@ -16,6 +16,7 @@ const EXPECTED_EXPORTS = [
   'getPrecheckResults',
   'getSettings',
   'listClusters',
+  'listComponents',
   'listJobs',
   'listNodes',
   'resetCluster',
@@ -24,6 +25,7 @@ const EXPECTED_EXPORTS = [
   'startPrecheck',
   'updateCluster',
   'updateClusterSettings',
+  'updateComponents',
   'updateNode',
   'updateSettings'
 ];
@@ -45,7 +47,7 @@ describe('Java Web API 客户端契约', () => {
     await client.getCluster(7);
     await client.createCluster({ name: 'contract' });
     await client.updateCluster(7, { description: 'updated' });
-    await client.resetCluster(7);
+    await client.resetCluster(7, true, 'RESET contract');
     await client.listNodes(7);
     await client.createNode(7, { hostname: 'cp-1' });
     await client.updateNode(9, { hostname: 'cp-2' });

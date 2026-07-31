@@ -60,10 +60,16 @@ export function updateCluster(clusterId, data) {
   });
 }
 
-export function resetCluster(clusterId) {
+export function resetCluster(clusterId, acknowledged, confirmationPhrase) {
   return request(`/api/clusters/${clusterId}/reset`, {
-    method: 'POST'
+    method: 'POST',
+    body: JSON.stringify({ acknowledged, confirmation_phrase: confirmationPhrase })
   });
+}
+
+export function listComponents(clusterId) { return request(`/api/clusters/${clusterId}/components`); }
+export function updateComponents(clusterId, items) {
+  return request(`/api/clusters/${clusterId}/components`, { method: 'PUT', body: JSON.stringify({ items }) });
 }
 
 export function listNodes(clusterId) {

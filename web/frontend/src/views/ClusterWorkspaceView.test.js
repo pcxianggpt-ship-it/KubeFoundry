@@ -12,6 +12,8 @@ vi.mock('../api/client', () => ({
   createCluster: vi.fn(),
   updateCluster: vi.fn(),
   resetCluster: vi.fn(),
+  listComponents: vi.fn().mockResolvedValue({ items: [] }),
+  updateComponents: vi.fn(),
   listClusters: vi.fn(),
   listJobs: vi.fn().mockResolvedValue({ items: [] }),
   getPrecheckResults: vi.fn().mockResolvedValue({ items: [] }),
@@ -44,12 +46,12 @@ describe('ClusterWorkspaceView', () => {
   });
 
   it('刷新后按 URL 恢复当前阶段并显示中文内容', async () => {
-    const { wrapper } = await mountAt('/clusters/42/settings');
+    const { wrapper } = await mountAt('/clusters/42/components');
 
     expect(getCluster).toHaveBeenCalledWith('42');
-    expect(wrapper.get('[data-stage-key="settings"]').attributes('aria-current')).toBe('step');
+    expect(wrapper.get('[data-stage-key="components"]').attributes('aria-current')).toBe('step');
     expect(wrapper.get('h1').text()).toBe('生产集群');
-    expect(wrapper.get('[data-testid="stage-content"]').text()).toContain('安装配置');
+    expect(wrapper.get('[data-testid="stage-content"]').text()).toContain('Kubemate 组件配置');
   });
 
   it('显示加载、错误重试和阶段禁用状态', async () => {
@@ -86,11 +88,14 @@ describe('ClusterWorkspaceView', () => {
 
     expect(getCluster).not.toHaveBeenCalledWith('new');
     expect(createCluster).toHaveBeenCalledWith(expect.objectContaining({ name: '新生产集群' }));
-    expect(router.currentRoute.value.fullPath).toBe('/clusters/88/cluster-info');
+    expect(router.currentRoute.value.fullPath).toBe('/clusters/88/nodes');
   });
 
   it('编辑已有集群时调用更新接口并刷新页面数据', async () => {
-    updateCluster.mockResolvedValue({ id: 42, name: '更新后的集群', status: 'draft' });
+    const updated = { id: 42, name: '更新后的集群', status: 'draft' };
+    getCluster.mockResolvedValueOnce({ id: 42, name: '生产集群', status: 'precheck_passed' })
+      .mockResolvedValueOnce(updated);
+    updateCluster.mockResolvedValue(updated);
     const { wrapper } = await mountAt('/clusters/42/cluster-info');
 
     await wrapper.get('[data-testid="cluster-name"]').setValue('更新后的集群');

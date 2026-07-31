@@ -226,15 +226,14 @@ class ClusterNodeApiTest {
                 .andExpect(jsonPath("$.code").value("CLUSTER_CONFIGURATION_LOCKED"));
 
         mvc.perform(post("/api/clusters/{id}/reset", clusterId))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.configuration_locked").value(false))
-                .andExpect(jsonPath("$.node_test_status").value("stale"));
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("RESET_CONFIRMATION_MISMATCH"));
 
         mvc.perform(put("/api/clusters/{id}", clusterId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"description\":\"editable again\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.description").value("editable again"));
+                        .content("{\"description\":\"still locked\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CLUSTER_CONFIGURATION_LOCKED"));
     }
 
     private long createCluster(String name) throws Exception {

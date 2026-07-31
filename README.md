@@ -53,8 +53,8 @@ dist/kubefoundry-web-v0.2.0-aarch64.tar.gz
 
 ```bash
 tar -xzf kubefoundry-web-v0.2.0-x86_64.tar.gz
-cp kubefoundry-web-v0.2.0-x86_64/deploy.sh .
-sudo bash deploy.sh kubefoundry-web-v0.2.0-x86_64.tar.gz
+cp kubefoundry-web-v0.2.1-x86_64/deploy.sh .
+sudo bash deploy.sh kubefoundry-web-v0.2.1-x86_64.tar.gz
 ```
 
 也可以把发布包内的 `deploy.sh` 与压缩包放到独立部署目录后执行。服务默认监听 `10001`，程序位于当前目录的 `app`，H2 数据、主密钥和任务数据位于 `data`，日志位于 `logs`。重复部署保留 `data` 和 `logs`。完整说明见 [v0.2.0 部署手册](doc/v0.2.0/KubeFoundry-v0.2.0-部署手册.md)。

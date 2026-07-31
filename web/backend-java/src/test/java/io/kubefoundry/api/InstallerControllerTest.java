@@ -87,6 +87,14 @@ class InstallerControllerTest {
         node.update("cp-a", "10.0.0.1", "", "control_plane", "root", 22);
         node.completeNodeTest("kylin", "V10", "amd64");
         node = nodes.saveAndFlush(node);
+        Node worker = new Node(cluster);
+        worker.update("worker-a", "10.0.0.2", "", "worker", "root", 22);
+        worker.completeNodeTest("kylin", "V10", "amd64");
+        nodes.saveAndFlush(worker);
+        Node registry = new Node(cluster);
+        registry.update("registry", "10.0.0.9", "", "registry", "root", 22);
+        registry.completeNodeTest("kylin", "V10", "amd64");
+        nodes.saveAndFlush(registry);
 
         when(runner.run(anyLong(), any(), any(), any(), any(), any(RuntimeSettings.class)))
                 .thenAnswer(invocation -> JobService.NodeOutcome.successful());
@@ -113,7 +121,7 @@ class InstallerControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.paths.k8s_home").value("/data/k8s_install"))
                 .andExpect(jsonPath("$.env.containerd_root")
-                        .value("/data/k8s_install/containerd-data"));
+                        .value("/data/k8s_install/containerd_root"));
 
         mvc.perform(put("/api/settings")
                         .contentType(MediaType.APPLICATION_JSON)

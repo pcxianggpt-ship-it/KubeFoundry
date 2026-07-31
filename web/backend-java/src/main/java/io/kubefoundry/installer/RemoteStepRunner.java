@@ -309,7 +309,9 @@ public class RemoteStepRunner {
         nodes.stream().sorted(java.util.Comparator.comparing(Node::getHostname,
                 java.util.Comparator.nullsLast(String::compareTo))).forEach(item -> addHostAlias(
                 aliases, item.getIp(), item.getHostname()));
-        addHostAlias(aliases, cluster.getRegistryIp(), RuntimeEnvRenderer.registryHostname(cluster));
+        Node registry = RegistryNodeSelector.select(nodes);
+        if (registry != null) addHostAlias(aliases, registry.getIp(), registry.getHostname());
+        else addHostAlias(aliases, cluster.getRegistryIp(), RuntimeEnvRenderer.registryHostname(cluster));
         aliases.forEach((ip, hostnames) -> script.append("  printf '%s\\n' ")
                 .append(RuntimeEnvRenderer.shellQuote(ip + "    " + String.join(" ", hostnames)))
                 .append('\n'));
@@ -364,7 +366,8 @@ public class RemoteStepRunner {
     private static HealthResult evaluateClusterHealth(List<Node> nodes, String output) {
         String[] sections = (output == null ? "" : output).split("(?m)^__KF_PODS__$", 2);
         Set<String> expected = nodes.stream()
-                .filter(node -> Set.of("control_plane", "worker").contains(node.getRole()))
+                .filter(node -> node.hasRole("control_plane") || node.hasRole("worker")
+                        || Set.of("control_plane", "worker").contains(node.getRole()))
                 .map(Node::getHostname)
                 .filter(name -> name != null && !name.isBlank())
                 .collect(java.util.stream.Collectors.toCollection(java.util.TreeSet::new));
@@ -480,8 +483,8 @@ public class RemoteStepRunner {
             String k8sHome = values.getOrDefault("k8s_home", "/data/k8s_install");
             return new RuntimeSettings(values, Map.of(
                     "kubelet_root", k8sHome + "/kubelet_root",
-                    "containerd_root", k8sHome + "/containerd-data",
-                    "etcd_data_dir", k8sHome + "/etcd_backup"),
+                    "containerd_root", k8sHome + "/containerd_root",
+                    "etcd_data_dir", k8sHome + "/etcd_root"),
                     Map.of("enable_ipv6_dual_stack", false));
         }
 

@@ -40,6 +40,12 @@ public class Cluster {
     @Column(name = "registry_port", nullable = false)
     private int registryPort = 5000;
 
+    @Column(name = "kubernetes_work_dir", nullable = false, length = 512)
+    private String kubernetesWorkDir = "/data/k8s_install";
+
+    @Column(name = "image_registry_type", nullable = false, length = 32)
+    private String imageRegistryType = "REGISTRY";
+
     @Column(nullable = false, length = 32)
     private String status = "draft";
 
@@ -74,6 +80,8 @@ public class Cluster {
     public String getRegistryHostname() { return registryHostname; }
     public String getRegistryIp() { return registryIp; }
     public int getRegistryPort() { return registryPort; }
+    public String getKubernetesWorkDir() { return kubernetesWorkDir; }
+    public String getImageRegistryType() { return imageRegistryType; }
     public String getStatus() { return status; }
     public boolean isInstallationLocked() { return installationLocked; }
     public long getNodeConfigVersion() { return nodeConfigVersion; }
@@ -105,17 +113,30 @@ public class Cluster {
         nodeTestStatus = "stale";
     }
 
+    public void updateInstallationConfiguration(String workDir, String registryType) {
+        if (workDir != null) this.kubernetesWorkDir = workDir.trim();
+        if (registryType != null) this.imageRegistryType = registryType.trim();
+    }
+
     public void markNodeTestStatus(String value) {
         nodeTestStatus = value;
     }
 
     public void markInstallationStarted() {
         status = "installing";
-        installationLocked = true;
     }
 
     public void markInstallationFinished(boolean success) {
         status = success ? "installed" : "install_failed";
+        if (success) installationLocked = true;
+    }
+
+    public void markResetStarted() {
+        status = "resetting";
+    }
+
+    public void markResetFailed() {
+        status = "reset_failed";
     }
 
     public void resetInstallation() {

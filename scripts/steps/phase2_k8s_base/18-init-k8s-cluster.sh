@@ -10,11 +10,12 @@
 #   K8S_VERSION       - K8S版本
 #   KUBELET_ROOT      - kubelet数据目录
 #   ETCD_DATA_DIR     - etcd数据目录
-#   POD_SUBNET        - Pod网段
-#   SERVICE_SUBNET    - Service网段
 #   DUAL_STACK        - 是否双栈 (Y/N)
 #   REGISTRY_HOSTNAME - 镜像仓库主机名
 #===============================================================================
+
+readonly POD_SUBNET="10.244.0.0/16"
+readonly SERVICE_SUBNET="10.96.0.0/16"
 
 log_info "开始初始化K8S集群..."
 

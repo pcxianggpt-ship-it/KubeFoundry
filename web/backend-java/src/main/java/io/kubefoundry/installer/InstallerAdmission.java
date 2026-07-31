@@ -10,7 +10,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Component
 public class InstallerAdmission {
 
-    private static final List<String> INSTALLER_TYPES = List.of("install", "precheck");
+    private static final List<String> INSTALLER_TYPES = List.of("install", "precheck", "reset");
     private static final List<String> ACTIVE_STATUSES = List.of("pending", "running");
 
     private final ClusterRepository clusters;

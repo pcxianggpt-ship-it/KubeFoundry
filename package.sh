@@ -8,7 +8,7 @@ unset KF_PACKAGE_BASH_REEXEC
 
 #===============================================================================
 # 脚本名称：package.sh
-# 功能：构建 KubeFoundry v0.2.0 Java 双架构离线部署包
+# 功能：构建 KubeFoundry v0.2.1 Java 双架构离线部署包
 # 作者：KubeFoundry Team
 # 版本：2.0.0
 #===============================================================================
@@ -29,14 +29,14 @@ log_error() { printf '[ERROR] %s\n' "$*" >&2; }
 
 show_usage() {
     cat <<'EOF'
-KubeFoundry v0.2.0 Java 离线包构建脚本
+KubeFoundry v0.2.1 Java 离线包构建脚本
 
 用法:
   KF_TARGET_ARCH=x86_64 bash package.sh
   KF_TARGET_ARCH=aarch64 bash package.sh
 
 输出:
-  dist/kubefoundry-web-v0.2.0-{x86_64|aarch64}.tar.gz
+  dist/kubefoundry-web-v0.2.1-{x86_64|aarch64}.tar.gz
 
 说明:
   使用 JDK 17 构建；交叉构建时必须通过 KF_TARGET_JDK_HOME 提供真实目标架构 JDK。
@@ -86,7 +86,7 @@ build_application() {
     fi
 
     if [ "${USE_PREBUILT}" = "1" ]; then
-        local jar="${PROJECT_ROOT}/web/backend-java/target/kubefoundry-backend-0.2.0.jar"
+        local jar="${PROJECT_ROOT}/web/backend-java/target/kubefoundry-backend-0.2.1.jar"
         local web="${PROJECT_ROOT}/web/frontend/dist"
         [ -f "${jar}" ] || { log_error "预构建 JAR 不存在: ${jar}"; return 1; }
         [ -f "${web}/index.html" ] || { log_error "预构建前端不存在: ${web}/index.html"; return 1; }
@@ -111,7 +111,7 @@ build_application() {
     (cd "${PROJECT_ROOT}/web/backend-java" && mvn -q "${maven_args[@]}")
     log_info "构建并测试 Vue 前端..."
     (cd "${PROJECT_ROOT}/web/frontend" && npm "${npm_ci_args[@]}" && npm test && npm run build)
-    cp "${PROJECT_ROOT}/web/backend-java/target/kubefoundry-backend-0.2.0.jar" \
+    cp "${PROJECT_ROOT}/web/backend-java/target/kubefoundry-backend-0.2.1.jar" \
         "${release_dir}/app/kubefoundry.jar"
     cp -a "${PROJECT_ROOT}/web/frontend/dist/." "${release_dir}/web/"
 }
@@ -157,7 +157,7 @@ main() {
     check_environment
     local version
     version="$(read_version)"
-    [ "${version}" = "0.2.0" ] || { log_error "后端版本必须为 0.2.0，实际为 ${version:-未知}"; return 1; }
+    [ "${version}" = "0.2.1" ] || { log_error "后端版本必须为 0.2.1，实际为 ${version:-未知}"; return 1; }
     STAGING_ROOT="$(mktemp -d)"
     create_archive "${version}"
 }

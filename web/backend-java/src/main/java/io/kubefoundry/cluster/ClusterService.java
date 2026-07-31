@@ -1,6 +1,8 @@
 package io.kubefoundry.cluster;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import io.kubefoundry.credential.AesGcmCredentialCipher;
 import io.kubefoundry.credential.EncryptedCredential;
 import io.kubefoundry.job.JobRepository;
@@ -48,9 +50,9 @@ public class ClusterService {
         Cluster cluster = clusters.findByName(name).orElse(null);
         boolean created = cluster == null;
         if (created) cluster = new Cluster(name);
-        cluster.update(name, request.description(), request.k8sVersion(), request.podSubnet(),
-                request.serviceSubnet(), request.registryHostname(), request.registryIp(),
-                request.registryPort(), request.status());
+        cluster.update(name, request.description(), request.k8sVersion(), null, null, null, null,
+                null, request.status());
+        updateInstallationConfiguration(cluster, request);
         return new UpsertClusterResult(response(clusters.save(cluster)), created);
     }
 
@@ -59,9 +61,9 @@ public class ClusterService {
         Cluster cluster = requireCluster(id);
         requireConfigurationMutable(cluster);
         String name = request.name() == null ? null : required(request.name(), "集群名称不能为空");
-        cluster.update(name, request.description(), request.k8sVersion(), request.podSubnet(),
-                request.serviceSubnet(), request.registryHostname(), request.registryIp(),
-                request.registryPort(), request.status());
+        cluster.update(name, request.description(), request.k8sVersion(), null, null, null, null,
+                null, request.status());
+        updateInstallationConfiguration(cluster, request);
         return response(clusters.save(cluster));
     }
 
@@ -83,8 +85,9 @@ public class ClusterService {
         requireConfigurationMutable(cluster);
         validateNode(request, true);
         Node node = new Node(cluster);
-        node.update(request.hostname(), request.ip(), valueOrEmpty(request.ipv6()), request.role(),
+        node.update(request.hostname(), request.ip(), valueOrEmpty(request.ipv6()), null,
                 request.sshUser(), request.sshPort());
+        node.replaceRoles(request.roles());
         replacePasswordIfPresent(node, request.password());
         node.markDraft(false);
         node.markPendingAndClearDiscovery();
@@ -102,14 +105,15 @@ public class ClusterService {
         boolean criticalChanged = changed(request.hostname(), node.getHostname())
                 || changed(request.ip(), node.getIp())
                 || changed(request.ipv6(), node.getIpv6())
-                || changed(request.role(), node.getRole())
+                || (request.roles() != null && !Set.copyOf(request.roles()).equals(node.getRoles()))
                 || changed(request.sshUser(), node.getSshUser())
                 || (request.sshPort() != null && request.sshPort() != node.getSshPort())
                 || (request.password() != null && !request.password().isBlank());
         NodeRequest merged = merge(node, request);
         validateNode(merged, false);
-        node.update(request.hostname(), request.ip(), request.ipv6(), request.role(),
+        node.update(request.hostname(), request.ip(), request.ipv6(), null,
                 request.sshUser(), request.sshPort());
+        node.replaceRoles(merged.roles());
         replacePasswordIfPresent(node, request.password());
         if (node.isDraft()) node.markDraft(false);
         if (criticalChanged) {
@@ -144,7 +148,8 @@ public class ClusterService {
                 throw new IllegalArgumentException("节点不属于当前集群");
             }
             Node target = new Node(cluster);
-            target.update("", "", "", source.getRole(), source.getSshUser(), source.getSshPort());
+            target.update("", "", "", null, source.getSshUser(), source.getSshPort());
+            target.replaceRoles(source.getRoles());
             target.copyCredentialFrom(source);
             target.markDraft(true);
             target.markPendingAndClearDiscovery();
@@ -152,24 +157,6 @@ public class ClusterService {
         }).toList();
         clusters.markNodeConfigurationChanged(clusterId);
         return copied;
-    }
-
-    @Transactional
-    public ClusterResponse resetCluster(long id) {
-        Cluster cluster = requireCluster(id);
-        if (!isConfigurationLocked(cluster)) {
-            throw new IllegalArgumentException("集群尚未开始安装，无需重置");
-        }
-        if (jobs.findFirstByClusterIdAndTypeInAndStatusInOrderByIdDesc(
-                id, List.of("install", "precheck"), List.of("pending", "running")).isPresent()) {
-            throw new ClusterConfigurationLockedException("当前安装或预检查任务仍在执行，暂不能重置集群");
-        }
-        for (Node node : nodes.findByClusterIdOrderById(id)) {
-            node.markTestStale(false);
-            nodes.save(node);
-        }
-        cluster.resetInstallation();
-        return response(clusters.save(cluster));
     }
 
     private void replacePasswordIfPresent(Node node, String password) {
@@ -189,8 +176,12 @@ public class ClusterService {
         if (!isIpv4(ip)) {
             throw new IllegalArgumentException("节点 IPv4 格式无效");
         }
-        if (!NODE_ROLES.contains(request.role())) {
+        if (request.roles() == null || request.roles().isEmpty()
+                || !NODE_ROLES.containsAll(Set.copyOf(request.roles()))) {
             throw new IllegalArgumentException("节点角色无效");
+        }
+        if (request.roles().contains("control_plane") && request.roles().contains("worker")) {
+            throw new IllegalArgumentException("同一台服务器不能同时配置控制节点和工作节点角色");
         }
         required(request.sshUser(), "SSH 用户不能为空");
         if (request.sshPort() == null || request.sshPort() < 1 || request.sshPort() > 65535) {
@@ -211,6 +202,20 @@ public class ClusterService {
 
     private ClusterResponse response(Cluster cluster) {
         return ClusterResponse.from(cluster, isConfigurationLocked(cluster));
+    }
+
+    private static void updateInstallationConfiguration(Cluster cluster, ClusterRequest request) {
+        String workDir = request.kubernetesWorkDir();
+        if (workDir != null) {
+            if (workDir.isBlank() || !workDir.trim().startsWith("/")) {
+                throw new IllegalArgumentException("Kubernetes 工作目录必须是绝对路径");
+            }
+        }
+        String registryType = request.imageRegistryType();
+        if (registryType != null && !"REGISTRY".equals(registryType)) {
+            throw new IllegalArgumentException("当前版本仅支持安装 Registry，Harbor 将在后续版本开放");
+        }
+        cluster.updateInstallationConfiguration(workDir, registryType);
     }
 
     private void requireConfigurationMutable(Cluster cluster) {
@@ -250,7 +255,7 @@ public class ClusterService {
                 request.hostname() == null ? node.getHostname() : request.hostname(),
                 request.ip() == null ? node.getIp() : request.ip(),
                 request.ipv6() == null ? node.getIpv6() : request.ipv6(),
-                request.role() == null ? node.getRole() : request.role(),
+                request.roles() == null ? node.getRoles().stream().toList() : request.roles(),
                 request.sshUser() == null ? node.getSshUser() : request.sshUser(),
                 request.sshPort() == null ? node.getSshPort() : request.sshPort(),
                 request.password());
@@ -260,11 +265,8 @@ public class ClusterService {
             String name,
             String description,
             @JsonProperty("k8s_version") String k8sVersion,
-            @JsonProperty("pod_subnet") String podSubnet,
-            @JsonProperty("service_subnet") String serviceSubnet,
-            @JsonProperty("registry_hostname") String registryHostname,
-            @JsonProperty("registry_ip") String registryIp,
-            @JsonProperty("registry_port") Integer registryPort,
+            @JsonProperty("kubernetes_work_dir") String kubernetesWorkDir,
+            @JsonProperty("image_registry_type") String imageRegistryType,
             String status) {}
 
     public record ClusterResponse(
@@ -272,19 +274,15 @@ public class ClusterService {
             String name,
             String description,
             @JsonProperty("k8s_version") String k8sVersion,
-            @JsonProperty("pod_subnet") String podSubnet,
-            @JsonProperty("service_subnet") String serviceSubnet,
-            @JsonProperty("registry_hostname") String registryHostname,
-            @JsonProperty("registry_ip") String registryIp,
-            @JsonProperty("registry_port") int registryPort,
+            @JsonProperty("kubernetes_work_dir") String kubernetesWorkDir,
+            @JsonProperty("image_registry_type") String imageRegistryType,
             String status,
             @JsonProperty("node_config_version") long nodeConfigVersion,
             @JsonProperty("node_test_status") String nodeTestStatus,
             @JsonProperty("configuration_locked") boolean configurationLocked) {
         static ClusterResponse from(Cluster value, boolean configurationLocked) {
             return new ClusterResponse(value.getId(), value.getName(), value.getDescription(),
-                    value.getKubernetesVersion(), value.getPodSubnet(), value.getServiceSubnet(),
-                    value.getRegistryHostname(), value.getRegistryIp(), value.getRegistryPort(),
+                    value.getKubernetesVersion(), value.getKubernetesWorkDir(), value.getImageRegistryType(),
                     value.getStatus(), value.getNodeConfigVersion(), value.getNodeTestStatus(),
                     configurationLocked);
         }
@@ -294,7 +292,8 @@ public class ClusterService {
             String hostname,
             String ip,
             String ipv6,
-            String role,
+            @JsonAlias("role") @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
+            List<String> roles,
             @JsonProperty("ssh_user") String sshUser,
             @JsonProperty("ssh_port") Integer sshPort,
             String password) {}
@@ -305,7 +304,7 @@ public class ClusterService {
             String hostname,
             String ip,
             String ipv6,
-            String role,
+            List<String> roles,
             @JsonProperty("ssh_user") String sshUser,
             @JsonProperty("ssh_port") int sshPort,
             @JsonProperty("has_password") boolean hasPassword,
@@ -318,7 +317,7 @@ public class ClusterService {
             String status) {
         static NodeResponse from(Node value) {
             return new NodeResponse(value.getId(), value.getCluster().getId(), value.getHostname(),
-                    value.getIp(), value.getIpv6(), value.getRole(), value.getSshUser(),
+                    value.getIp(), value.getIpv6(), value.getRoles().stream().sorted().toList(), value.getSshUser(),
                     value.getSshPort(), value.hasPassword(), value.isDraft(),
                     value.getNodeTestStatus(), value.getOsType(), value.getOsVersion(),
                     value.getArchitecture(), value.getNodeTestMessage(), value.getStatus());

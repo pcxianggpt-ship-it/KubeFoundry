@@ -17,7 +17,8 @@ final class PrimaryControlPlaneSelector {
     static Node select(List<Node> nodes) {
         if (nodes == null) return null;
         return nodes.stream()
-                .filter(node -> "control_plane".equals(node.getRole()))
+                .filter(node -> node.hasRole("control_plane")
+                        || "control_plane".equals(node.getRole()))
                 .min(ORDER)
                 .orElse(null);
     }
