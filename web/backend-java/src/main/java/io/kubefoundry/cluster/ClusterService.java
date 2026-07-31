@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonFormat;
 import io.kubefoundry.credential.AesGcmCredentialCipher;
 import io.kubefoundry.credential.EncryptedCredential;
 import io.kubefoundry.job.JobRepository;
+import io.kubefoundry.installer.InstallerAdmission;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
@@ -22,16 +23,19 @@ public class ClusterService {
     private final NodeRepository nodes;
     private final JobRepository jobs;
     private final ObjectProvider<AesGcmCredentialCipher> credentialCipherProvider;
+    private final InstallerAdmission admission;
 
     public ClusterService(
             ClusterRepository clusters,
             NodeRepository nodes,
             JobRepository jobs,
-            ObjectProvider<AesGcmCredentialCipher> credentialCipherProvider) {
+            ObjectProvider<AesGcmCredentialCipher> credentialCipherProvider,
+            InstallerAdmission admission) {
         this.clusters = clusters;
         this.nodes = nodes;
         this.jobs = jobs;
         this.credentialCipherProvider = credentialCipherProvider;
+        this.admission = admission;
     }
 
     @Transactional(readOnly = true)
@@ -219,9 +223,7 @@ public class ClusterService {
     }
 
     private void requireConfigurationMutable(Cluster cluster) {
-        if (isConfigurationLocked(cluster)) {
-            throw new ClusterConfigurationLockedException("安装任务已开始，重置集群后才能修改集群信息、服务器节点或安装配置");
-        }
+        admission.requireConfigurationWritable(cluster.getId(), isConfigurationLocked(cluster));
     }
 
     private boolean isConfigurationLocked(Cluster cluster) {

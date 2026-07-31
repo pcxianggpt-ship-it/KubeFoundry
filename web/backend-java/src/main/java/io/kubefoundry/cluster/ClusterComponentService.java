@@ -1,5 +1,6 @@
 package io.kubefoundry.cluster;
 
+import io.kubefoundry.installer.InstallerAdmission;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -11,10 +12,15 @@ public class ClusterComponentService {
     private static final Set<String> SUPPORTED = Set.of("loki", "traefik", "nfs");
     private final ClusterRepository clusters;
     private final ClusterComponentRepository components;
+    private final InstallerAdmission admission;
 
-    public ClusterComponentService(ClusterRepository clusters, ClusterComponentRepository components) {
+    public ClusterComponentService(
+            ClusterRepository clusters,
+            ClusterComponentRepository components,
+            InstallerAdmission admission) {
         this.clusters = clusters;
         this.components = components;
+        this.admission = admission;
     }
 
     @Transactional(readOnly = true)
@@ -30,9 +36,7 @@ public class ClusterComponentService {
     @Transactional
     public List<ComponentResponse> replace(long clusterId, List<ComponentRequest> requests) {
         Cluster cluster = requireCluster(clusterId);
-        if (cluster.isInstallationLocked()) {
-            throw new ClusterService.ClusterConfigurationLockedException("集群安装成功后必须先完成重置，才能修改 Kubemate 组件配置");
-        }
+        admission.requireConfigurationWritable(clusterId, cluster.isInstallationLocked());
         Map<String, Boolean> values = (requests == null ? List.<ComponentRequest>of() : requests).stream()
                 .peek(request -> {
                     if (request.key() == null || !SUPPORTED.contains(request.key())) {

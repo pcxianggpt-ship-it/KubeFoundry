@@ -25,18 +25,21 @@ public class ClusterSettingsService {
     private final AppSettingRepository appSettings;
     private final ObjectMapper objectMapper;
     private final String appDirectory;
+    private final InstallerAdmission admission;
 
     public ClusterSettingsService(
             ClusterRepository clusters,
             ClusterSettingRepository settings,
             AppSettingRepository appSettings,
             ObjectMapper objectMapper,
-            @Value("${kubefoundry.app-dir}") String appDirectory) {
+            @Value("${kubefoundry.app-dir}") String appDirectory,
+            InstallerAdmission admission) {
         this.clusters = clusters;
         this.settings = settings;
         this.appSettings = appSettings;
         this.objectMapper = objectMapper;
         this.appDirectory = java.nio.file.Path.of(appDirectory).toAbsolutePath().normalize().toString();
+        this.admission = admission;
     }
 
     @Transactional(readOnly = true)
@@ -60,9 +63,7 @@ public class ClusterSettingsService {
     @Transactional
     public Map<String, Object> updateClusterSettings(long clusterId, Map<String, Object> incoming) {
         Cluster cluster = requireCluster(clusterId);
-        if (cluster.isInstallationLocked()) {
-            throw new ClusterConfigurationLockedException("安装任务已开始，重置集群后才能修改安装配置");
-        }
+        admission.requireConfigurationWritable(clusterId, cluster.isInstallationLocked());
         if (incoming == null) return mergedSettings(clusterId);
         validateIncoming(incoming);
         for (Map.Entry<String, Object> entry : incoming.entrySet()) {
