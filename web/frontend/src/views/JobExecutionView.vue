@@ -1,7 +1,7 @@
 <template>
   <section class="page-view job-execution-view">
     <header class="workspace-header execution-header">
-      <div><RouterLink v-if="job.cluster_id" class="back-link" :to="clusterRoute"><ArrowLeft />返回集群</RouterLink><p class="page-eyebrow">安装任务 #{{ job.id || route.params.jobId }}</p><h1>{{ cluster.name || '集群安装进度' }}</h1></div>
+      <div><RouterLink v-if="job.cluster_id" class="back-link" :to="clusterRoute"><ArrowLeft />返回安装概览</RouterLink><p class="page-eyebrow">{{ jobTypeLabel }}任务 #{{ job.id || route.params.jobId }}</p><h1>{{ cluster.name || '集群任务进度' }}</h1></div>
       <span class="status-label" :class="`status-label--${statusTone}`"><component :is="statusIcon" />{{ jobStatusLabel(job.status) }}</span>
     </header>
     <el-skeleton v-if="loading" :rows="9" animated aria-label="正在恢复安装任务" />
@@ -14,11 +14,11 @@
         <el-progress :percentage="progress" :status="job.status === 'failed' ? 'exception' : job.status === 'success' ? 'success' : undefined" />
         <div class="execution-meta"><span>Kubernetes {{ cluster.k8s_version || '-' }}</span><span>{{ connected ? '实时连接中' : terminal ? '任务已结束' : '实时连接已中断' }}</span></div>
       </section>
-      <el-alert v-if="job.status === 'failed'" title="安装任务失败，可定位首个失败节点查看诊断和日志。" type="error" show-icon :closable="false">
+      <el-alert v-if="job.status === 'failed'" :title="`${jobTypeLabel}任务失败，可定位首个失败节点查看诊断和日志。`" type="error" show-icon :closable="false">
         <template #default><el-button data-testid="locate-failure" link type="primary" @click="locateFailure">定位失败位置</el-button></template>
       </el-alert>
       <div class="execution-layout">
-        <aside class="execution-stage-panel"><div class="panel-heading"><h2>安装阶段</h2><span>{{ stages.length }} 项</span></div><JobStageList :stages="stages" :selected-id="selectedStageId" @select="selectStage" /></aside>
+        <aside class="execution-stage-panel"><div class="panel-heading"><h2>{{ jobTypeLabel }}阶段</h2><span>{{ stages.length }} 项</span></div><JobStageList :stages="stages" :selected-id="selectedStageId" @select="selectStage" /></aside>
         <main class="execution-detail">
           <div class="execution-filters">
             <el-select v-model="selectedStageId" placeholder="全部阶段" aria-label="按阶段筛选"><el-option label="全部阶段" value="" /><el-option v-for="stage in stages" :key="stage.id" :label="stage.name" :value="stage.id" /></el-select>
@@ -55,7 +55,8 @@ const completedStages = computed(() => stages.value.filter((stage) => ['success'
 const progress = computed(() => stages.value.length ? Math.round(completedStages.value / stages.value.length * 100) : 0);
 const statusTone = computed(() => job.value.status === 'success' ? 'success' : terminal.value ? 'error' : 'running');
 const statusIcon = computed(() => job.value.status === 'success' ? CircleCheckFilled : terminal.value ? WarningFilled : Clock);
-const clusterRoute = computed(() => ({ name: 'install-confirm', params: { clusterId: String(job.value.cluster_id) } }));
+const clusterRoute = computed(() => ({ name: 'install-overview', params: { clusterId: String(job.value.cluster_id) } }));
+const jobTypeLabel = computed(() => ({ install: '安装', reset: '重置', precheck: '预检查' }[job.value.job_type] || '集群'));
 const selectedStage = computed(() => stages.value.find((stage) => stage.id === selectedStageId.value));
 const visibleNodes = computed(() => selectedStage.value?.nodes || stages.value.flatMap((stage) => stage.nodes || []));
 const nodeOptions = computed(() => {

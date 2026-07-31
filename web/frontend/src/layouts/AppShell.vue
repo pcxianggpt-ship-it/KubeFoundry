@@ -20,7 +20,7 @@
       :aria-hidden="isMobile && !navigationOpen ? 'true' : undefined"
       :inert="isMobile && !navigationOpen ? '' : undefined"
     >
-      <RouterLink class="brand-link" :to="{ name: 'cluster-list' }" @click="closeNavigation()">
+      <RouterLink class="brand-link" :to="{ name: 'cluster-config-list' }" @click="closeNavigation()">
         <span class="brand-mark" aria-hidden="true">KF</span>
         <span>
           <strong>KubeFoundry</strong>
@@ -29,9 +29,13 @@
       </RouterLink>
 
       <nav aria-label="主导航" class="primary-navigation">
-        <RouterLink :to="{ name: 'cluster-list' }" @click="closeNavigation()">
+        <RouterLink :to="{ name: 'cluster-config-list' }" @click="closeNavigation()">
           <Grid aria-hidden="true" />
-          <span>集群部署</span>
+          <span>集群配置</span>
+        </RouterLink>
+        <RouterLink :to="{ name: 'cluster-install-list' }" @click="closeNavigation()">
+          <Promotion aria-hidden="true" />
+          <span>集群安装</span>
         </RouterLink>
       </nav>
 
@@ -60,7 +64,7 @@
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { RouterLink, RouterView } from 'vue-router';
-import { Close, Grid, Menu } from '@element-plus/icons-vue';
+import { Close, Grid, Menu, Promotion } from '@element-plus/icons-vue';
 
 const navigationOpen = ref(false);
 const isMobile = ref(false);

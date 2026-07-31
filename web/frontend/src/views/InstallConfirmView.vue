@@ -1,7 +1,7 @@
 <template>
   <section class="page-view install-confirm-view">
     <header class="workspace-header">
-      <div><RouterLink class="back-link" :to="backRoute"><ArrowLeft />返回预检查</RouterLink><p class="page-eyebrow">安装确认</p><h1>确认集群安装范围</h1></div>
+      <div><RouterLink class="back-link" :to="backRoute"><ArrowLeft />返回安装概览</RouterLink><p class="page-eyebrow">安装确认</p><h1>确认集群安装范围</h1></div>
       <span class="status-label status-label--ready"><CircleCheckFilled />预检查通过</span>
     </header>
     <el-skeleton v-if="loading" :rows="8" animated aria-label="正在加载安装确认信息" />
@@ -13,16 +13,16 @@
         <div><span>目标集群</span><strong>{{ cluster.name }}</strong></div>
         <div><span>Kubernetes 版本</span><strong>{{ cluster.k8s_version }}</strong></div>
         <div><span>服务器范围</span><strong>{{ nodes.length }} 个节点</strong></div>
-        <div><span>并发节点数</span><strong>{{ settings.advanced?.max_parallel_nodes || 5 }}</strong></div>
+        <div><span>镜像仓库</span><strong>{{ registrySummary }}</strong></div>
       </section>
       <section class="confirm-details">
         <div><h2>网络与介质</h2><dl>
-          <dt>Pod 网段</dt><dd>{{ cluster.pod_subnet || '-' }}</dd>
-          <dt>Service 网段</dt><dd>{{ cluster.service_subnet || '-' }}</dd>
+          <dt>Pod 网段</dt><dd>10.244.0.0/16（固定）</dd>
+          <dt>Service 网段</dt><dd>10.96.0.0/16（固定）</dd>
+          <dt>Kubernetes 工作目录</dt><dd>{{ cluster.kubernetes_work_dir || '-' }}</dd>
           <dt>离线介质目录</dt><dd>{{ settings.paths?.install_media || '-' }}</dd>
-          <dt>容器数据目录</dt><dd>{{ settings.env?.containerd_root || '-' }}</dd>
         </dl></div>
-        <div><h2>节点清单</h2><ul class="confirm-node-list"><li v-for="node in nodes" :key="node.id"><strong>{{ node.hostname }}</strong><span>{{ roleLabel(node.role) }}</span><el-tag type="success" size="small">免密已验证</el-tag></li></ul></div>
+        <div><h2>节点清单</h2><ul class="confirm-node-list"><li v-for="node in nodes" :key="node.id"><strong>{{ node.hostname }}</strong><span>{{ roleLabel(node.roles) }}</span><el-tag type="success" size="small">免密已验证</el-tag></li></ul></div>
       </section>
       <el-alert title="安装将修改目标服务器的软件包、网络、容器运行时和 Kubernetes 服务。任务开始后请勿关闭管理服务。" type="warning" show-icon :closable="false" />
       <footer class="confirm-actions">
@@ -50,7 +50,11 @@ const loading = ref(true);
 const starting = ref(false);
 const riskConfirmed = ref(false);
 const errorMessage = ref('');
-const backRoute = computed(() => ({ name: 'cluster-workspace', params: { clusterId, stage: 'precheck' } }));
+const backRoute = computed(() => ({ name: 'install-overview', params: { clusterId } }));
+const registrySummary = computed(() => {
+  const registry = nodes.value.find((node) => node.roles?.includes('registry'));
+  return registry ? `${registry.hostname} (${registry.ip}:5000)` : '未找到 Registry 节点';
+});
 
 onMounted(load);
 function items(payload) { return Array.isArray(payload) ? payload : payload?.items || []; }
@@ -77,5 +81,7 @@ async function start() {
   } catch (error) { errorMessage.value = safeErrorMessage(error, '安装任务启动失败，请检查预检查状态。'); }
   finally { starting.value = false; }
 }
-function roleLabel(role) { return { control_plane: '控制节点', worker: '工作节点', registry: '镜像仓库' }[role] || role; }
+function roleLabel(roles) {
+  return (roles || []).map((role) => ({ control_plane: '控制节点', worker: '工作节点', registry: '镜像仓库' }[role] || role)).join('、');
+}
 </script>

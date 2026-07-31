@@ -2,7 +2,7 @@
   <section class="page-view cluster-workspace-view">
     <header class="workspace-header">
       <div>
-        <RouterLink class="back-link" :to="{ name: 'cluster-list' }">
+        <RouterLink class="back-link" :to="{ name: 'cluster-config-list' }">
           <ArrowLeft aria-hidden="true" />
           返回集群列表
         </RouterLink>
@@ -13,14 +13,6 @@
         <component :is="statusPresentation.icon" aria-hidden="true" />
         {{ statusPresentation.text }}
       </span>
-      <el-button
-        v-if="configurationLocked"
-        data-testid="reset-cluster"
-        type="danger"
-        plain
-        :loading="resetting"
-        @click="reset"
-      >重置集群</el-button>
     </header>
 
     <section v-if="loading" class="workspace-loading" aria-busy="true" aria-label="正在加载集群工作区">
@@ -41,7 +33,6 @@
         :cluster-id="cluster.id"
         :active-stage="activeStage"
         :stage-states="stageStates"
-        :install-job-id="latestInstallJobId"
       />
 
       <section class="stage-content" data-testid="stage-content">
@@ -64,7 +55,7 @@
           v-else-if="activeStage === 'components'"
           :cluster-id="cluster.id"
           :locked="configurationLocked"
-          @next="router.push({ name: 'cluster-workspace', params: { clusterId: cluster.id, stage: 'precheck' } })"
+          @next="router.push({ name: 'cluster-config-workspace', params: { clusterId: cluster.id, stage: 'precheck' } })"
         />
 
         <PrecheckView v-else-if="activeStage === 'precheck'" :cluster-id="cluster.id" />
@@ -93,14 +84,13 @@ import {
   Refresh,
   WarningFilled
 } from '@element-plus/icons-vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
 
 import DeploymentPipeline from '../components/deployment/DeploymentPipeline.vue';
 import ClusterInfoStage from '../components/deployment/ClusterInfoStage.vue';
 import KubemateComponentsView from './KubemateComponentsView.vue';
 import NodeConfigView from './NodeConfigView.vue';
 import PrecheckView from './PrecheckView.vue';
-import { createCluster, getCluster, listJobs, resetCluster, updateCluster } from '../api/client';
+import { createCluster, getCluster, listJobs, updateCluster } from '../api/client';
 import { safeErrorMessage } from '../utils/redaction';
 
 const route = useRoute();
@@ -108,7 +98,6 @@ const router = useRouter();
 const cluster = ref(null);
 const loading = ref(true);
 const savingCluster = ref(false);
-const resetting = ref(false);
 const errorMessage = ref('');
 const jobs = ref([]);
 let loadSequence = 0;
@@ -117,7 +106,6 @@ const activeStage = computed(() => route.params.stage || 'cluster-info');
 
 const latestInstall = computed(() => jobs.value.find((job) => job.job_type === 'install') || null);
 const configurationLocked = computed(() => Boolean(cluster.value?.configuration_locked));
-const latestInstallJobId = computed(() => configurationLocked.value ? latestInstall.value?.id ?? null : null);
 const effectiveStatus = computed(() => {
   if (!configurationLocked.value) return cluster.value?.status || 'draft';
   const install = latestInstall.value;
@@ -159,7 +147,6 @@ const stageStates = computed(() => {
       nodes: 'blocked',
       components: 'blocked',
       precheck: 'blocked',
-      install: 'blocked'
     };
   }
   const status = effectiveStatus.value;
@@ -169,7 +156,6 @@ const stageStates = computed(() => {
       nodes: 'completed',
       components: 'completed',
       precheck: 'completed',
-      install: 'current'
     };
   }
   if (['installing', 'running'].includes(status)) {
@@ -178,7 +164,6 @@ const stageStates = computed(() => {
       nodes: 'completed',
       components: 'completed',
       precheck: 'completed',
-      install: 'current'
     };
   }
   if (['install_failed', 'failed', 'interrupted'].includes(status)) {
@@ -187,7 +172,6 @@ const stageStates = computed(() => {
       nodes: 'completed',
       components: 'completed',
       precheck: 'completed',
-      install: 'error'
     };
   }
   if (['installed', 'success'].includes(status)) {
@@ -196,7 +180,6 @@ const stageStates = computed(() => {
       nodes: 'completed',
       components: 'completed',
       precheck: 'completed',
-      install: 'completed'
     };
   }
   if (nodeReady.value) {
@@ -205,7 +188,6 @@ const stageStates = computed(() => {
       nodes: 'completed',
       components: activeStage.value === 'components' ? 'current' : 'completed',
       precheck: activeStage.value === 'precheck' ? 'current' : 'pending',
-      install: 'blocked'
     };
   }
   return {
@@ -213,7 +195,6 @@ const stageStates = computed(() => {
     nodes: activeStage.value === 'nodes' ? 'current' : 'pending',
     components: activeStage.value === 'components' ? 'current' : 'blocked',
     precheck: 'blocked',
-    install: 'blocked'
   };
 });
 
@@ -264,11 +245,11 @@ async function saveCluster(payload) {
     cluster.value = saved?.data || saved;
     if (creating) {
       await router.replace({
-        name: 'cluster-workspace',
+        name: 'cluster-config-workspace',
         params: { clusterId: String(cluster.value.id), stage: 'nodes' }
       });
     } else {
-      await router.push({ name: 'cluster-workspace', params: { clusterId: String(cluster.value.id), stage: 'nodes' } });
+      await router.push({ name: 'cluster-config-workspace', params: { clusterId: String(cluster.value.id), stage: 'nodes' } });
     }
   } catch (error) {
     errorMessage.value = safeErrorMessage(error);
@@ -290,26 +271,4 @@ async function refreshCluster() {
   }
 }
 
-async function reset() {
-  if (resetting.value || !cluster.value?.id) return;
-  try {
-    await ElMessageBox.confirm(
-      '重置后会解除安装锁，并要求重新执行节点测试和部署预检查；现有服务器和安装配置会保留。',
-      '重置集群',
-      { type: 'warning', confirmButtonText: '确认重置', cancelButtonText: '取消' }
-    );
-    resetting.value = true;
-    const expected = `RESET ${cluster.value.name}`;
-    const confirmation = window.prompt(`请输入 ${expected} 确认远程重置：`);
-    if (confirmation !== expected) return;
-    const accepted = await resetCluster(cluster.value.id, true, confirmation);
-    await router.push({ name: 'job-execution', params: { jobId: accepted.job_id } });
-    ElMessage.success('远程重置任务已创建，请等待任务完成后重新测试节点并执行预检查');
-  } catch (error) {
-    if (error === 'cancel' || error === 'close') return;
-    errorMessage.value = safeErrorMessage(error, '集群重置失败。');
-  } finally {
-    resetting.value = false;
-  }
-}
 </script>

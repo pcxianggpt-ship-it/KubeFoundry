@@ -19,7 +19,7 @@
     <template v-else>
       <el-alert
         v-if="running"
-        title="正在检查所有节点，完成后将进入安装确认页"
+        title="正在检查所有节点，完成后将进入安装概览"
         type="info"
         show-icon
         :closable="false"
@@ -146,7 +146,7 @@ async function handleJobStatus(event) {
   disconnect();
   await refreshResults();
   if (payload.status === 'success') {
-    await router.push({ name: 'install-confirm', params: { clusterId: String(props.clusterId) } });
+    await router.push({ name: 'install-overview', params: { clusterId: String(props.clusterId) } });
   }
 }
 

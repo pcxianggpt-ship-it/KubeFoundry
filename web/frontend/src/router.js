@@ -3,8 +3,11 @@ import { createRouter, createWebHistory } from 'vue-router';
 import AppShell from './layouts/AppShell.vue';
 import ClusterListView from './views/ClusterListView.vue';
 import ClusterWorkspaceView from './views/ClusterWorkspaceView.vue';
+import InstallOverviewView from './views/InstallOverviewView.vue';
 import InstallConfirmView from './views/InstallConfirmView.vue';
 import JobExecutionView from './views/JobExecutionView.vue';
+import PrecheckView from './views/PrecheckView.vue';
+import ResetConfirmView from './views/ResetConfirmView.vue';
 
 const STAGE_PATTERN = 'cluster-info|nodes|components|precheck';
 
@@ -15,29 +18,67 @@ export const routes = [
     children: [
       {
         path: '',
-        name: 'cluster-list',
-        component: ClusterListView
+        redirect: { name: 'cluster-config-list' }
+      },
+      {
+        path: 'cluster-config',
+        name: 'cluster-config-list',
+        component: ClusterListView,
+        props: { mode: 'config' }
+      },
+      {
+        path: `cluster-config/:clusterId/:stage(${STAGE_PATTERN})`,
+        name: 'cluster-config-workspace',
+        component: ClusterWorkspaceView
+      },
+      {
+        path: 'cluster-install',
+        name: 'cluster-install-list',
+        component: ClusterListView,
+        props: { mode: 'install' }
+      },
+      {
+        path: 'cluster-install/:clusterId/overview',
+        name: 'install-overview',
+        component: InstallOverviewView
+      },
+      {
+        path: 'cluster-install/:clusterId/precheck',
+        name: 'install-precheck',
+        component: PrecheckView,
+        props: (route) => ({ clusterId: route.params.clusterId })
+      },
+      {
+        path: 'cluster-install/:clusterId/confirm',
+        name: 'install-confirm',
+        component: InstallConfirmView
+      },
+      {
+        path: 'cluster-install/:clusterId/reset',
+        name: 'reset-confirm',
+        component: ResetConfirmView
       },
       {
         path: 'clusters/:clusterId',
         redirect: (to) => ({
-          name: 'cluster-workspace',
+          name: 'cluster-config-workspace',
           params: { clusterId: to.params.clusterId, stage: 'cluster-info' }
         })
       },
       {
         path: `clusters/:clusterId/:stage(${STAGE_PATTERN})`,
-        name: 'cluster-workspace',
-        component: ClusterWorkspaceView
+        redirect: (to) => ({
+          name: 'cluster-config-workspace',
+          params: { clusterId: to.params.clusterId, stage: to.params.stage }
+        })
       },
       {
         path: 'clusters/:clusterId/install',
-        redirect: (to) => ({ name: 'install-confirm', params: { clusterId: to.params.clusterId } })
+        redirect: (to) => ({ name: 'install-overview', params: { clusterId: to.params.clusterId } })
       },
       {
         path: 'clusters/:clusterId/install/confirm',
-        name: 'install-confirm',
-        component: InstallConfirmView
+        redirect: (to) => ({ name: 'install-confirm', params: { clusterId: to.params.clusterId } })
       },
       {
         path: 'jobs/:jobId/execution',

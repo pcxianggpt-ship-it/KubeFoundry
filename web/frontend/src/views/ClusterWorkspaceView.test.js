@@ -5,13 +5,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ClusterWorkspaceView from './ClusterWorkspaceView.vue';
 import { createAppRouter } from '../router';
-import { createCluster, getCluster, listJobs, resetCluster, updateCluster } from '../api/client';
+import { createCluster, getCluster, listJobs, updateCluster } from '../api/client';
 
 vi.mock('../api/client', () => ({
   getCluster: vi.fn(),
   createCluster: vi.fn(),
   updateCluster: vi.fn(),
-  resetCluster: vi.fn(),
   listComponents: vi.fn().mockResolvedValue({ items: [] }),
   updateComponents: vi.fn(),
   listClusters: vi.fn(),
@@ -46,7 +45,7 @@ describe('ClusterWorkspaceView', () => {
   });
 
   it('刷新后按 URL 恢复当前阶段并显示中文内容', async () => {
-    const { wrapper } = await mountAt('/clusters/42/components');
+    const { wrapper } = await mountAt('/cluster-config/42/components');
 
     expect(getCluster).toHaveBeenCalledWith('42');
     expect(wrapper.get('[data-stage-key="components"]').attributes('aria-current')).toBe('step');
@@ -61,7 +60,7 @@ describe('ClusterWorkspaceView', () => {
     }));
 
     const router = createAppRouter(createMemoryHistory());
-    await router.push('/clusters/42/precheck');
+    await router.push('/cluster-config/42/precheck');
     await router.isReady();
     const wrapper = mount(ClusterWorkspaceView, {
       global: { plugins: [ElementPlus, router] }
@@ -75,20 +74,20 @@ describe('ClusterWorkspaceView', () => {
     getCluster.mockResolvedValueOnce({ id: 42, name: '待配置', status: 'draft' });
     await wrapper.get('[data-testid="retry-workspace"]').trigger('click');
     await flushPromises();
-    expect(wrapper.get('[data-stage-key="install"] .pipeline-stage__status').text()).toBe('暂不可用');
+    expect(wrapper.get('[data-stage-key="precheck"] .pipeline-stage__status').text()).toBe('暂不可用');
   });
 
   it('创建集群后替换为持久化集群路由', async () => {
     createCluster.mockResolvedValue({ id: 88, name: '新生产集群', status: 'draft' });
 
-    const { router, wrapper } = await mountAt('/clusters/new/cluster-info');
+    const { router, wrapper } = await mountAt('/cluster-config/new/cluster-info');
     await wrapper.get('[data-testid="cluster-name"]').setValue('新生产集群');
     await wrapper.get('[data-testid="save-cluster"]').trigger('click');
     await flushPromises();
 
     expect(getCluster).not.toHaveBeenCalledWith('new');
     expect(createCluster).toHaveBeenCalledWith(expect.objectContaining({ name: '新生产集群' }));
-    expect(router.currentRoute.value.fullPath).toBe('/clusters/88/nodes');
+    expect(router.currentRoute.value.fullPath).toBe('/cluster-config/88/nodes');
   });
 
   it('编辑已有集群时调用更新接口并刷新页面数据', async () => {
@@ -96,7 +95,7 @@ describe('ClusterWorkspaceView', () => {
     getCluster.mockResolvedValueOnce({ id: 42, name: '生产集群', status: 'precheck_passed' })
       .mockResolvedValueOnce(updated);
     updateCluster.mockResolvedValue(updated);
-    const { wrapper } = await mountAt('/clusters/42/cluster-info');
+    const { wrapper } = await mountAt('/cluster-config/42/cluster-info');
 
     await wrapper.get('[data-testid="cluster-name"]').setValue('更新后的集群');
     await wrapper.get('[data-testid="save-cluster"]').trigger('click');
@@ -106,7 +105,7 @@ describe('ClusterWorkspaceView', () => {
     expect(wrapper.get('h1').text()).toBe('更新后的集群');
   });
 
-  it('安装开始后以只读方式展示配置并提供重置入口', async () => {
+  it('安装成功后以只读方式展示配置，重置入口只在安装模块提供', async () => {
     getCluster.mockResolvedValue({
       id: 42,
       name: '已安装集群',
@@ -116,11 +115,11 @@ describe('ClusterWorkspaceView', () => {
     });
     listJobs.mockResolvedValue({ items: [{ id: 200, job_type: 'install', status: 'success' }] });
 
-    const { wrapper } = await mountAt('/clusters/42/cluster-info');
+    const { wrapper } = await mountAt('/cluster-config/42/cluster-info');
 
     expect(wrapper.get('[data-testid="cluster-name"]').attributes('disabled')).toBeDefined();
     expect(wrapper.get('[data-testid="save-cluster"]').attributes('disabled')).toBeDefined();
-    expect(wrapper.get('[data-testid="reset-cluster"]')).toBeTruthy();
-    expect(wrapper.get('[data-stage-key="install"] a').attributes('href')).toContain('/jobs/200/execution');
+    expect(wrapper.find('[data-testid="reset-cluster"]').exists()).toBe(false);
+    expect(wrapper.find('[data-stage-key="install"]').exists()).toBe(false);
   });
 });

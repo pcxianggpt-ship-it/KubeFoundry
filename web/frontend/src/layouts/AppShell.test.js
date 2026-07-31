@@ -15,7 +15,8 @@ describe('AppShell', () => {
     });
 
     expect(wrapper.text()).toContain('KubeFoundry');
-    expect(wrapper.text()).toContain('集群部署');
+    expect(wrapper.text()).toContain('集群配置');
+    expect(wrapper.text()).toContain('集群安装');
     expect(wrapper.text()).toContain('工作区内容');
 
     const menuButton = wrapper.get('button[aria-label="打开导航菜单"]');

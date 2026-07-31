@@ -31,7 +31,7 @@ describe('App', () => {
     });
     await flushPromises();
 
-    expect(wrapper.get('h1').text()).toBe('集群部署');
+    expect(wrapper.get('h1').text()).toBe('集群配置');
     expect(wrapper.text()).toContain('还没有集群');
   });
 });

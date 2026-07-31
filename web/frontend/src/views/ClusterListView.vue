@@ -2,9 +2,9 @@
   <section class="page-view cluster-list-view">
     <header class="page-header">
       <div>
-        <p class="page-eyebrow">集群部署</p>
-        <h1>集群部署</h1>
-        <p>查看部署状态并继续当前最需要处理的阶段。</p>
+        <p class="page-eyebrow">{{ mode === 'install' ? '集群安装' : '集群配置' }}</p>
+        <h1>{{ mode === 'install' ? '集群安装' : '集群配置' }}</h1>
+        <p>{{ mode === 'install' ? '查看预检查、安装任务和远程重置状态。' : '维护集群信息、服务器节点和 Kubemate 配置。' }}</p>
       </div>
       <div class="page-actions">
         <el-button
@@ -16,12 +16,13 @@
           刷新
         </el-button>
         <RouterLink
+          v-if="mode === 'config'"
           data-testid="create-cluster"
           class="el-button el-button--primary"
           :class="{ 'is-disabled': loading }"
           :aria-disabled="String(loading)"
           :tabindex="loading ? -1 : undefined"
-          :to="{ name: 'cluster-workspace', params: { clusterId: 'new', stage: 'cluster-info' } }"
+          :to="{ name: 'cluster-config-workspace', params: { clusterId: 'new', stage: 'cluster-info' } }"
           @click="loading && $event.preventDefault()"
         >
           <Plus aria-hidden="true" />
@@ -125,7 +126,11 @@ import {
 import { listClusters, listJobs } from '../api/client';
 import { safeErrorMessage } from '../utils/redaction';
 
-const validStages = new Set(['cluster-info', 'nodes', 'settings', 'precheck', 'install']);
+const props = defineProps({
+  mode: { type: String, default: 'config', validator: (value) => ['config', 'install'].includes(value) }
+});
+
+const validStages = new Set(['cluster-info', 'nodes', 'components', 'precheck']);
 const clusters = ref([]);
 const loading = ref(true);
 const errorMessage = ref('');
@@ -182,26 +187,30 @@ async function enrichClusterStatus(cluster) {
 }
 
 function workspaceRoute(cluster, fallbackStage) {
+  if (props.mode === 'install') {
+    return { name: 'install-overview', params: { clusterId: String(cluster.id) } };
+  }
   const requestedStage = cluster.current_stage;
   const stage = validStages.has(requestedStage) ? requestedStage : fallbackStage;
-  if (stage === 'install') return installConfirmRoute(cluster);
   return {
-    name: 'cluster-workspace',
+    name: 'cluster-config-workspace',
     params: { clusterId: String(cluster.id), stage }
   };
 }
 
 function fixedWorkspaceRoute(cluster, stage) {
-  if (stage === 'install') return installConfirmRoute(cluster);
+  if (props.mode === 'install') {
+    return { name: 'install-overview', params: { clusterId: String(cluster.id) } };
+  }
   return {
-    name: 'cluster-workspace',
+    name: 'cluster-config-workspace',
     params: { clusterId: String(cluster.id), stage }
   };
 }
 
 function installConfirmRoute(cluster) {
   return {
-    name: 'install-confirm',
+    name: 'install-overview',
     params: { clusterId: String(cluster.id) }
   };
 }
@@ -214,13 +223,23 @@ function jobRoute(cluster) {
 
 function presentation(cluster) {
   const status = cluster.status || 'draft';
+  if (props.mode === 'config') {
+    const locked = cluster.configuration_locked || ['installed', 'resetting', 'reset_failed'].includes(status);
+    return {
+      actionText: locked ? '查看只读配置' : '继续配置',
+      icon: locked ? CircleCheckFilled : EditPen,
+      statusText: locked ? '配置已锁定' : '配置未完成',
+      tone: locked ? 'success' : 'incomplete',
+      to: fixedWorkspaceRoute(cluster, 'cluster-info')
+    };
+  }
   if (['precheck_passed', 'precheck_success'].includes(status)) {
     return {
       actionText: '开始安装',
       icon: CircleCheckFilled,
       statusText: '预检查通过',
       tone: 'ready',
-      to: fixedWorkspaceRoute(cluster, 'install')
+      to: installConfirmRoute(cluster)
     };
   }
   if (['installing', 'running'].includes(status)) {
@@ -251,7 +270,7 @@ function presentation(cluster) {
     };
   }
   return {
-    actionText: '继续配置',
+    actionText: '查看安装状态',
     icon: EditPen,
     statusText: '配置未完成',
     tone: 'incomplete',

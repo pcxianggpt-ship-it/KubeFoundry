@@ -7,12 +7,11 @@ const expectedStages = [
   ['cluster-info', '集群信息'],
   ['nodes', '服务器节点'],
   ['components', 'Kubemate 组件'],
-  ['precheck', '部署预检查'],
-  ['install', '执行安装']
+  ['precheck', '配置预检查']
 ];
 
 describe('DeploymentPipeline', () => {
-  it('按固定顺序显示五个中文阶段并生成可恢复的阶段路由', () => {
+  it('按固定顺序显示四个配置阶段并生成可恢复的阶段路由', () => {
     const wrapper = mount(DeploymentPipeline, {
       props: {
         clusterId: 42,
@@ -24,18 +23,17 @@ describe('DeploymentPipeline', () => {
     });
 
     const stages = wrapper.findAll('[data-stage-key]');
-    expect(stages).toHaveLength(5);
+    expect(stages).toHaveLength(4);
     expect(stages.map((stage) => [stage.attributes('data-stage-key'), stage.get('.pipeline-stage__title').text()]))
       .toEqual(expectedStages);
     expect(stages[2].attributes('aria-current')).toBe('step');
 
     const links = wrapper.findAllComponents(RouterLinkStub);
     expect(links.map((link) => link.props('to'))).toEqual([
-      ...expectedStages.slice(0, 4).map(([stage]) => ({
-        name: 'cluster-workspace',
+      ...expectedStages.map(([stage]) => ({
+        name: 'cluster-config-workspace',
         params: { clusterId: '42', stage }
-      })),
-      { name: 'install-confirm', params: { clusterId: '42' } }
+      }))
     ]);
   });
 
@@ -48,8 +46,7 @@ describe('DeploymentPipeline', () => {
           'cluster-info': 'completed',
           nodes: 'current',
           components: 'blocked',
-          precheck: 'error',
-          install: 'pending'
+          precheck: 'error'
         }
       },
       global: {
@@ -61,6 +58,5 @@ describe('DeploymentPipeline', () => {
     expect(wrapper.text()).toContain('进行中');
     expect(wrapper.text()).toContain('暂不可用');
     expect(wrapper.text()).toContain('失败');
-    expect(wrapper.text()).toContain('未开始');
   });
 });

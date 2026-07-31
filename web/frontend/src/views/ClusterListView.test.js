@@ -10,8 +10,9 @@ vi.mock('../api/client', () => ({
   listJobs: vi.fn()
 }));
 
-function mountView() {
+function mountView(mode = 'config') {
   return mount(ClusterListView, {
+    props: { mode },
     global: {
       plugins: [ElementPlus],
       stubs: { RouterLink: RouterLinkStub }
@@ -36,7 +37,7 @@ describe('ClusterListView', () => {
       ]
     });
 
-    const wrapper = mountView();
+    const wrapper = mountView('install');
     await flushPromises();
 
     expect(wrapper.findAll('.cluster-row')).toHaveLength(5);
@@ -48,23 +49,20 @@ describe('ClusterListView', () => {
 
     const actions = wrapper.findAllComponents(RouterLinkStub).filter((link) => link.classes('cluster-row__action'));
     expect(actions.map((link) => link.text())).toEqual([
-      '继续配置',
+      '查看安装状态',
       '开始安装',
       '查看进度',
       '查看失败原因',
       '查看执行记录'
     ]);
     expect(actions.map((link) => link.props('to'))).toEqual([
-      { name: 'cluster-workspace', params: { clusterId: '1', stage: 'nodes' } },
-      { name: 'install-confirm', params: { clusterId: '2' } },
+      { name: 'install-overview', params: { clusterId: '1' } },
+      { name: 'install-overview', params: { clusterId: '2' } },
       { name: 'job-execution', params: { jobId: '31' } },
       { name: 'job-execution', params: { jobId: '41' } },
       { name: 'job-execution', params: { jobId: '51' } }
     ]);
-    expect(wrapper.getComponent('[data-testid="create-cluster"]').props('to')).toEqual({
-      name: 'cluster-workspace',
-      params: { clusterId: 'new', stage: 'cluster-info' }
-    });
+    expect(wrapper.find('[data-testid="create-cluster"]').exists()).toBe(false);
   });
 
   it('使用现有任务聚合Java集群响应的安装状态和任务入口', async () => {
@@ -79,7 +77,7 @@ describe('ClusterListView', () => {
       12: [{ id: 121, job_type: 'install', status: 'success' }]
     }[clusterId] }));
 
-    const wrapper = mountView();
+    const wrapper = mountView('install');
     await flushPromises();
 
     const actions = wrapper.findAllComponents(RouterLinkStub)
@@ -87,7 +85,7 @@ describe('ClusterListView', () => {
     expect(actions.map((link) => link.text())).toEqual(['查看进度', '开始安装', '查看执行记录']);
     expect(actions.map((link) => link.props('to'))).toEqual([
       { name: 'job-execution', params: { jobId: '101' } },
-      { name: 'install-confirm', params: { clusterId: '11' } },
+      { name: 'install-overview', params: { clusterId: '11' } },
       { name: 'job-execution', params: { jobId: '121' } }
     ]);
   });
@@ -98,10 +96,8 @@ describe('ClusterListView', () => {
       resolveClusters = resolve;
     }));
 
-    const wrapper = mountView();
+    const wrapper = mountView('install');
     expect(wrapper.get('[aria-busy="true"]')).toBeTruthy();
-    expect(wrapper.get('[data-testid="create-cluster"]').attributes('aria-disabled')).toBe('true');
-    expect(wrapper.get('[data-testid="create-cluster"]').attributes('tabindex')).toBe('-1');
 
     resolveClusters({ items: [] });
     await flushPromises();
@@ -116,5 +112,23 @@ describe('ClusterListView', () => {
     await wrapper.get('[data-testid="retry-clusters"]').trigger('click');
     await flushPromises();
     expect(wrapper.get('.cluster-row__action.is-disabled').attributes('aria-disabled')).toBe('true');
+  });
+
+  it('配置模块保留新建集群和配置工作区入口', async () => {
+    listClusters.mockResolvedValue({ items: [{ id: 8, name: '配置中', status: 'draft' }] });
+    const wrapper = mountView('config');
+    await flushPromises();
+
+    expect(wrapper.get('h1').text()).toBe('集群配置');
+    expect(wrapper.getComponent('[data-testid="create-cluster"]').props('to')).toEqual({
+      name: 'cluster-config-workspace',
+      params: { clusterId: 'new', stage: 'cluster-info' }
+    });
+    const clusterLink = wrapper.findAllComponents(RouterLinkStub)
+      .find((link) => link.classes('cluster-name'));
+    expect(clusterLink.props('to')).toEqual({
+      name: 'cluster-config-workspace',
+      params: { clusterId: '8', stage: 'cluster-info' }
+    });
   });
 });

@@ -68,9 +68,9 @@ describe('安装流程', () => {
     ] });
   });
 
-  it('预检查全部成功后进入确认页，但不自动开始安装', async () => {
+  it('预检查全部成功后进入安装概览，但不自动开始安装', async () => {
     startPrecheck.mockResolvedValue({ job_id: 81, status: 'pending' });
-    const { router, wrapper } = await mountAt(PrecheckView, '/clusters/42/precheck', { clusterId: 42 });
+    const { router, wrapper } = await mountAt(PrecheckView, '/cluster-install/42/precheck', { clusterId: 42 });
 
     await wrapper.get('[data-testid="start-precheck"]').trigger('click');
     await flushPromises();
@@ -80,21 +80,21 @@ describe('安装流程', () => {
     await flushPromises();
 
     expect(getPrecheckResults).toHaveBeenCalledWith(81);
-    expect(router.currentRoute.value.fullPath).toBe('/clusters/42/install/confirm');
+    expect(router.currentRoute.value.fullPath).toBe('/cluster-install/42/overview');
     expect(startInstall).not.toHaveBeenCalled();
   });
 
   it('确认页展示目标信息，只有点击开始安装才创建任务并跳转', async () => {
-    getCluster.mockResolvedValue({ id: 42, name: '生产集群', k8s_version: '1.30.14', pod_subnet: '10.244.0.0/16', service_subnet: '10.96.0.0/16' });
+    getCluster.mockResolvedValue({ id: 42, name: '生产集群', k8s_version: '1.30.14', kubernetes_work_dir: '/data/k8s_install' });
     listNodes.mockResolvedValue({ items: [
-      { id: 1, hostname: 'cp-1', role: 'control_plane', node_test_status: 'success' },
-      { id: 2, hostname: 'worker-1', role: 'worker', node_test_status: 'success' }
+      { id: 1, hostname: 'cp-1', ip: '10.0.0.1', roles: ['control_plane', 'registry'], node_test_status: 'success' },
+      { id: 2, hostname: 'worker-1', ip: '10.0.0.2', roles: ['worker'], node_test_status: 'success' }
     ] });
     getClusterSettings.mockResolvedValue({ paths: { install_media: '/opt/kf/media' }, advanced: { max_parallel_nodes: 2 } });
     listJobs.mockResolvedValue({ items: [{ id: 80, cluster_id: 42, job_type: 'precheck', status: 'success' }] });
     startInstall.mockResolvedValue({ job_id: 99, status: 'pending' });
 
-    const { router, wrapper } = await mountAt(InstallConfirmView, '/clusters/42/install/confirm');
+    const { router, wrapper } = await mountAt(InstallConfirmView, '/cluster-install/42/confirm');
 
     expect(wrapper.text()).toContain('生产集群');
     expect(wrapper.text()).toContain('1.30.14');

@@ -45,8 +45,7 @@ const stages = [
   { key: 'cluster-info', title: '集群信息' },
   { key: 'nodes', title: '服务器节点' },
   { key: 'components', title: 'Kubemate 组件' },
-  { key: 'precheck', title: '部署预检查' },
-  { key: 'install', title: '执行安装' }
+  { key: 'precheck', title: '配置预检查' }
 ];
 
 const props = defineProps({
@@ -62,10 +61,6 @@ const props = defineProps({
     type: Object,
     default: () => ({})
   },
-  installJobId: {
-    type: [String, Number],
-    default: null
-  }
 });
 
 const stateLabels = {
@@ -85,17 +80,8 @@ function resolveState(stageKey, index) {
 }
 
 function stageRoute(stage) {
-  if (stage === 'install') {
-    if (props.installJobId !== null && props.installJobId !== undefined) {
-      return { name: 'job-execution', params: { jobId: String(props.installJobId) } };
-    }
-    return {
-      name: 'install-confirm',
-      params: { clusterId: String(props.clusterId) }
-    };
-  }
   return {
-    name: 'cluster-workspace',
+    name: 'cluster-config-workspace',
     params: {
       clusterId: String(props.clusterId),
       stage
