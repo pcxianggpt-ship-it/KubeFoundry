@@ -1,5 +1,7 @@
 package io.kubefoundry.installer;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -21,5 +23,19 @@ class ResetPlanFactoryTest {
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessage("Kubernetes 工作目录不安全，拒绝执行远程重置");
         }
+    }
+
+    @Test
+    void resetScriptsKeepRegistryCleanupAndVerificationBehindExplicitGuards() throws Exception {
+        Path root = InstallPlanFactory.discoverProjectRoot(Path.of(""));
+        String cleanup = Files.readString(root.resolve("scripts/steps/reset/reset-kubernetes-node.sh"));
+        String verification = Files.readString(
+                root.resolve("scripts/verify/reset/verify-reset-kubernetes-node.sh"));
+
+        assertThat(cleanup)
+                .contains("cleanup_registry", "remove_system_directory", "has_role registry")
+                .doesNotContain("rm -rf --one-file-system -- /etc/kubernetes");
+        assertThat(verification)
+                .contains("verify_registry", "assert_absent /etc/kubernetes", "kubelet 服务仍在运行");
     }
 }

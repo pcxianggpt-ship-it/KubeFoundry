@@ -46,11 +46,12 @@ public class ClusterResetService {
         List<SnapshotTarget> targets = resolveSnapshotTargets(clusterId, snapshot);
         RuntimeSettings runtimeSettings = plans.runtimeSettings(snapshot);
         InstallStep cleanup = plans.nodeCleanupStep();
+        InstallStep verification = plans.nodeVerificationStep();
         return admission.submit(clusterId, () -> {
             Cluster admittedCluster = clusters.findById(clusterId)
                     .orElseThrow(() -> ResourceNotFoundException.cluster(clusterId));
             long jobId = jobs.submit(new JobService.JobDefinition(clusterId, "reset",
-                    stepDefinitions(cluster, targets, cleanup, runtimeSettings)));
+                    stepDefinitions(cluster, targets, cleanup, verification, runtimeSettings)));
             admittedCluster.markResetStarted();
             clusters.save(admittedCluster);
             return jobId;
@@ -70,6 +71,7 @@ public class ClusterResetService {
             Cluster cluster,
             List<SnapshotTarget> targets,
             InstallStep cleanup,
+            InstallStep verification,
             RuntimeSettings runtimeSettings) {
         List<Node> allTargets = targets.stream().map(SnapshotTarget::node).toList();
         List<SnapshotTarget> controls = targets.stream()
@@ -96,6 +98,11 @@ public class ClusterResetService {
             }
         }
         if (definitions.isEmpty()) throw new IllegalArgumentException("安装快照没有可重置的服务器节点");
+        List<JobService.NodeOperation> verifyOperations = targets.stream().map(target ->
+                JobService.NodeOperation.withOutcome(target.node().getId(), jobId -> runner.run(
+                        jobId, cluster, allTargets, target.node(), verification, runtimeSettings))).toList();
+        definitions.add(new JobService.StepDefinition(
+                "验证重置结果", definitions.size() + 1, 3, true, verifyOperations));
         return List.copyOf(definitions);
     }
 

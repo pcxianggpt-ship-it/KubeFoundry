@@ -16,6 +16,7 @@ fail() {
 
 require_safe_work_dir() {
     local work_dir="$1"
+    [[ -n "$work_dir" ]] || fail "Kubernetes 工作目录不能为空"
     case "$work_dir" in
         /*) ;;
         *) fail "Kubernetes 工作目录必须为绝对路径" ;;
@@ -30,12 +31,43 @@ require_safe_work_dir() {
 
 remove_managed_directory() {
     local target="$1"
+    [[ -n "$target" ]] || fail "受管清理目录不能为空"
     case "$target" in
         "${KF_K8S_HOME}"/*) ;;
         *) fail "拒绝清理工作目录外的路径: ${target}" ;;
     esac
     [[ ! -L "$target" ]] || fail "拒绝清理符号链接: ${target}"
     rm -rf --one-file-system -- "$target"
+}
+
+remove_system_directory() {
+    local target="$1"
+    case "$target" in
+        /etc/kubernetes|/etc/cni/net.d) ;;
+        *) fail "拒绝清理非白名单系统目录: ${target}" ;;
+    esac
+    [[ ! -L "$target" ]] || fail "拒绝清理符号链接: ${target}"
+    rm -rf --one-file-system -- "$target"
+}
+
+has_role() {
+    local role="$1"
+    local roles=",${KF_NODE_ROLES:-${KF_NODE_ROLE:-}},"
+    [[ "$roles" == *",${role},"* ]]
+}
+
+cleanup_registry() {
+    has_role registry || return 0
+    local container_cmd=""
+    if command -v nerdctl >/dev/null 2>&1; then
+        container_cmd="nerdctl"
+    elif command -v docker >/dev/null 2>&1; then
+        container_cmd="docker"
+    fi
+    if [[ -n "$container_cmd" ]]; then
+        "$container_cmd" rm -f registry registry-ui-5080 >/dev/null 2>&1 || true
+    fi
+    remove_managed_directory "${KF_K8S_HOME}/04.registry"
 }
 
 require_safe_work_dir "${KF_K8S_HOME:-}"
@@ -51,8 +83,10 @@ systemctl stop kubelet || true
 remove_managed_directory "${KF_KUBELET_ROOT:-}"
 remove_managed_directory "${KF_ETCD_DATA_DIR:-}"
 remove_managed_directory "${KF_CONTAINERD_ROOT:-}"
+cleanup_registry
 
-rm -rf --one-file-system -- /etc/kubernetes /etc/cni/net.d
+remove_system_directory /etc/kubernetes
+remove_system_directory /etc/cni/net.d
 ip link delete cni0 2>/dev/null || true
 ip link delete flannel.1 2>/dev/null || true
 systemctl daemon-reload

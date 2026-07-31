@@ -10,18 +10,29 @@ import org.springframework.stereotype.Component;
 class ResetPlanFactory {
 
     private final Path script;
+    private final Path verifyScript;
 
     ResetPlanFactory(@Value("${kubefoundry.app-dir:${user.dir}}") String appDirectory) {
         Path root = InstallPlanFactory.discoverProjectRoot(Path.of(appDirectory));
         script = root.resolve("scripts/steps/reset/reset-kubernetes-node.sh").normalize();
+        verifyScript = root.resolve("scripts/verify/reset/verify-reset-kubernetes-node.sh").normalize();
         if (!Files.isRegularFile(script)) {
             throw new IllegalStateException("远程重置脚本不存在: " + script);
+        }
+        if (!Files.isRegularFile(verifyScript)) {
+            throw new IllegalStateException("远程重置验证脚本不存在: " + verifyScript);
         }
     }
 
     InstallStep nodeCleanupStep() {
         return InstallStep.script("reset-kubernetes-node", "清理 Kubernetes 节点", "reset",
                 "snapshot_node", script, "parallel", 3, true,
+                java.util.List.of(), java.util.List.of(), java.util.List.of(), "");
+    }
+
+    InstallStep nodeVerificationStep() {
+        return InstallStep.script("verify-reset-kubernetes-node", "验证 Kubernetes 节点清理", "reset",
+                "snapshot_node", verifyScript, "parallel", 3, true,
                 java.util.List.of(), java.util.List.of(), java.util.List.of(), "");
     }
 
