@@ -19,13 +19,13 @@
 
 ## Web Wizard API
 
-v0.2.0 基础路径为 `/api`，后端实现为 Java 17 + Spring Boot。前端不再调用 Python 后端专有接口。
+v0.2.1 基础路径为 `/api`，后端实现为 Java 17 + Spring Boot。前端不再调用 Python 后端专有接口。
 
 ### 健康检查
 
 | 方法 | 路径 | 成功响应 |
 |------|------|----------|
-| GET | `/api/health` | `200`，包含 `status=ok` 与 `version=0.2.0` |
+| GET | `/api/health` | `200`，包含 `status=ok` 与 `version=0.2.1` |
 
 ### 集群与节点
 
@@ -36,14 +36,28 @@ v0.2.0 基础路径为 `/api`，后端实现为 Java 17 + Spring Boot。前端�
 | GET | `/api/clusters/{cluster_id}` | 查询集群 |
 | PUT | `/api/clusters/{cluster_id}` | 更新集群 |
 | DELETE | `/api/clusters/{cluster_id}` | 删除集群及关联数据 |
+| POST | `/api/clusters/{cluster_id}/reset` | 强确认后创建异步远程重置任务，返回 `202` 和 `job_id` |
 | GET | `/api/clusters/{cluster_id}/nodes` | 查询节点 |
 | POST | `/api/clusters/{cluster_id}/nodes` | 新增节点并加密保存登录密码 |
 | PUT | `/api/nodes/{node_id}` | 更新节点；空密码保留已有凭据 |
 | DELETE | `/api/nodes/{node_id}` | 删除节点 |
 | POST | `/api/clusters/{cluster_id}/nodes/copy` | 批量复制节点及加密凭据，副本为草稿 |
 | POST | `/api/clusters/{cluster_id}/node-test` | 创建全部节点免密测试任务 |
+| GET | `/api/clusters/{cluster_id}/components` | 查询 Kubemate 组件选择 |
+| PUT | `/api/clusters/{cluster_id}/components` | 保存 Kubemate 组件选择，仅保存配置，不执行安装 |
 
 节点响应仅返回 `has_password`，不返回密码、密文、IV 或私钥。节点测试通过密码首次连接，安装集群级 Ed25519 公钥，再用私钥验证免密登录。
+
+集群请求和响应使用 `kubernetes_work_dir` 与 `image_registry_type`，不再包含 Pod/Service 网段及 Registry 主机名、IP、端口。节点使用 `roles` 数组，允许 `registry` 与 `control_plane` 或 `worker` 组合；禁止 `control_plane` 与 `worker` 同时出现。当前仓库类型仅支持 `REGISTRY`，Registry 地址由唯一 Registry 角色节点派生，端口固定 `5000`。
+
+重置请求体必须同时提供确认字段：
+
+```json
+{
+  "acknowledged": true,
+  "confirmation_phrase": "RESET example-cluster"
+}
+```
 
 ### 设置、预检查与安装
 
@@ -57,7 +71,7 @@ v0.2.0 基础路径为 `/api`，后端实现为 Java 17 + Spring Boot。前端�
 | POST | `/api/clusters/{cluster_id}/precheck` | 创建预检查任务，返回 `202` |
 | POST | `/api/clusters/{cluster_id}/install` | 创建安装任务，返回 `202` |
 
-预检查和安装要求节点免密测试成功且配置版本未过期。同一集群只能存在一个 `pending` 或 `running` 的预检查/安装任务；冲突返回 `409`、稳定错误码和现有 `job_id`。
+预检查和安装要求节点免密测试成功且配置版本未过期。同一集群只能存在一个 `pending` 或 `running` 的预检查、安装或重置任务；冲突返回 `409`、稳定错误码和现有 `job_id`。安装成功后配置锁定；远程重置全部成功后解锁。
 
 ### 任务、SSE 与日志
 

@@ -45,6 +45,7 @@ for arch in x86_64 aarch64; do
         "${prefix}/runtime/.architecture" \
         "${prefix}/app/kubefoundry.jar" \
         "${prefix}/web/index.html" \
+        "${prefix}/kube-media/README.md" \
         "${prefix}/scripts/steps/" \
         "${prefix}/deploy.sh" \
         "${prefix}/VERSION" \
@@ -73,6 +74,7 @@ printf 'keep\n' > "${TEST_ROOT}/deployment/data/keep.txt"
 [ -x "${TEST_ROOT}/deployment/app/runtime/bin/java" ] || fail "运行时 Java 不可执行"
 [ -f "${TEST_ROOT}/deployment/app/app/kubefoundry.jar" ] || fail "未安装 Java JAR"
 [ -f "${TEST_ROOT}/deployment/app/web/index.html" ] || fail "未安装前端"
+[ -f "${TEST_ROOT}/deployment/kube-media/README.md" ] || fail "未安装离线介质目录"
 [ -d "${TEST_ROOT}/deployment/scripts/steps" ] || fail "未安装步骤脚本"
 
 SERVICE_FILE="${TEST_ROOT}/deployment/logs/kubefoundry-web.service.test"

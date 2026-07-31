@@ -71,7 +71,7 @@ check_environment() {
     for name in tar sha256sum; do
         command -v "${name}" >/dev/null 2>&1 || { log_error "缺少命令: ${name}"; return 1; }
     done
-    for path in web/backend-java/pom.xml web/frontend/package.json deploy.sh scripts/steps scripts/build/build-jre.sh; do
+    for path in web/backend-java/pom.xml web/frontend/package.json deploy.sh kube-media scripts/steps scripts/build/build-jre.sh; do
         [ -e "${PROJECT_ROOT}/${path}" ] || { log_error "项目文件缺失: ${path}"; return 1; }
     done
 }
@@ -81,7 +81,7 @@ build_application() {
     mkdir -p "${release_dir}/app" "${release_dir}/web"
     if [ "${TEST_MODE}" = "1" ]; then
         printf 'test jar\n' > "${release_dir}/app/kubefoundry.jar"
-        printf '<!doctype html><html><body>KubeFoundry v0.2.0</body></html>\n' > "${release_dir}/web/index.html"
+        printf '<!doctype html><html><body>KubeFoundry v0.2.1</body></html>\n' > "${release_dir}/web/index.html"
         return
     fi
 
@@ -137,6 +137,7 @@ create_archive() {
 
     build_application "${release_dir}"
     build_runtime "${release_dir}"
+    cp -a "${PROJECT_ROOT}/kube-media" "${release_dir}/kube-media"
     cp -a "${PROJECT_ROOT}/scripts/steps" "${release_dir}/scripts/steps"
     cp "${PROJECT_ROOT}/deploy.sh" "${release_dir}/deploy.sh"
     chmod 0755 "${release_dir}/deploy.sh" "${release_dir}/runtime/bin/java"
