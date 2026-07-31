@@ -33,7 +33,7 @@ describe('NodeConfigView', () => {
     FakeEventSource.instances = [];
     vi.stubGlobal('EventSource', FakeEventSource);
     listNodes.mockResolvedValue({ items: [
-      { id: 1, hostname: 'cp-1', ip: '10.0.0.1', role: 'control_plane', ssh_user: 'root', ssh_port: 22, has_password: true, is_draft: false, node_test_status: 'pending' },
+      { id: 1, hostname: 'cp-1', ip: '10.0.0.1', roles: ['control_plane', 'registry'], ssh_user: 'root', ssh_port: 22, has_password: true, is_draft: false, node_test_status: 'pending' },
       { id: 2, hostname: 'worker-1', ip: '10.0.0.2', role: 'worker', ssh_user: 'root', ssh_port: 22, has_password: true, is_draft: false, node_test_status: 'failed', node_test_message: '连接超时' }
     ] });
   });
@@ -47,6 +47,7 @@ describe('NodeConfigView', () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain('密码已保存');
+    expect(wrapper.text()).toContain('控制节点、镜像仓库');
     expect(wrapper.text()).toContain('测试失败');
     await wrapper.get('[data-testid="test-all-nodes"]').trigger('click');
     await flushPromises();

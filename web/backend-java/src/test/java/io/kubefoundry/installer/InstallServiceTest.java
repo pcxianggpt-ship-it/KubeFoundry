@@ -128,7 +128,7 @@ class InstallServiceTest {
     }
 
     private PrecheckService precheckService() {
-        return new PrecheckService(clusters, nodes, jobs, jobService, runner, null, null, admission);
+        return new PrecheckService(clusters, nodes, jobs, jobService, runner, null, null, admission, null);
     }
 
     private Node node(String hostname, String ip, String role) {

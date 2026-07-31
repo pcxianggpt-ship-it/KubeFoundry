@@ -9,6 +9,9 @@ import io.kubefoundry.job.EventService;
 import io.kubefoundry.job.Job;
 import io.kubefoundry.job.JobRepository;
 import io.kubefoundry.job.JobService;
+import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -51,6 +54,7 @@ public class PrecheckService {
     private final PrecheckResultRepository results;
     private final EventService events;
     private final InstallerAdmission admission;
+    private final ClusterSettingsService settings;
 
     @Autowired
     public PrecheckService(
@@ -61,7 +65,8 @@ public class PrecheckService {
             RemoteStepRunner runner,
             PrecheckResultRepository results,
             EventService events,
-            InstallerAdmission admission) {
+            InstallerAdmission admission,
+            ClusterSettingsService settings) {
         this.clusters = clusters;
         this.nodes = nodes;
         this.jobs = jobs;
@@ -70,6 +75,7 @@ public class PrecheckService {
         this.results = results;
         this.events = events;
         this.admission = admission;
+        this.settings = settings;
     }
 
     public long start(long clusterId) {
@@ -105,7 +111,7 @@ public class PrecheckService {
 
         Map<String, String> values = parseMarkers(command.stdout());
         OsInfo os = parseOsRelease(command.stdout(), values.get("OS"));
-        List<PrecheckCheck> checks = buildChecks(node, values, os);
+        List<PrecheckCheck> checks = buildChecks(cluster, node, values, os);
         if (checks.stream().anyMatch(check -> "system_drift".equals(check.key())
                 && "fail".equals(check.status()))) {
             node.markTestStale(false);
@@ -139,8 +145,8 @@ public class PrecheckService {
         }
     }
 
-    private static List<PrecheckCheck> buildChecks(
-            Node node, Map<String, String> values, OsInfo os) {
+    private List<PrecheckCheck> buildChecks(
+            Cluster cluster, Node node, Map<String, String> values, OsInfo os) {
         List<PrecheckCheck> checks = new ArrayList<>();
         checks.add(new PrecheckCheck("ssh", "SSH 连通性", "error", "pass",
                 "SSH 连接成功", ""));
@@ -181,7 +187,40 @@ public class PrecheckService {
                 usedPorts.isEmpty() ? "pass" : "fail",
                 usedPorts.isEmpty() ? "关键端口未占用" : "端口占用: " + String.join(",", usedPorts),
                 ""));
+        checks.add(controlPlaneCount(cluster));
+        checks.add(offlineMediaDirectory(cluster, node));
         return checks;
+    }
+
+    private PrecheckCheck controlPlaneCount(Cluster cluster) {
+        int count = InstallationNodes.normalize(nodes.findByClusterIdOrderById(cluster.getId())).stream()
+                .filter(node -> node.hasRole("control_plane")
+                        || "control_plane".equals(node.getRole()))
+                .toList().size();
+        boolean valid = count == 1 || count == 3;
+        return new PrecheckCheck("control_plane_count", "\u63A7\u5236\u8282\u70B9\u6570\u91CF", "error",
+                valid ? "pass" : "fail",
+                valid ? "\u63A7\u5236\u8282\u70B9\u6570\u91CF: " + count + "\uFF0C\u7B26\u5408\u8981\u6C42"
+                        : "\u63A7\u5236\u8282\u70B9\u6570\u91CF: " + count
+                                + "\uFF0C\u4EC5\u652F\u6301 1 \u6216 3 \u4E2A\u63A7\u5236\u8282\u70B9",
+                "\u96C6\u7FA4\u53EA\u652F\u6301\u5355\u63A7\u5236\u8282\u70B9\u6216"
+                        + "\u4E09\u63A7\u5236\u8282\u70B9\u9AD8\u53EF\u7528\u90E8\u7F72");
+    }
+
+    private PrecheckCheck offlineMediaDirectory(Cluster cluster, Node node) {
+        String directory = settings.runtimeSettings(cluster, node).installMedia();
+        boolean exists = false;
+        try {
+            exists = !directory.isBlank() && Files.isDirectory(Path.of(directory));
+        } catch (InvalidPathException ignored) {
+            // Invalid paths are reported as a failed precheck result below.
+        }
+        return new PrecheckCheck("offline_media", "\u79BB\u7EBF\u4ECB\u8D28\u76EE\u5F55", "error",
+                exists ? "pass" : "fail",
+                exists ? "\u79BB\u7EBF\u4ECB\u8D28\u76EE\u5F55\u5B58\u5728: " + directory
+                        : "\u79BB\u7EBF\u4ECB\u8D28\u76EE\u5F55\u4E0D\u5B58\u5728: " + directory,
+                "\u8BF7\u5728\u7BA1\u7406\u8282\u70B9\u4E0A\u914D\u7F6E\u5E76\u51C6\u5907"
+                        + "\u6709\u6548\u7684\u79BB\u7EBF\u5B89\u88C5\u4ECB\u8D28\u76EE\u5F55");
     }
 
     private static PrecheckCheck systemDrift(Node node, OsInfo os, String arch) {

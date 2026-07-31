@@ -8,9 +8,12 @@ import io.kubefoundry.job.JobEvent;
 import io.kubefoundry.job.JobEventRepository;
 import io.kubefoundry.job.JobExecutor;
 import io.kubefoundry.job.JobRepository;
+import java.nio.file.Path;
 import org.springframework.beans.factory.annotation.Autowired;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -54,14 +57,22 @@ class PrecheckServiceTest {
     @Autowired
     InstallService installs;
 
+    @Autowired
+    ClusterSettingsService settings;
+
     @MockBean
     RemoteStepRunner runner;
 
     Cluster cluster;
     Node node;
 
+    @TempDir
+    Path mediaDirectory;
+
     @BeforeEach
     void setUp() {
+        settings.updateGlobalSettings(Map.of("paths", Map.of(
+                "install_media", mediaDirectory.toString())));
         cluster = clusters.save(new Cluster("precheck-" + System.nanoTime()));
         cluster.markNodeTestStatus("success");
         cluster = clusters.saveAndFlush(cluster);
@@ -136,6 +147,48 @@ class PrecheckServiceTest {
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> installs.start(cluster.getId(), List.of()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("stale");
+    }
+
+    @Test
+    void twoControlPlanesFailTheControlPlaneCountCheck() throws Exception {
+        Node secondControl = new Node(cluster);
+        secondControl.update("cp-b", "10.0.0.3", "", "control_plane", "root", 22);
+        secondControl.completeNodeTest("kylin", "V10", "amd64");
+        nodes.saveAndFlush(secondControl);
+        stubHealthyPrecheck();
+
+        long jobId = service.start(cluster.getId());
+        assertThat(executor.awaitIdle(5, TimeUnit.SECONDS)).isTrue();
+
+        assertThat(jobs.findById(jobId).orElseThrow().getStatus()).isEqualTo("failed");
+        assertThat(results.findByJobIdOrderByNodeIdAscIdAsc(jobId))
+                .filteredOn(result -> "control_plane_count".equals(result.getCheckKey()))
+                .extracting(PrecheckResult::getStatus)
+                .containsOnly("fail");
+    }
+
+    @Test
+    void missingOfflineMediaDirectoryFailsPrecheck() throws Exception {
+        Path missingDirectory = mediaDirectory.resolve("missing-media");
+        settings.updateGlobalSettings(Map.of("paths", Map.of(
+                "install_media", missingDirectory.toString())));
+        stubHealthyPrecheck();
+
+        long jobId = service.start(cluster.getId());
+        assertThat(executor.awaitIdle(5, TimeUnit.SECONDS)).isTrue();
+
+        assertThat(jobs.findById(jobId).orElseThrow().getStatus()).isEqualTo("failed");
+        assertThat(results.findByJobIdOrderByNodeIdAscIdAsc(jobId))
+                .filteredOn(result -> "offline_media".equals(result.getCheckKey()))
+                .extracting(PrecheckResult::getStatus)
+                .containsOnly("fail");
+    }
+
+    private void stubHealthyPrecheck() {
+        when(runner.runCommandCapture(anyLong(), any(Cluster.class), any(Node.class),
+                eq("web-precheck-node-env"), any(), any()))
+                .thenReturn(new RemoteStepRunner.CommandOutcome(
+                        0, healthyOutput(""), "", "logs/precheck.log"));
     }
 
     private static String healthyOutput(String overrides) {

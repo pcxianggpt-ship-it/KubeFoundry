@@ -26,7 +26,7 @@
           </td>
           <td><strong>{{ node.hostname || '未命名草稿' }}</strong><small>{{ node.ip || '待填写 IP' }}</small></td>
           <td>{{ node.ssh_user }}@{{ node.ip || '-' }}:{{ node.ssh_port }}</td>
-          <td>{{ roleLabel(node.role) }}</td>
+          <td>{{ roleLabel(node.roles, node.role) }}</td>
           <td><span>{{ node.has_password ? '密码已保存' : '未保存密码' }}</span></td>
           <td>
             <el-tag :type="nodeStatusTone(node.node_test_status)" size="small">
@@ -74,7 +74,9 @@ defineProps({
 });
 defineEmits(['toggle', 'edit', 'delete']);
 
-function roleLabel(role) {
-  return { control_plane: '控制节点', worker: '工作节点', registry: '镜像仓库' }[role] || role;
+function roleLabel(roles, legacyRole) {
+  const values = Array.isArray(roles) && roles.length ? roles : [legacyRole];
+  const labels = { control_plane: '控制节点', worker: '工作节点', registry: '镜像仓库' };
+  return values.filter(Boolean).map((role) => labels[role] || role).join('、') || '-';
 }
 </script>
