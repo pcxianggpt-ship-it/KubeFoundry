@@ -11,11 +11,11 @@
 #   KUBELET_ROOT      - kubelet数据目录
 #   ETCD_DATA_DIR     - etcd数据目录
 #   DUAL_STACK        - 是否双栈 (Y/N)
-#   REGISTRY_HOSTNAME - 镜像仓库主机名
 #===============================================================================
 
 readonly POD_SUBNET="10.244.0.0/16"
 readonly SERVICE_SUBNET="10.96.0.0/16"
+readonly REGISTRY_ENDPOINT="registry:5000"
 
 log_info "开始初始化K8S集群..."
 
@@ -54,7 +54,7 @@ log_info "  Pod网段: ${POD_SUBNET}"
 log_info "  Service网段: ${SERVICE_SUBNET}"
 log_info "  Kubelet目录: ${KUBELET_ROOT}"
 log_info "  Etcd目录: ${ETCD_DATA_DIR}"
-log_info "  镜像仓库: ${REGISTRY_HOSTNAME}:5000/registry.k8s.io"
+log_info "  镜像仓库: ${REGISTRY_ENDPOINT}/registry.k8s.io"
 
 # 5. 配置kubelet数据目录
 mkdir -p /tmp/k8s
@@ -91,7 +91,7 @@ kubernetesVersion: ${K8S_VERSION}
 clusterName: kubernetes
 certificatesDir: /etc/kubernetes/pki
 controlPlaneEndpoint: "${local_hostname}:6443"
-imageRepository: ${REGISTRY_HOSTNAME}:5000/registry.k8s.io
+imageRepository: ${REGISTRY_ENDPOINT}/registry.k8s.io
 networking:
   podSubnet: "${POD_SUBNET},fd10:244::/56"
   serviceSubnet: "${SERVICE_SUBNET},fd10:96::/112"
@@ -138,7 +138,7 @@ dns: {}
 etcd:
   local:
     dataDir: ${ETCD_DATA_DIR}
-imageRepository: ${REGISTRY_HOSTNAME}:5000/registry.k8s.io
+imageRepository: ${REGISTRY_ENDPOINT}/registry.k8s.io
 kind: ClusterConfiguration
 kubernetesVersion: ${K8S_VERSION}
 controlPlaneEndpoint: "${local_hostname}:6443"
