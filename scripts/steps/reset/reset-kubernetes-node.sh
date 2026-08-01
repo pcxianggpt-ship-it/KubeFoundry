@@ -97,10 +97,16 @@ log_info "开始清理 Kubernetes 节点: ${KF_NODE_HOSTNAME}"
 kubeadm reset -f || true
 systemctl stop kubelet || true
 
+cleanup_registry
+
+# 删除 containerd 的容器记录前先释放 registry 名称，避免 nerdctl 遗留名称索引。
+if systemctl is-active --quiet containerd 2>/dev/null; then
+    systemctl stop containerd || fail "无法停止 containerd，拒绝删除其数据目录"
+fi
+
 remove_managed_directory "${KF_KUBELET_ROOT:-}"
 remove_managed_directory "${KF_ETCD_DATA_DIR:-}"
 remove_managed_directory "${KF_CONTAINERD_ROOT:-}"
-cleanup_registry
 
 remove_system_directory /etc/kubernetes
 remove_system_directory /etc/cni/net.d

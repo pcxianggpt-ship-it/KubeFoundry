@@ -34,8 +34,13 @@ class ResetPlanFactoryTest {
 
         assertThat(cleanup)
                 .contains("cleanup_registry", "remove_system_directory", "has_role registry",
-                        "unmount_managed_mounts", "findmnt -rn -o TARGET", "umount -l")
+                        "unmount_managed_mounts", "findmnt -rn -o TARGET", "umount -l",
+                        "systemctl stop containerd || fail")
                 .doesNotContain("rm -rf --one-file-system -- /etc/kubernetes");
+        assertThat(cleanup.lastIndexOf("cleanup_registry"))
+                .isLessThan(cleanup.indexOf("systemctl stop containerd || fail"));
+        assertThat(cleanup.indexOf("systemctl stop containerd || fail"))
+                .isLessThan(cleanup.indexOf("remove_managed_directory \"${KF_CONTAINERD_ROOT:-}\""));
         assertThat(verification)
                 .contains("verify_registry", "assert_absent /etc/kubernetes", "kubelet 服务仍在运行");
     }
