@@ -65,6 +65,8 @@ class ClusterSettingsServiceTest {
                         "containerd_root", "/var/lib/containerd",
                         "etcd_data_dir", "/var/lib/etcd"),
                 "advanced", Map.of("enable_ipv6_dual_stack", true)));
+        cluster.updateInstallationConfiguration("/opt/k8s", "REGISTRY");
+        cluster = clusters.saveAndFlush(cluster);
 
         Map<String, Object> merged = settings.getClusterSettings(cluster.getId());
         assertThat(group(merged, "paths")).containsEntry("k8s_home", "/opt/k8s")
@@ -107,8 +109,24 @@ class ClusterSettingsServiceTest {
         assertThat(group(settings.getClusterSettings(cluster.getId()), "paths"))
                 .containsEntry("k8s_home", "/srv/k8s")
                 .containsEntry("install_media", "/mnt/media");
-        assertThat(settings.runtimeSettings(cluster, node).k8sHome()).isEqualTo("/srv/k8s");
+        assertThat(settings.runtimeSettings(cluster, node).k8sHome()).isEqualTo("/data/k8s_install");
         assertThat(jdbc.queryForObject("select count(*) from app_settings", Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void usesClusterKubernetesWorkDirInsteadOfLegacyK8sHomeSetting() {
+        Cluster cluster = clusters.saveAndFlush(new Cluster("cluster-work-dir"));
+        cluster.updateInstallationConfiguration("/data", "REGISTRY");
+        cluster = clusters.saveAndFlush(cluster);
+        Node node = nodes.saveAndFlush(node(cluster, "cp-a", "10.0.0.1", "control_plane", "amd64"));
+
+        settings.updateGlobalSettings(Map.of("paths", Map.of("k8s_home", "/data/k8s_install")));
+        settings.updateClusterSettings(cluster.getId(), Map.of("paths", Map.of("k8s_home", "/opt/k8s")));
+
+        RuntimeSettings runtime = settings.runtimeSettings(cluster, node);
+        assertThat(runtime.k8sHome()).isEqualTo("/data");
+        assertThat(runtime.containerdRoot()).isEqualTo("/data/containerd_root");
+        assertThat(runtime.etcdDataDir()).isEqualTo("/data/etcd_root");
     }
 
     @Test

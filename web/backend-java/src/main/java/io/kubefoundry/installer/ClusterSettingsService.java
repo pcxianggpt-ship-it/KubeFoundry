@@ -84,6 +84,9 @@ public class ClusterSettingsService {
         Map<String, String> env = stringMap(group(merged, "env"));
         Map<String, Object> advanced = group(merged, "advanced");
 
+        // Kubernetes 工作目录由集群配置统一管理。旧版 paths.k8s_home 设置仅用于
+        // 兼容读取，不能覆盖当前集群保存的 kubernetes_work_dir。
+        paths.put("k8s_home", value(cluster.getKubernetesWorkDir(), "/data/k8s_install"));
         String arch = value(node.getArchitecture(), paths.getOrDefault("arch", "amd64"));
         paths.put("arch", arch);
         Map<String, String> variables = new LinkedHashMap<>(paths);
