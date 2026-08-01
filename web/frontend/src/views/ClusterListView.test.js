@@ -65,16 +65,18 @@ describe('ClusterListView', () => {
     expect(wrapper.find('[data-testid="create-cluster"]').exists()).toBe(false);
   });
 
-  it('使用现有任务聚合Java集群响应的安装状态和任务入口', async () => {
+  it('为未锁定集群的运行中和失败安装任务提供任务入口', async () => {
     listClusters.mockResolvedValue({ items: [
-      { id: 10, name: '执行中', status: 'draft' },
-      { id: 11, name: '预检完成', status: 'draft' },
-      { id: 12, name: '已完成', status: 'draft' }
+      { id: 10, name: '执行中', status: 'draft', configuration_locked: false },
+      { id: 11, name: '预检完成', status: 'draft', configuration_locked: false },
+      { id: 12, name: '已完成', status: 'draft', configuration_locked: false },
+      { id: 13, name: '安装失败', status: 'draft', configuration_locked: false }
     ] });
     listJobs.mockImplementation((clusterId) => Promise.resolve({ items: {
       10: [{ id: 101, job_type: 'install', status: 'running' }],
       11: [{ id: 111, job_type: 'precheck', status: 'success' }],
-      12: [{ id: 121, job_type: 'install', status: 'success' }]
+      12: [{ id: 121, job_type: 'install', status: 'success' }],
+      13: [{ id: 131, job_type: 'install', status: 'failed' }]
     }[clusterId] }));
 
     const wrapper = mountView('install');
@@ -82,11 +84,12 @@ describe('ClusterListView', () => {
 
     const actions = wrapper.findAllComponents(RouterLinkStub)
       .filter((link) => link.classes('cluster-row__action'));
-    expect(actions.map((link) => link.text())).toEqual(['查看进度', '开始安装', '查看执行记录']);
+    expect(actions.map((link) => link.text())).toEqual(['查看进度', '开始安装', '查看执行记录', '查看失败原因']);
     expect(actions.map((link) => link.props('to'))).toEqual([
       { name: 'job-execution', params: { jobId: '101' } },
       { name: 'install-overview', params: { clusterId: '11' } },
-      { name: 'job-execution', params: { jobId: '121' } }
+      { name: 'job-execution', params: { jobId: '121' } },
+      { name: 'job-execution', params: { jobId: '131' } }
     ]);
   });
 

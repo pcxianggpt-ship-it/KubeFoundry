@@ -159,7 +159,6 @@ async function loadClusters() {
 }
 
 async function enrichClusterStatus(cluster) {
-  if (cluster.configuration_locked === false) return cluster;
   try {
     const jobs = normalizeList(await listJobs(cluster.id))
       .slice()
