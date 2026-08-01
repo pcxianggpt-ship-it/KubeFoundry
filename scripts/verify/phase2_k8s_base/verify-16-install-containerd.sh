@@ -20,6 +20,14 @@ check_fail() { FAIL=$((FAIL + 1)); log_error  "[FAIL] $1"; }
 
 log_info "===== 验证：containerd安装 ====="
 
+containerd_root=$(config_resolve '.env.containerd_root' '/data/containerd_root')
+if [ -z "$containerd_root" ]; then
+    log_error "未配置 containerd 数据目录"
+    exit 1
+fi
+containerd_root_shell=$(printf '%q' "$containerd_root")
+containerd_root_config_shell=$(printf '%q' "root = \"${containerd_root}\"")
+
 all_ips=$(get_all_node_ips)
 while IFS= read -r node_ip; do
     [ -z "$node_ip" ] && continue
@@ -51,7 +59,16 @@ while IFS= read -r node_ip; do
         check_fail "containerd 配置文件不存在: ${node_display}"
     fi
 
-    # 4. runc 已安装
+    # 4. containerd 数据目录已写入配置并创建
+    result=$(ssh_exec_capture "$node_ip" \
+        "grep -Fqx ${containerd_root_config_shell} /etc/containerd/config.toml && test -d ${containerd_root_shell} && echo 'OK' || echo 'MISSING'" 2>/dev/null)
+    if [ "$result" = "OK" ]; then
+        check_pass "containerd 数据目录配置正确: ${node_display}"
+    else
+        check_fail "containerd 数据目录配置错误: ${node_display}"
+    fi
+
+    # 5. runc 已安装
     result=$(ssh_exec_capture "$node_ip" "command -v runc 2>/dev/null")
     if [ -n "$result" ]; then
         check_pass "runc 已安装: ${node_display}"
@@ -59,7 +76,7 @@ while IFS= read -r node_ip; do
         check_fail "runc 未安装: ${node_display}"
     fi
 
-    # 5. CNI 插件已安装
+    # 6. CNI 插件已安装
     result=$(ssh_exec_capture "$node_ip" \
         "test -d /opt/cni/bin && ls /opt/cni/bin | wc -l" 2>/dev/null)
     if [ "$result" -gt 0 ] 2>/dev/null; then
@@ -68,7 +85,7 @@ while IFS= read -r node_ip; do
         check_fail "CNI 插件未安装: ${node_display}"
     fi
 
-    # 6. buildkit 服务
+    # 7. buildkit 服务
     result=$(ssh_exec_capture "$node_ip" "systemctl is-active buildkit 2>/dev/null")
     if [ "$result" = "active" ]; then
         check_pass "buildkit 服务运行中: ${node_display}"
@@ -76,7 +93,7 @@ while IFS= read -r node_ip; do
         check_fail "buildkit 服务未运行: ${node_display}"
     fi
 
-    # 7. nerdctl 已安装
+    # 8. nerdctl 已安装
     result=$(ssh_exec_capture "$node_ip" "command -v nerdctl 2>/dev/null")
     if [ -n "$result" ]; then
         check_pass "nerdctl 已安装: ${node_display}"
@@ -84,7 +101,7 @@ while IFS= read -r node_ip; do
         check_fail "nerdctl 未安装: ${node_display}"
     fi
 
-    # 8. 镜像仓库 hosts.toml 配置
+    # 9. 镜像仓库 hosts.toml 配置
     result=$(ssh_exec_capture "$node_ip" \
         "test -f /etc/containerd/certs.d/registry:5000/hosts.toml && echo 'OK' || echo 'MISSING'" 2>/dev/null)
     if [ "$result" = "OK" ]; then

@@ -53,7 +53,7 @@ exec_script_on_single_node() {
     log_debug "通过SSH管道执行脚本，参数: $*"
 
     # 预解析脚本可能需要的配置值（避免远程依赖 yq 和配置文件）
-    local _inj_k8s_soft _inj_kubelet_root _inj_k8s_version
+    local _inj_k8s_soft _inj_kubelet_root _inj_containerd_root _inj_k8s_version
     local _inj_registry_ip _inj_registry_hn
     local _inj_ssh_user _inj_ssh_password _inj_ssh_port
     local _inj_pod_subnet _inj_service_subnet _inj_dual_stack
@@ -68,6 +68,7 @@ _inj_nfs_mount=$(config_get '.storage.nfs_mount_point' '' 2>/dev/null)
 _inj_storage_class=$(config_get '.storage.storage_class' 'nfs-storage' 2>/dev/null)
     _inj_arch=$(config_get '.paths.arch' 'amd64' 2>/dev/null)
     _inj_kubelet_root=$(config_get '.env.kubelet_root' '/data/kubelet_root' 2>/dev/null)
+    _inj_containerd_root=$(config_resolve '.env.containerd_root' "${_inj_k8s_soft}/containerd_root" 2>/dev/null)
     _inj_k8s_version=$(config_get '.cluster.k8s_version' '1.30.14' 2>/dev/null)
     _inj_registry_ip=$(config_get '.registry.ip' '' 2>/dev/null)
     _inj_registry_hn=$(config_get '.registry.hostname' '' 2>/dev/null)
@@ -89,6 +90,7 @@ export K8S_SOFT="${_inj_k8s_soft}"
 export K8S_HOME="${_inj_k8s_soft}"
 export ARCH="${_inj_arch}"
 export KUBELET_ROOT="${_inj_kubelet_root}"
+export CONTAINERD_ROOT="${_inj_containerd_root}"
 export K8S_VERSION="${_inj_k8s_version}"
 export REGISTRY_IP="${_inj_registry_ip}"
 export REGISTRY_HOSTNAME="${_inj_registry_hn}"
@@ -119,6 +121,7 @@ config_get() {
     case "\$path" in
         .paths.k8s_soft|.paths.k8s_home) echo "${_inj_k8s_soft}" ;;
         .env.kubelet_root)     echo "${_inj_kubelet_root}" ;;
+        .env.containerd_root)  echo "${_inj_containerd_root}" ;;
         .cluster.k8s_version)  echo "${_inj_k8s_version}" ;;
         .registry.ip)          echo "${_inj_registry_ip}" ;;
         .registry.hostname)    echo "${_inj_registry_hn}" ;;
