@@ -29,6 +29,22 @@ require_safe_work_dir() {
         || fail "Kubernetes 工作目录不安全"
 }
 
+unmount_managed_mounts() {
+    local target="$1"
+    local mount_point
+
+    command -v findmnt >/dev/null 2>&1 || fail "缺少 findmnt，无法安全卸载受管目录挂载点"
+    while IFS= read -r mount_point; do
+        [ -n "$mount_point" ] || continue
+        log_info "卸载受管目录挂载点: ${mount_point}"
+        if ! umount -- "$mount_point"; then
+            log_warn "常规卸载失败，尝试惰性卸载: ${mount_point}"
+            umount -l -- "$mount_point" || fail "无法卸载受管目录挂载点: ${mount_point}"
+        fi
+    done < <(findmnt -rn -o TARGET | awk -v target="$target" \
+        '$0 == target || index($0, target "/") == 1' | sort -r)
+}
+
 remove_managed_directory() {
     local target="$1"
     [[ -n "$target" ]] || fail "受管清理目录不能为空"
@@ -37,6 +53,7 @@ remove_managed_directory() {
         *) fail "拒绝清理工作目录外的路径: ${target}" ;;
     esac
     [[ ! -L "$target" ]] || fail "拒绝清理符号链接: ${target}"
+    unmount_managed_mounts "$target"
     rm -rf --one-file-system -- "$target"
 }
 

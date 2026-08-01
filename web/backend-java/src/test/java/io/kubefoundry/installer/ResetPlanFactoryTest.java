@@ -33,7 +33,8 @@ class ResetPlanFactoryTest {
                 root.resolve("scripts/verify/reset/verify-reset-kubernetes-node.sh"));
 
         assertThat(cleanup)
-                .contains("cleanup_registry", "remove_system_directory", "has_role registry")
+                .contains("cleanup_registry", "remove_system_directory", "has_role registry",
+                        "unmount_managed_mounts", "findmnt -rn -o TARGET", "umount -l")
                 .doesNotContain("rm -rf --one-file-system -- /etc/kubernetes");
         assertThat(verification)
                 .contains("verify_registry", "assert_absent /etc/kubernetes", "kubelet 服务仍在运行");
