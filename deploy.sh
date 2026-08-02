@@ -132,7 +132,7 @@ extract_and_validate_package() {
     release_dir="$(find "${TEMP_DIR}" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
     [ -n "${release_dir}" ] || { log_error "发布包中未找到发布目录"; return 1; }
     validate_extracted_links "${release_dir}" || return 1
-    for path in runtime/bin/java runtime/.architecture app/kubefoundry.jar web/index.html kube-media scripts/steps deploy.sh VERSION ARCHITECTURE SHA256SUMS; do
+    for path in runtime/bin/java runtime/.architecture app/kubefoundry.jar web/index.html scripts/steps scripts/verify/reset/verify-reset-kubernetes-node.sh deploy.sh VERSION ARCHITECTURE SHA256SUMS; do
         [ -e "${release_dir}/${path}" ] || { log_error "发布包缺少: ${path}"; return 1; }
     done
     (cd "${release_dir}" && sha256sum -c SHA256SUMS >/dev/null) || { log_error "发布包文件校验失败"; return 1; }
@@ -148,13 +148,11 @@ extract_and_validate_package() {
 }
 
 install_release() {
-    local release_dir="$1" new_app="${DEPLOY_ROOT}/.app.new.$$" new_media="${DEPLOY_ROOT}/.kube-media.new.$$"
+    local release_dir="$1" new_app="${DEPLOY_ROOT}/.app.new.$$"
     rm -rf "${new_app}"
-    rm -rf "${new_media}"
     mkdir -p "${new_app}" "${DATA_DIR}" "${LOG_DIR}"
     chmod 0700 "${DATA_DIR}" "${LOG_DIR}"
     cp -a "${release_dir}/runtime" "${release_dir}/app" "${release_dir}/web" "${new_app}/"
-    cp -a "${release_dir}/kube-media" "${new_media}"
     cp "${release_dir}/VERSION" "${release_dir}/ARCHITECTURE" "${new_app}/"
     rm -rf "${DEPLOY_ROOT}/scripts.new"
     cp -a "${release_dir}/scripts" "${DEPLOY_ROOT}/scripts.new"
@@ -162,8 +160,6 @@ install_release() {
     mv "${DEPLOY_ROOT}/scripts.new" "${DEPLOY_ROOT}/scripts"
     rm -rf "${APP_DIR}"
     mv "${new_app}" "${APP_DIR}"
-    rm -rf "${DEPLOY_ROOT}/kube-media"
-    mv "${new_media}" "${DEPLOY_ROOT}/kube-media"
 }
 
 write_service_file() {

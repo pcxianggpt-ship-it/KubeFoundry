@@ -22,6 +22,8 @@ TEST_MODE="${KF_PACKAGE_TEST_MODE:-0}"
 BUILD_OFFLINE="${KF_BUILD_OFFLINE:-0}"
 USE_PREBUILT="${KF_USE_PREBUILT:-0}"
 STAGING_ROOT=""
+BACKEND_BUILD_ROOT=""
+FRONTEND_BUILD_ROOT=""
 
 log_info() { printf '[INFO] %s\n' "$*"; }
 log_success() { printf '[SUCCESS] %s\n' "$*"; }
@@ -46,6 +48,8 @@ EOF
 
 cleanup() {
     [ -n "${STAGING_ROOT}" ] && [ -d "${STAGING_ROOT}" ] && rm -rf "${STAGING_ROOT}"
+    [ -n "${BACKEND_BUILD_ROOT}" ] && [ -d "${BACKEND_BUILD_ROOT}" ] && rm -rf "${BACKEND_BUILD_ROOT}"
+    [ -n "${FRONTEND_BUILD_ROOT}" ] && [ -d "${FRONTEND_BUILD_ROOT}" ] && rm -rf "${FRONTEND_BUILD_ROOT}"
     return 0
 }
 trap cleanup EXIT
@@ -71,7 +75,7 @@ check_environment() {
     for name in tar sha256sum; do
         command -v "${name}" >/dev/null 2>&1 || { log_error "缺少命令: ${name}"; return 1; }
     done
-    for path in web/backend-java/pom.xml web/frontend/package.json deploy.sh kube-media scripts/steps scripts/build/build-jre.sh; do
+    for path in web/backend-java/pom.xml web/frontend/package.json deploy.sh scripts/steps scripts/verify/reset/verify-reset-kubernetes-node.sh scripts/build/build-jre.sh; do
         [ -e "${PROJECT_ROOT}/${path}" ] || { log_error "项目文件缺失: ${path}"; return 1; }
     done
 }
@@ -108,12 +112,37 @@ build_application() {
         npm_ci_args+=(--offline)
     fi
     log_info "构建并测试 Java 后端..."
-    (cd "${PROJECT_ROOT}/web/backend-java" && mvn -q "${maven_args[@]}")
+    # 在临时目录编译，避免 WSL 与 Windows 共用 target 时无法清理被占用的文件。
+    BACKEND_BUILD_ROOT="$(mktemp -d)"
+    local backend_project_dir="${BACKEND_BUILD_ROOT}/project"
+    local backend_build_dir="${backend_project_dir}/web/backend-java"
+    mkdir -p "${backend_build_dir}" "${backend_project_dir}/scripts"
+    (
+        cd "${PROJECT_ROOT}/web/backend-java"
+        tar --exclude='./target' -cf - .
+    ) | (
+        cd "${backend_build_dir}"
+        tar -xf -
+    )
+    cp -a "${PROJECT_ROOT}/scripts/steps" "${backend_project_dir}/scripts/steps"
+    cp -a "${PROJECT_ROOT}/scripts/verify" "${backend_project_dir}/scripts/verify"
+    (cd "${backend_build_dir}" && mvn -q "${maven_args[@]}")
     log_info "构建并测试 Vue 前端..."
-    (cd "${PROJECT_ROOT}/web/frontend" && npm "${npm_ci_args[@]}" && npm test && npm run build)
-    cp "${PROJECT_ROOT}/web/backend-java/target/kubefoundry-backend-0.2.1.jar" \
+    # 在临时目录安装依赖，避免 WSL 与 Windows 共用 node_modules 时互相覆盖平台二进制文件。
+    FRONTEND_BUILD_ROOT="$(mktemp -d)"
+    local frontend_build_dir="${FRONTEND_BUILD_ROOT}/frontend"
+    mkdir -p "${frontend_build_dir}"
+    (
+        cd "${PROJECT_ROOT}/web/frontend"
+        tar --exclude='./node_modules' --exclude='./dist' -cf - .
+    ) | (
+        cd "${frontend_build_dir}"
+        tar -xf -
+    )
+    (cd "${frontend_build_dir}" && npm "${npm_ci_args[@]}" && npm test && npm run build)
+    cp "${backend_build_dir}/target/kubefoundry-backend-0.2.1.jar" \
         "${release_dir}/app/kubefoundry.jar"
-    cp -a "${PROJECT_ROOT}/web/frontend/dist/." "${release_dir}/web/"
+    cp -a "${frontend_build_dir}/dist/." "${release_dir}/web/"
 }
 
 build_runtime() {
@@ -137,8 +166,8 @@ create_archive() {
 
     build_application "${release_dir}"
     build_runtime "${release_dir}"
-    cp -a "${PROJECT_ROOT}/kube-media" "${release_dir}/kube-media"
     cp -a "${PROJECT_ROOT}/scripts/steps" "${release_dir}/scripts/steps"
+    cp -a "${PROJECT_ROOT}/scripts/verify" "${release_dir}/scripts/verify"
     cp "${PROJECT_ROOT}/deploy.sh" "${release_dir}/deploy.sh"
     chmod 0755 "${release_dir}/deploy.sh" "${release_dir}/runtime/bin/java"
     printf '%s\n' "${version}" > "${release_dir}/VERSION"

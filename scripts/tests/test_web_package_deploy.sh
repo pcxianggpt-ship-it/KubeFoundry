@@ -45,14 +45,15 @@ for arch in x86_64 aarch64; do
         "${prefix}/runtime/.architecture" \
         "${prefix}/app/kubefoundry.jar" \
         "${prefix}/web/index.html" \
-        "${prefix}/kube-media/README.md" \
         "${prefix}/scripts/steps/" \
+        "${prefix}/scripts/verify/reset/verify-reset-kubernetes-node.sh" \
         "${prefix}/deploy.sh" \
         "${prefix}/VERSION" \
         "${prefix}/ARCHITECTURE" \
         "${prefix}/SHA256SUMS"; do
         grep -Fq "${expected}" <<< "${package_list}" || fail "${arch} 包缺少 ${expected}"
     done
+    grep -Fq "${prefix}/kube-media" <<< "${package_list}" && fail "${arch} 包不应包含离线介质目录"
 
     mkdir -p "${TEST_ROOT}/inspect-${arch}"
     tar -xzf "${package}" -C "${TEST_ROOT}/inspect-${arch}"
@@ -65,6 +66,8 @@ done
 PACKAGE="${DIST_DIR}/kubefoundry-web-v0.2.1-x86_64.tar.gz"
 mkdir -p "${TEST_ROOT}/deployment/data"
 printf 'keep\n' > "${TEST_ROOT}/deployment/data/keep.txt"
+mkdir -p "${TEST_ROOT}/deployment/kube-media"
+printf 'keep\n' > "${TEST_ROOT}/deployment/kube-media/keep.txt"
 (
     cd "${TEST_ROOT}/deployment"
     KF_DEPLOY_TEST_MODE=1 bash "${PROJECT_ROOT}/deploy.sh" --port 11001 "${PACKAGE}"
@@ -74,8 +77,10 @@ printf 'keep\n' > "${TEST_ROOT}/deployment/data/keep.txt"
 [ -x "${TEST_ROOT}/deployment/app/runtime/bin/java" ] || fail "运行时 Java 不可执行"
 [ -f "${TEST_ROOT}/deployment/app/app/kubefoundry.jar" ] || fail "未安装 Java JAR"
 [ -f "${TEST_ROOT}/deployment/app/web/index.html" ] || fail "未安装前端"
-[ -f "${TEST_ROOT}/deployment/kube-media/README.md" ] || fail "未安装离线介质目录"
+[ -f "${TEST_ROOT}/deployment/kube-media/keep.txt" ] || fail "部署覆盖了独立维护的离线介质目录"
 [ -d "${TEST_ROOT}/deployment/scripts/steps" ] || fail "未安装步骤脚本"
+[ -f "${TEST_ROOT}/deployment/scripts/verify/reset/verify-reset-kubernetes-node.sh" ] ||
+    fail "未安装重置验证脚本"
 
 SERVICE_FILE="${TEST_ROOT}/deployment/logs/kubefoundry-web.service.test"
 [ -f "${SERVICE_FILE}" ] || fail "测试 service 文件未生成"
@@ -106,6 +111,22 @@ if (
     fail "部署脚本未拒绝校验和被篡改的发布包"
 fi
 grep -q '发布包文件校验失败' "${TEST_ROOT}/tampered.log" || fail "校验和失败错误不清晰"
+
+mkdir -p "${TEST_ROOT}/missing-verifier"
+tar -xzf "${PACKAGE}" -C "${TEST_ROOT}/missing-verifier"
+release="${TEST_ROOT}/missing-verifier/kubefoundry-web-v0.2.1-x86_64"
+rm -f "${release}/scripts/verify/reset/verify-reset-kubernetes-node.sh"
+(cd "${release}" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+tar -czf "${TEST_ROOT}/missing-verifier.tar.gz" -C "${TEST_ROOT}/missing-verifier" \
+    kubefoundry-web-v0.2.1-x86_64
+if (
+    cd "${TEST_ROOT}/deployment"
+    KF_DEPLOY_TEST_MODE=1 bash "${PROJECT_ROOT}/deploy.sh" "${TEST_ROOT}/missing-verifier.tar.gz"
+) >"${TEST_ROOT}/missing-verifier.log" 2>&1; then
+    fail "部署脚本未拒绝缺少重置验证脚本的发布包"
+fi
+grep -Fq '发布包缺少: scripts/verify/reset/verify-reset-kubernetes-node.sh' \
+    "${TEST_ROOT}/missing-verifier.log" || fail "缺少重置验证脚本的错误不清晰"
 
 mkdir -p "${TEST_ROOT}/unsafe-link"
 tar -xzf "${PACKAGE}" -C "${TEST_ROOT}/unsafe-link"
