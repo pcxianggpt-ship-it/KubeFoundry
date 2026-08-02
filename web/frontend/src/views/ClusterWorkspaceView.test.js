@@ -11,7 +11,7 @@ vi.mock('../api/client', () => ({
   getCluster: vi.fn(),
   createCluster: vi.fn(),
   updateCluster: vi.fn(),
-  listComponents: vi.fn().mockResolvedValue({ items: [] }),
+  listComponents: vi.fn().mockResolvedValue({ enabled: false, groups: [] }),
   updateComponents: vi.fn(),
   listClusters: vi.fn(),
   listJobs: vi.fn().mockResolvedValue({ items: [] }),

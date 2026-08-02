@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { copyNodes, getJob, resetCluster, startInstall, startNodeTest } from './client';
+import { copyNodes, getJob, resetCluster, startInstall, startNodeTest, updateComponents } from './client';
 
 
 describe('API client', () => {
@@ -78,6 +78,22 @@ describe('API client', () => {
     expect(fetch).toHaveBeenCalledWith('/api/clusters/7/reset', expect.objectContaining({
       method: 'POST',
       body: JSON.stringify({ acknowledged: true, confirmation_phrase: 'RESET production' })
+    }));
+  });
+
+  it('sends the Kubemate component aggregate unchanged', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ enabled: true, groups: [] })
+    });
+    vi.stubGlobal('fetch', fetch);
+    const configuration = { enabled: true, groups: [{ key: 'traefik', enabled: true, config: {} }] };
+
+    await updateComponents(7, configuration);
+
+    expect(fetch).toHaveBeenCalledWith('/api/clusters/7/components', expect.objectContaining({
+      method: 'PUT', body: JSON.stringify(configuration)
     }));
   });
 

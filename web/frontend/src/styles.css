@@ -1197,6 +1197,112 @@ a.pipeline-stage:hover {
   letter-spacing: 0;
 }
 
+.component-stage-intro {
+  margin: 8px 0 0;
+  color: var(--kf-muted);
+  font-size: 14px;
+}
+
+.component-skeleton {
+  margin-top: 24px;
+}
+
+.configuration-lock-alert,
+.component-plan-alert {
+  margin-top: 20px;
+}
+
+.component-master-switch,
+.component-group {
+  background: var(--kf-surface);
+  border: 1px solid var(--kf-border);
+  border-radius: 6px;
+}
+
+.component-master-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-top: 20px;
+  padding: 18px 20px;
+  border-left: 3px solid var(--kf-primary);
+}
+
+.component-master-switch h3,
+.component-master-switch p,
+.component-group h3,
+.component-group p {
+  margin: 0;
+}
+
+.component-master-switch h3,
+.component-group h3 {
+  font-size: 15px;
+}
+
+.component-master-switch p,
+.component-group__identity > p {
+  margin-top: 5px;
+  color: var(--kf-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.component-group-list {
+  display: grid;
+  gap: 12px;
+  margin: 20px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.component-group {
+  min-width: 0;
+  padding: 18px 20px;
+}
+
+.component-group.is-unavailable {
+  background: #fafbfa;
+}
+
+.component-group__header,
+.component-group__title-line {
+  display: flex;
+  align-items: center;
+}
+
+.component-group__header {
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.component-group__identity {
+  min-width: 0;
+}
+
+.component-group__title-line {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.component-group__identity small {
+  display: block;
+  margin-top: 6px;
+  color: var(--kf-warning);
+  font-size: 12px;
+}
+
+.component-nfs-form {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid #e7ebe9;
+}
+
+.component-nfs-form .el-form-item {
+  margin-bottom: 16px;
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1515,6 +1621,17 @@ a.pipeline-stage:hover {
 
   .stage-content {
     padding: 20px;
+  }
+
+  .component-master-switch,
+  .component-group__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .component-master-switch .el-switch,
+  .component-group__header .el-switch {
+    align-self: flex-start;
   }
 
   .execution-summary {

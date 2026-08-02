@@ -68,8 +68,8 @@ export function resetCluster(clusterId, acknowledged, confirmationPhrase) {
 }
 
 export function listComponents(clusterId) { return request(`/api/clusters/${clusterId}/components`); }
-export function updateComponents(clusterId, items) {
-  return request(`/api/clusters/${clusterId}/components`, { method: 'PUT', body: JSON.stringify({ items }) });
+export function updateComponents(clusterId, configuration) {
+  return request(`/api/clusters/${clusterId}/components`, { method: 'PUT', body: JSON.stringify(configuration) });
 }
 
 export function listNodes(clusterId) {
