@@ -31,6 +31,9 @@ public class ClusterComponent {
     @Column(nullable = false)
     private boolean enabled;
 
+    @Column(name = "config_json", nullable = false, columnDefinition = "CLOB")
+    private String configJson = "{}";
+
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -41,6 +44,10 @@ public class ClusterComponent {
     }
 
     public ClusterComponent(Cluster cluster, String componentKey, boolean enabled) {
+        this(cluster, componentKey, enabled, "{}");
+    }
+
+    public ClusterComponent(Cluster cluster, String componentKey, boolean enabled, String configJson) {
         if (cluster == null) throw new IllegalArgumentException("集群不能为空");
         if (componentKey == null || componentKey.isBlank()) {
             throw new IllegalArgumentException("组件标识不能为空");
@@ -48,14 +55,22 @@ public class ClusterComponent {
         this.cluster = cluster;
         this.componentKey = componentKey.trim();
         this.enabled = enabled;
+        this.configJson = normalizeConfig(configJson);
     }
 
     public Long getId() { return id; }
     public Cluster getCluster() { return cluster; }
     public String getComponentKey() { return componentKey; }
     public boolean isEnabled() { return enabled; }
+    public String getConfigJson() { return configJson; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
 
     public void setEnabled(boolean value) { enabled = value; }
+
+    public void setConfigJson(String value) { configJson = normalizeConfig(value); }
+
+    private static String normalizeConfig(String value) {
+        return value == null || value.isBlank() ? "{}" : value.trim();
+    }
 }

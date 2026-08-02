@@ -25,7 +25,7 @@
 ### 3.1 必须验收
 
 - 六个组件组配置与 Redis 不可用状态。
-- V8 到 V9 升级和 V1 到 V9 新库迁移。
+- V9 到 V10 升级和 V1 到 V10 新库迁移。
 - 服务端组件计划与不可变快照。
 - 主控制节点的 amd64/arm64 Helm 离线分发；其他控制节点无需安装 Helm。
 - NFS、Kubemate、Traefik、存储与日志套件、Prometheus 五组。
@@ -147,7 +147,7 @@ git diff --check
 
 | 编号 | 场景 | 操作 | 预期结果 |
 | --- | --- | --- | --- |
-| MIG-01 | 新库迁移 | 从空库执行 Flyway 到 V9 | 所有表、约束、索引创建成功 |
+| MIG-01 | 新库迁移 | 从空库执行 Flyway 到 V10 | 所有表、约束、索引创建成功 |
 | MIG-02 | V8 无组件选择 | 升级后查询组件 API | 总开关关闭，六组存在，状态均为未安装 |
 | MIG-03 | V8 NFS/Traefik | 将旧两组设为 true 后升级 | 同名组保留 true，总开关为 true |
 | MIG-04 | V8 Loki | 将旧 Loki 设为 true 后升级 | `storage_observability=true`，旧单 Loki 不再可配置 |
@@ -157,7 +157,8 @@ git diff --check
 完成条件：
 
 - [ ] MIG-01 至 MIG-06 全部通过。
-- [ ] `SchemaMigrationTest` 同时覆盖 V1 和 V8 起点。
+- [x] MIG-01 至 MIG-05 已由 V10 迁移测试覆盖并通过。
+- [x] `SchemaMigrationTest` 同时覆盖 V1 和 V8 起点。
 - [ ] 迁移日志不存在静默数据丢弃。
 
 ## 8. 组件配置与 API 验收

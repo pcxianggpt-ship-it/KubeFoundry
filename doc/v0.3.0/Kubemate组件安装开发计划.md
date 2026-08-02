@@ -25,7 +25,7 @@
 ## 3. 实施约束
 
 - 所有新增文本文件使用 LF。
-- 不修改 Flyway V1 至 V8，只新增 V9 及后续迁移。
+- 不修改 Flyway V1 至 V9，只新增 V10 及后续迁移。
 - Git 提交说明使用中文，每个提交只覆盖一个清晰职责。
 - 后端是组件配置、依赖和安装计划的权威来源。
 - phase3 脚本不得在内部再次 SSH、遍历节点或修改发布介质原文件。
@@ -66,7 +66,7 @@
 
 ### 主要文件
 
-- 新增：`web/backend-java/src/main/resources/db/migration/V9__kubemate_component_installation.sql`
+- 新增：`web/backend-java/src/main/resources/db/migration/V10__kubemate_component_model.sql`
 - 修改：`web/backend-java/src/main/java/io/kubefoundry/cluster/Cluster.java`
 - 修改：`web/backend-java/src/main/java/io/kubefoundry/cluster/ClusterComponent.java`
 - 新增：`ClusterComponentState.java` 及 Repository。
@@ -75,17 +75,17 @@
 
 ### 实施步骤
 
-- [ ] 先增加 V8 到 V9 增量迁移测试和 V1 到 V9 全量迁移测试。
-- [ ] 为集群增加 `kubemate_enabled`，默认 false。
-- [ ] 为 `cluster_components` 增加受控配置存储字段。
-- [ ] 新增 `cluster_component_states`，状态值限制为 `not_installed/installing/installed/failed`。
-- [ ] 将旧 `nfs`、`traefik` 原样迁移为组件组。
-- [ ] 将旧 `loki=true` 映射为 `storage_observability=true`。
-- [ ] 新增 `kubemate`、`prometheus`、`redis_sentinel` 默认关闭记录。
-- [ ] 任一旧组启用时回填总开关为 true。
-- [ ] 所有实际状态初始化为 `not_installed`，不伪造安装成功记录。
-- [ ] 为状态与最后任务建立必要索引和唯一约束。
-- [ ] 验证删除集群时组件配置、状态和任务关联行为符合现有生命周期。
+- [x] 先增加 V9 到 V10 增量迁移测试和 V1 到 V10 全量迁移测试。
+- [x] 为集群增加 `kubemate_enabled`，默认 false。
+- [x] 为 `cluster_components` 增加受控配置存储字段。
+- [x] 新增 `cluster_component_states`，状态值限制为 `not_installed/installing/installed/failed`。
+- [x] 将旧 `nfs`、`traefik` 原样迁移为组件组。
+- [x] 将旧 `loki=true` 映射为 `storage_observability=true`。
+- [x] 新增 `kubemate`、`prometheus`、`redis_sentinel` 默认关闭记录。
+- [x] 任一旧组启用时回填总开关为 true。
+- [x] 所有实际状态初始化为 `not_installed`，不伪造安装成功记录。
+- [x] 为状态与最后任务建立必要索引和唯一约束。
+- [x] 验证删除集群时组件配置、状态和任务关联行为符合现有生命周期。
 
 ### 验收
 

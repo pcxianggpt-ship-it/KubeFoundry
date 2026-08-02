@@ -39,6 +39,7 @@ class SchemaMigrationTest {
             "events",
             "node_roles",
             "cluster_components",
+            "cluster_component_states",
             "installation_snapshots");
     private static List<String> h2FilesBeforeTest;
 
@@ -162,6 +163,119 @@ class SchemaMigrationTest {
     }
 
     @Test
+    void createsKubemateComponentStructuresInV10() throws SQLException {
+        try (Connection connection = openConnection()) {
+            DatabaseMetaData metadata = connection.getMetaData();
+            assertThat(successfulMigration(connection, "10")).isTrue();
+            assertThat(columnExists(metadata, "CLUSTERS", "KUBEMATE_ENABLED")).isTrue();
+            assertThat(columnExists(metadata, "CLUSTER_COMPONENTS", "CONFIG_JSON")).isTrue();
+            assertThat(columnExists(metadata, "CLUSTER_COMPONENT_STATES", "STATUS")).isTrue();
+            assertThat(columnExists(metadata, "CLUSTER_COMPONENT_STATES", "LAST_JOB_ID")).isTrue();
+        }
+    }
+
+    @Test
+    void migratesExistingComponentSelectionsIntoNotInstalledStates() throws SQLException {
+        String databaseUrl = "jdbc:h2:mem:schema-v8-components;MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
+        Flyway.configure()
+                .dataSource(databaseUrl, "sa", "")
+                .target("8")
+                .load()
+                .migrate();
+
+        long clusterId;
+        long emptyClusterId;
+        try (Connection connection = DriverManager.getConnection(databaseUrl, "sa", "")) {
+            clusterId = insertCluster(connection, "component-migration", "", false);
+            emptyClusterId = insertCluster(connection, "component-empty", "", false);
+            try (var statement = connection.prepareStatement(
+                    "INSERT INTO cluster_components (cluster_id, component_key, enabled) VALUES (?, ?, ?)")) {
+                for (Object[] component : new Object[][] {
+                        {clusterId, "loki", true},
+                        {clusterId, "nfs", true},
+                        {clusterId, "traefik", false}
+                }) {
+                    statement.setLong(1, (Long) component[0]);
+                    statement.setString(2, (String) component[1]);
+                    statement.setBoolean(3, (Boolean) component[2]);
+                    statement.executeUpdate();
+                }
+            }
+        }
+
+        Flyway.configure().dataSource(databaseUrl, "sa", "").load().migrate();
+
+        try (Connection connection = DriverManager.getConnection(databaseUrl, "sa", "")) {
+            assertThat(booleanValue(connection,
+                    "SELECT kubemate_enabled FROM clusters WHERE id = " + clusterId)).isTrue();
+            assertThat(countRows(connection,
+                    "SELECT COUNT(*) FROM cluster_component_states "
+                            + "WHERE cluster_id = " + clusterId
+                            + " AND component_key = 'storage_observability' AND status = 'not_installed'"))
+                    .isEqualTo(1);
+            assertThat(countRows(connection,
+                    "SELECT COUNT(*) FROM cluster_components "
+                            + "WHERE cluster_id = " + clusterId + " AND component_key = 'loki'"))
+                    .isZero();
+            assertThat(countRows(connection,
+                    "SELECT COUNT(*) FROM cluster_components "
+                            + "WHERE cluster_id = " + clusterId + " AND config_json = '{}'"))
+                    .isEqualTo(6);
+            assertThat(countRows(connection,
+                    "SELECT COUNT(*) FROM cluster_components "
+                            + "WHERE cluster_id = " + clusterId))
+                    .isEqualTo(6);
+            assertThat(booleanValue(connection,
+                    "SELECT kubemate_enabled FROM clusters WHERE id = " + emptyClusterId)).isFalse();
+            assertThat(countRows(connection,
+                    "SELECT COUNT(*) FROM cluster_components WHERE cluster_id = " + emptyClusterId))
+                    .isEqualTo(6);
+            assertThat(countRows(connection,
+                    "SELECT COUNT(*) FROM cluster_component_states WHERE cluster_id = " + emptyClusterId
+                            + " AND status = 'not_installed'"))
+                    .isEqualTo(6);
+            assertThat(booleanValue(connection,
+                    "SELECT enabled FROM cluster_components WHERE cluster_id = " + clusterId
+                            + " AND component_key = 'nfs'"))
+                    .isTrue();
+            assertThat(booleanValue(connection,
+                    "SELECT enabled FROM cluster_components WHERE cluster_id = " + clusterId
+                            + " AND component_key = 'traefik'"))
+                    .isFalse();
+        }
+    }
+
+    @Test
+    void cascadesComponentConfigurationAndStateWhenClusterIsDeleted() throws SQLException {
+        String databaseUrl = "jdbc:h2:mem:schema-component-delete;MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
+        Flyway.configure().dataSource(databaseUrl, "sa", "").load().migrate();
+
+        long clusterId;
+        try (Connection connection = DriverManager.getConnection(databaseUrl, "sa", "")) {
+            clusterId = insertCluster(connection, "component-delete", "", false);
+            try (var component = connection.prepareStatement(
+                    "INSERT INTO cluster_components (cluster_id, component_key, enabled) VALUES (?, 'nfs', FALSE)")) {
+                component.setLong(1, clusterId);
+                component.executeUpdate();
+            }
+            try (var state = connection.prepareStatement(
+                    "INSERT INTO cluster_component_states (cluster_id, component_key, status) "
+                            + "VALUES (?, 'nfs', 'not_installed')")) {
+                state.setLong(1, clusterId);
+                state.executeUpdate();
+            }
+            try (var delete = connection.prepareStatement("DELETE FROM clusters WHERE id = ?")) {
+                delete.setLong(1, clusterId);
+                delete.executeUpdate();
+            }
+            assertThat(countRows(connection,
+                    "SELECT COUNT(*) FROM cluster_components WHERE cluster_id = " + clusterId)).isZero();
+            assertThat(countRows(connection,
+                    "SELECT COUNT(*) FROM cluster_component_states WHERE cluster_id = " + clusterId)).isZero();
+        }
+    }
+
+    @Test
     void upgradesAnExistingV7DatabaseAndDerivesRegistryRolesSafely() throws SQLException {
         String databaseUrl = "jdbc:h2:mem:schema-v7-incremental;MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
         Flyway.configure()
@@ -195,6 +309,11 @@ class SchemaMigrationTest {
                     .isFalse();
             assertThat(booleanValue(connection, "SELECT installation_locked FROM clusters WHERE name = 'installed'"))
                     .isTrue();
+            assertThat(countRows(connection,
+                    "SELECT COUNT(*) FROM cluster_component_states "
+                            + "WHERE cluster_id = (SELECT id FROM clusters WHERE name = 'installed')"
+                            + " AND status = 'not_installed'"))
+                    .isEqualTo(6);
         }
     }
 

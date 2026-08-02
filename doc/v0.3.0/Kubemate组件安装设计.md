@@ -233,7 +233,7 @@ PUT /api/clusters/{clusterId}/components
 
 ## 10. 数据库存储与迁移
 
-新增 Flyway `V9`，不修改已有 V1 至 V8。
+新增 Flyway `V10`，不修改已有 V1 至 V9。
 
 建议调整如下：
 
@@ -477,7 +477,7 @@ NFS Provisioner -> Worker 挂载 -> 受管 exports 行
 
 ### 18.1 后端
 
-- V8 到 V9 迁移正确保留 `nfs/traefik/loki` 的用户选择。
+- V9 到 V10 迁移正确保留 `nfs/traefik/loki` 的用户选择。
 - 组件 API 覆盖总开关、六个组、未知键、不可用 Redis 和 NFS 强类型校验。
 - 计划工厂仅包含有效启用组，并保证固定顺序和组内依赖。
 - 新集群全量计划与存量集群补装计划复用相同组件步骤。
@@ -517,7 +517,7 @@ NFS Provisioner -> Worker 挂载 -> 受管 exports 行
 
 ### M1：配置与迁移
 
-完成 V9、组件组 API、NFS 配置、总开关、前端配置页和契约测试。
+完成 V10、组件组 API、NFS 配置、总开关、前端配置页和契约测试。
 
 ### M2：公共执行能力
 

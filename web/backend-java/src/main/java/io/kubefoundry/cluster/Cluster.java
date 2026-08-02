@@ -46,6 +46,9 @@ public class Cluster {
     @Column(name = "image_registry_type", nullable = false, length = 32)
     private String imageRegistryType = "REGISTRY";
 
+    @Column(name = "kubemate_enabled", nullable = false)
+    private boolean kubemateEnabled;
+
     @Column(nullable = false, length = 32)
     private String status = "draft";
 
@@ -82,6 +85,7 @@ public class Cluster {
     public int getRegistryPort() { return registryPort; }
     public String getKubernetesWorkDir() { return kubernetesWorkDir; }
     public String getImageRegistryType() { return imageRegistryType; }
+    public boolean isKubemateEnabled() { return kubemateEnabled; }
     public String getStatus() { return status; }
     public boolean isInstallationLocked() { return installationLocked; }
     public long getNodeConfigVersion() { return nodeConfigVersion; }
@@ -116,6 +120,10 @@ public class Cluster {
     public void updateInstallationConfiguration(String workDir, String registryType) {
         if (workDir != null) this.kubernetesWorkDir = workDir.trim();
         if (registryType != null) this.imageRegistryType = registryType.trim();
+    }
+
+    public void updateKubemateEnabled(boolean enabled) {
+        kubemateEnabled = enabled;
     }
 
     public void markNodeTestStatus(String value) {
