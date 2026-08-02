@@ -46,6 +46,27 @@ v0.2.1 基础路径为 `/api`，后端实现为 Java 17 + Spring Boot。前端�
 | GET | `/api/clusters/{cluster_id}/components` | 查询 Kubemate 组件选择 |
 | PUT | `/api/clusters/{cluster_id}/components` | 保存 Kubemate 组件选择，仅保存配置，不执行安装 |
 
+组件接口返回聚合对象，固定包含 `nfs`、`kubemate`、`traefik`、`storage_observability`、`prometheus`、`redis_sentinel` 六组。每组返回中文名称、组内组件、期望启用值、`available`、实际 `status` 和配置；Redis 哨兵组 `available=false`，启用时返回 `COMPONENT_GROUP_UNAVAILABLE`。总开关字段为 `enabled`，关闭时保留各子组的保存值但不纳入安装计划。
+
+```json
+{
+  "enabled": true,
+  "groups": [
+    {
+      "key": "storage_observability",
+      "name": "存储与日志套件",
+      "enabled": true,
+      "available": true,
+      "components": ["openebs", "minio", "loki", "alloy"],
+      "status": "not_installed",
+      "config": {}
+    }
+  ]
+}
+```
+
+PUT 请求只接受已知组键和唯一组键；未知组、重复组、不可用组启用或非法 NFS 配置返回 `400` 及稳定错误码。
+
 节点响应仅返回 `has_password`，不返回密码、密文、IV 或私钥。节点测试通过密码首次连接，安装集群级 Ed25519 公钥，再用私钥验证免密登录。
 
 集群请求和响应使用 `kubernetes_work_dir` 与 `image_registry_type`，不再包含 Pod/Service 网段及 Registry 主机名、IP、端口。节点使用 `roles` 数组，允许 `registry` 与 `control_plane` 或 `worker` 组合；禁止 `control_plane` 与 `worker` 同时出现。当前仓库类型仅支持 `REGISTRY`，Registry 地址由唯一 Registry 角色节点派生，端口固定 `5000`。

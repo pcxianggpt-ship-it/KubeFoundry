@@ -7,6 +7,7 @@ import io.kubefoundry.job.JobNotFoundException;
 import io.kubefoundry.installer.ActiveInstallerJobException;
 import io.kubefoundry.installer.ResetConfirmationMismatchException;
 import io.kubefoundry.ssh.NodeTestService.ActiveNodeTestException;
+import io.kubefoundry.cluster.ClusterComponentService.ComponentConfigurationException;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -31,6 +32,10 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler({IllegalArgumentException.class, HttpMessageNotReadableException.class})
     public ResponseEntity<Map<String, String>> validation(Exception exception) {
+        if (exception instanceof ComponentConfigurationException component) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "code", component.code(), "message", component.getMessage()));
+        }
         String detail = exception instanceof IllegalArgumentException
                 ? exception.getMessage() : "请求 JSON 格式无效";
         return ResponseEntity.badRequest().body(Map.of(
