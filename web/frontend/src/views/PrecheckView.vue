@@ -146,7 +146,7 @@ async function handleJobStatus(event) {
   disconnect();
   await refreshResults();
   if (payload.status === 'success') {
-    await router.push({ name: 'install-overview', params: { clusterId: String(props.clusterId) } });
+    await router.push({ name: 'install-confirm', params: { clusterId: String(props.clusterId) } });
   }
 }
 

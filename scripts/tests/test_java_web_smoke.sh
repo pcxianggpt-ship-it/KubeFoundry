@@ -41,7 +41,7 @@ java_major=$(java -version 2>&1 | sed -n '1s/.*version "\([0-9][0-9]*\).*/\1/p')
 (cd "${BACKEND_DIR}" && mvn -q -DskipTests package)
 
 KF_DATA_DIR="${TEST_ROOT}/data" \
-    java -jar "${BACKEND_DIR}/target/kubefoundry-backend-0.2.0.jar" \
+    java -jar "${BACKEND_DIR}/target/kubefoundry-backend-0.2.1.jar" \
     --server.port="${API_PORT}" >"${TEST_ROOT}/backend.log" 2>&1 &
 BACKEND_PID=$!
 
@@ -57,14 +57,14 @@ ready=0
 for _ in $(seq 1 90); do
     if health=$(curl -fsS "${base_url}/api/health" 2>/dev/null); then
         case "${health}" in
-            *'"status":"ok"'*'"version":"0.2.0"'*) ready=1; break ;;
+            *'"status":"ok"'*'"version":"0.2.1"'*) ready=1; break ;;
         esac
     fi
     sleep 1
 done
 [ "${ready}" -eq 1 ] || fail "Java 后端或前端代理未就绪"
 
-cluster_json='{"name":"smoke-contract","k8s_version":"1.30.14","pod_subnet":"10.244.0.0/16","service_subnet":"10.96.0.0/16"}'
+cluster_json='{"name":"smoke-contract","k8s_version":"1.30.14","kubernetes_work_dir":"/data/k8s_install","image_registry_type":"REGISTRY"}'
 cluster_response=$(curl -fsS -X POST -H 'Content-Type: application/json' \
     --data-binary "${cluster_json}" "${base_url}/api/clusters") || fail "创建集群失败"
 cluster_id=$(printf '%s' "${cluster_response}" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
@@ -72,7 +72,7 @@ cluster_id=$(printf '%s' "${cluster_response}" | sed -n 's/.*"id":\([0-9][0-9]*\
 
 node_secret=$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24 || true)
 [ "${#node_secret}" -eq 24 ] || fail "无法生成临时节点凭据"
-printf '{"hostname":"smoke-node","ip":"127.0.0.1","role":"control_plane","ssh_user":"root","ssh_port":1,"password":"%s"}' \
+printf '{"hostname":"smoke-node","ip":"127.0.0.1","roles":["control_plane"],"ssh_user":"root","ssh_port":1,"password":"%s"}' \
     "${node_secret}" >"${TEST_ROOT}/node.json"
 node_response=$(curl -fsS -X POST -H 'Content-Type: application/json' \
     --data-binary @"${TEST_ROOT}/node.json" "${base_url}/api/clusters/${cluster_id}/nodes") ||
@@ -83,7 +83,7 @@ case "${node_response}" in
 esac
 unset node_secret
 case "${node_response}" in
-    *'"hostname":"smoke-node"'*'"has_password":true'*) ;;
+    *'"hostname":"smoke-node"'*'"roles":["control_plane"]'*'"has_password":true'*) ;;
     *) fail "节点响应缺少关键字段" ;;
 esac
 

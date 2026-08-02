@@ -105,7 +105,7 @@ describe('ClusterWorkspaceView', () => {
     expect(wrapper.get('h1').text()).toBe('更新后的集群');
   });
 
-  it('安装成功后以只读方式展示配置，重置入口只在安装模块提供', async () => {
+  it('安装成功后以只读方式展示配置，并提示远程重置解锁条件', async () => {
     getCluster.mockResolvedValue({
       id: 42,
       name: '已安装集群',
@@ -119,7 +119,7 @@ describe('ClusterWorkspaceView', () => {
 
     expect(wrapper.get('[data-testid="cluster-name"]').attributes('disabled')).toBeDefined();
     expect(wrapper.get('[data-testid="save-cluster"]').attributes('disabled')).toBeDefined();
-    expect(wrapper.find('[data-testid="reset-cluster"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain('完成远程重置后才能重新修改配置');
     expect(wrapper.find('[data-stage-key="install"]').exists()).toBe(false);
   });
 });

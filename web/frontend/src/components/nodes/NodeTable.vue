@@ -26,7 +26,18 @@
           </td>
           <td><strong>{{ node.hostname || '未命名草稿' }}</strong><small>{{ node.ip || '待填写 IP' }}</small></td>
           <td>{{ node.ssh_user }}@{{ node.ip || '-' }}:{{ node.ssh_port }}</td>
-          <td>{{ roleLabel(node.roles, node.role) }}</td>
+          <td>
+            <div class="node-role-cards" :aria-label="`节点角色：${roleLabel(node.roles)}`">
+              <span
+                v-for="role in resolvedRoles(node.roles)"
+                :key="role"
+                class="node-role-card"
+                :class="`node-role-card--${role}`"
+              >
+                {{ roleMeta(role).label }}
+              </span>
+            </div>
+          </td>
           <td><span>{{ node.has_password ? '密码已保存' : '未保存密码' }}</span></td>
           <td>
             <el-tag :type="nodeStatusTone(node.node_test_status)" size="small">
@@ -74,9 +85,19 @@ defineProps({
 });
 defineEmits(['toggle', 'edit', 'delete']);
 
-function roleLabel(roles, legacyRole) {
-  const values = Array.isArray(roles) && roles.length ? roles : [legacyRole];
-  const labels = { control_plane: '控制节点', worker: '工作节点', registry: '镜像仓库' };
-  return values.filter(Boolean).map((role) => labels[role] || role).join('、') || '-';
+function roleLabel(roles) {
+  return resolvedRoles(roles).map((role) => roleMeta(role).label).join('、') || '-';
+}
+
+function resolvedRoles(roles) {
+  return Array.isArray(roles) ? roles.filter(Boolean) : [];
+}
+
+function roleMeta(role) {
+  return {
+    control_plane: { label: '控制节点' },
+    worker: { label: '工作节点' },
+    registry: { label: '镜像仓库' }
+  }[role] || { label: role };
 }
 </script>

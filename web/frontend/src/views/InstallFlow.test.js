@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import PrecheckView from './PrecheckView.vue';
 import InstallConfirmView from './InstallConfirmView.vue';
+import InstallOverviewView from './InstallOverviewView.vue';
 import JobExecutionView from './JobExecutionView.vue';
 import { createAppRouter } from '../router';
 import {
@@ -68,7 +69,7 @@ describe('安装流程', () => {
     ] });
   });
 
-  it('预检查全部成功后进入安装概览，但不自动开始安装', async () => {
+  it('预检查全部成功后进入安装确认，但不自动开始安装', async () => {
     startPrecheck.mockResolvedValue({ job_id: 81, status: 'pending' });
     const { router, wrapper } = await mountAt(PrecheckView, '/cluster-install/42/precheck', { clusterId: 42 });
 
@@ -80,8 +81,31 @@ describe('安装流程', () => {
     await flushPromises();
 
     expect(getPrecheckResults).toHaveBeenCalledWith(81);
-    expect(router.currentRoute.value.fullPath).toBe('/cluster-install/42/overview');
+    expect(router.currentRoute.value.fullPath).toBe('/cluster-install/42/confirm');
     expect(startInstall).not.toHaveBeenCalled();
+  });
+
+  it('安装概览从开始安装入口进入预检查页', async () => {
+    getCluster.mockResolvedValue({ id: 42, name: '生产集群', status: 'draft', configuration_locked: false });
+    listJobs.mockResolvedValue({ items: [] });
+    const { router, wrapper } = await mountAt(InstallOverviewView, '/cluster-install/42/overview');
+
+    await wrapper.get('[data-testid="start-install-from-overview"]').trigger('click');
+    await flushPromises();
+
+    expect(router.currentRoute.value.fullPath).toBe('/cluster-install/42/precheck');
+  });
+
+  it('安装概览在集群锁定时提供重置入口', async () => {
+    getCluster.mockResolvedValue({ id: 42, name: '生产集群', status: 'installed', configuration_locked: true });
+    listJobs.mockResolvedValue({ items: [] });
+    const { router, wrapper } = await mountAt(InstallOverviewView, '/cluster-install/42/overview');
+
+    expect(wrapper.get('[data-testid="start-install-from-overview"]').attributes('disabled')).toBeDefined();
+    await wrapper.get('[data-testid="reset-cluster-from-overview"]').trigger('click');
+    await flushPromises();
+
+    expect(router.currentRoute.value.fullPath).toBe('/cluster-install/42/reset');
   });
 
   it('确认页展示目标信息，只有点击开始安装才创建任务并跳转', async () => {

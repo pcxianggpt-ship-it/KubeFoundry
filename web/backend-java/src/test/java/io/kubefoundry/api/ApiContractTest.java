@@ -68,7 +68,8 @@ class ApiContractTest {
         cluster = clusters.saveAndFlush(cluster);
 
         Node node = new Node(cluster);
-        node.update("cp-1", "10.0.0.1", "", "control_plane", "root", 22);
+        node.update("cp-1", "10.0.0.1", "", null, "root", 22);
+        node.replaceRoles(java.util.Set.of("control_plane", "registry"));
         node = nodes.saveAndFlush(node);
 
         job = new Job(cluster, "install");
@@ -90,13 +91,22 @@ class ApiContractTest {
         mvc.perform(get("/api/health"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ok"))
-                .andExpect(jsonPath("$.version").value("0.2.0"));
+                .andExpect(jsonPath("$.version").value("0.2.1"));
         mvc.perform(get("/api/clusters"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items[0].id").value(cluster.getId()));
+                .andExpect(jsonPath("$.items[0].id").value(cluster.getId()))
+                .andExpect(jsonPath("$.items[0].kubernetes_work_dir").isString())
+                .andExpect(content().string(not(containsString("pod_subnet"))))
+                .andExpect(content().string(not(containsString("service_subnet"))))
+                .andExpect(content().string(not(containsString("registry_hostname"))))
+                .andExpect(content().string(not(containsString("registry_ip"))))
+                .andExpect(content().string(not(containsString("registry_port"))));
         mvc.perform(get("/api/clusters/{id}/nodes", cluster.getId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].hostname").value("cp-1"))
+                .andExpect(jsonPath("$.items[0].roles.length()").value(2))
+                .andExpect(jsonPath("$.items[0].roles[0]").value("control_plane"))
+                .andExpect(content().string(not(containsString("\"role\":"))))
                 .andExpect(content().string(not(containsString("password_ciphertext"))));
         mvc.perform(get("/api/settings"))
                 .andExpect(status().isOk())

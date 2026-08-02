@@ -156,7 +156,7 @@ async function copySelected() {
     selectedIds.value = [];
     await loadNodes();
     emit('cluster-updated');
-    ElMessage.success('节点已复制，密码已保存；请编辑主机名和 IP 后再测试');
+    ElMessage.success('节点已复制，已保留主机名、IP、角色和 SSH 凭据；修改后再测试');
   } catch (error) {
     errorMessage.value = safeErrorMessage(error, '节点复制失败。');
   }

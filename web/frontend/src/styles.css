@@ -371,6 +371,45 @@ a:focus-visible {
   white-space: nowrap;
 }
 
+.node-role-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.node-role-card {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 8px;
+  color: #45534f;
+  background: #f5f7f6;
+  border: 1px solid #d7dfdb;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.node-role-card--control_plane {
+  color: #0b5c72;
+  background: #eef8fa;
+  border-color: #a9dce5;
+}
+
+.node-role-card--worker {
+  color: #38634c;
+  background: #f1f8f2;
+  border-color: #b9dcbf;
+}
+
+.node-role-card--registry {
+  color: #8a5312;
+  background: #fff8e8;
+  border-color: #efd091;
+}
+
 .node-activity {
   margin-top: 18px;
   padding: 16px;

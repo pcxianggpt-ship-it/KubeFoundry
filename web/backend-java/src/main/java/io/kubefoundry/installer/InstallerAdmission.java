@@ -54,4 +54,5 @@ public class InstallerAdmission {
             throw new ClusterConfigurationLockedException("安装成功后必须先完成远程重置，才能修改集群配置");
         }
     }
+
 }

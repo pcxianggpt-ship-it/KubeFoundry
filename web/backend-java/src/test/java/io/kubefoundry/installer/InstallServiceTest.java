@@ -88,6 +88,8 @@ class InstallServiceTest {
         long jobId = installService().start(1L, List.of());
 
         assertThat(jobId).isEqualTo(99L);
+        assertThat(cluster.isInstallationLocked()).isTrue();
+        assertThat(cluster.getStatus()).isEqualTo("installing");
         ArgumentCaptor<JobService.JobDefinition> captor =
                 ArgumentCaptor.forClass(JobService.JobDefinition.class);
         verify(jobService).submit(captor.capture());

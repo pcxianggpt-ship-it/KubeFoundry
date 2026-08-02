@@ -65,7 +65,7 @@ curl -fsS "http://127.0.0.1:${PORT}/jobs/9/execution" | grep -q '<div id="app"><
     fail "浏览器深层路由未回退到前端"
 
 cluster_response="$(curl -fsS -X POST -H 'Content-Type: application/json' \
-    --data-binary '{"name":"package-smoke","k8s_version":"1.30.14","pod_subnet":"10.244.0.0/16","service_subnet":"10.96.0.0/16"}' \
+    --data-binary '{"name":"package-smoke","k8s_version":"1.30.14","kubernetes_work_dir":"/data/k8s_install","image_registry_type":"REGISTRY"}' \
     "http://127.0.0.1:${PORT}/api/clusters")" || fail "创建集群失败"
 cluster_id="$(printf '%s' "${cluster_response}" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')"
 [ -n "${cluster_id}" ] || fail "创建集群响应缺少 id"

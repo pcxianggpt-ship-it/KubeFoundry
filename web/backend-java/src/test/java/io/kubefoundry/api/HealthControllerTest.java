@@ -31,7 +31,7 @@ class HealthControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.status").value("ok"))
-                .andExpect(jsonPath("$.version").value("0.2.0"));
+                .andExpect(jsonPath("$.version").value("0.2.1"));
     }
 
     @Test

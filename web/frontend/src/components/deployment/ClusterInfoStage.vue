@@ -3,6 +3,16 @@
     <div class="section-heading"><div><p class="section-kicker">01 / 集群信息</p><h2>集群信息</h2></div>
       <el-button data-testid="save-cluster" type="primary" :loading="saving" :disabled="locked || !form.name.trim()" @click="submit">保存并下一步</el-button>
     </div>
+    <el-alert
+      v-if="locked"
+      class="configuration-lock-alert"
+      title="集群配置已锁定"
+      type="warning"
+      show-icon
+      :closable="false"
+    >
+      <template #default>安装已开始或已完成，配置处于只读状态。完成远程重置后才能重新修改配置。</template>
+    </el-alert>
     <el-form label-position="top" class="stage-form" @submit.prevent="submit"><div class="form-grid">
       <el-form-item label="集群名称" required><el-input data-testid="cluster-name" v-model="form.name" maxlength="100" :disabled="locked" /></el-form-item>
       <el-form-item label="Kubernetes 版本" required><el-select v-model="form.k8s_version" :disabled="locked"><el-option label="1.30.14" value="1.30.14" /></el-select></el-form-item>

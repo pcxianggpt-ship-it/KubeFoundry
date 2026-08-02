@@ -13,7 +13,7 @@ describe('NodeEditor', () => {
           id: 7,
           hostname: 'worker-1',
           ip: '10.0.0.7',
-          role: 'worker',
+          roles: ['worker'],
           ssh_user: 'root',
           ssh_port: 22,
           has_password: true

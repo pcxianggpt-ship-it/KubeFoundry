@@ -124,6 +124,7 @@ public class Cluster {
 
     public void markInstallationStarted() {
         status = "installing";
+        installationLocked = true;
     }
 
     public void markInstallationFinished(boolean success) {
@@ -140,6 +141,13 @@ public class Cluster {
     }
 
     public void resetInstallation() {
+        status = "draft";
+        installationLocked = false;
+        nodeTestStatus = "stale";
+        nodeConfigVersion++;
+    }
+
+    public void unlockInstallation() {
         status = "draft";
         installationLocked = false;
         nodeTestStatus = "stale";

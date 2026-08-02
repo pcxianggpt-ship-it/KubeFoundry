@@ -1,8 +1,6 @@
 package io.kubefoundry.cluster;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonAlias;
-import com.fasterxml.jackson.annotation.JsonFormat;
 import io.kubefoundry.credential.AesGcmCredentialCipher;
 import io.kubefoundry.credential.EncryptedCredential;
 import io.kubefoundry.job.JobRepository;
@@ -152,7 +150,8 @@ public class ClusterService {
                 throw new IllegalArgumentException("节点不属于当前集群");
             }
             Node target = new Node(cluster);
-            target.update("", "", "", null, source.getSshUser(), source.getSshPort());
+            target.update(source.getHostname(), source.getIp(), source.getIpv6(), null,
+                    source.getSshUser(), source.getSshPort());
             target.replaceRoles(source.getRoles());
             target.copyCredentialFrom(source);
             target.markDraft(true);
@@ -294,7 +293,6 @@ public class ClusterService {
             String hostname,
             String ip,
             String ipv6,
-            @JsonAlias("role") @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
             List<String> roles,
             @JsonProperty("ssh_user") String sshUser,
             @JsonProperty("ssh_port") Integer sshPort,

@@ -80,4 +80,5 @@ describe('API client', () => {
       body: JSON.stringify({ acknowledged: true, confirmation_phrase: 'RESET production' })
     }));
   });
+
 });

@@ -112,7 +112,7 @@ class ClusterNodeApiTest {
         mvc.perform(put("/api/nodes/{id}", nodeId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"hostname":"node-1","ip":"192.168.1.12","role":"worker",
+                                {"hostname":"node-1","ip":"192.168.1.12","roles":["worker"],
                                  "ssh_user":"root","ssh_port":22,"password":""}
                                 """))
                 .andExpect(status().isOk())
@@ -161,7 +161,7 @@ class ClusterNodeApiTest {
     }
 
     @Test
-    void copiedNodeKeepsCredentialButResetsHostBindingAndBecomesFormalAfterEdit() throws Exception {
+    void copiedNodeKeepsCredentialAndConnectionFieldsButRemainsDraftUntilEdited() throws Exception {
         long clusterId = createCluster("copy-node");
         long sourceId = createNode(clusterId, "node-1", "192.168.1.11", "Secret123");
 
@@ -171,8 +171,8 @@ class ClusterNodeApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(1))
                 .andExpect(jsonPath("$.items[0].has_password").value(true))
-                .andExpect(jsonPath("$.items[0].hostname").value(""))
-                .andExpect(jsonPath("$.items[0].ip").value(""))
+                .andExpect(jsonPath("$.items[0].hostname").value("node-1"))
+                .andExpect(jsonPath("$.items[0].ip").value("192.168.1.11"))
                 .andExpect(jsonPath("$.items[0].is_draft").value(true))
                 .andExpect(jsonPath("$.items[0].node_test_status").value("pending"))
                 .andReturn().getResponse().getContentAsString();
@@ -181,7 +181,7 @@ class ClusterNodeApiTest {
         mvc.perform(put("/api/nodes/{id}", copiedId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"hostname":"node-2","ip":"192.168.1.12","role":"worker",
+                                {"hostname":"node-2","ip":"192.168.1.12","roles":["worker"],
                                  "ssh_user":"root","ssh_port":22}
                                 """))
                 .andExpect(status().isOk())
@@ -196,7 +196,7 @@ class ClusterNodeApiTest {
         mvc.perform(post("/api/clusters/{id}/nodes", clusterId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"hostname":"","ip":"bad","role":"invalid","ssh_user":"","ssh_port":70000}
+                                {"hostname":"","ip":"bad","roles":["invalid"],"ssh_user":"","ssh_port":70000}
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
@@ -206,6 +206,19 @@ class ClusterNodeApiTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("NODE_NOT_FOUND"))
                 .andExpect(jsonPath("$.message").value(containsString("节点")));
+    }
+
+    @Test
+    void rejectsLegacySingleRoleRequestField() throws Exception {
+        long clusterId = createCluster("legacy-role");
+
+        mvc.perform(post("/api/clusters/{id}/nodes", clusterId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"hostname":"node-1","ip":"192.168.1.11","role":"worker",
+                                 "ssh_user":"root","ssh_port":22,"password":"Secret123"}
+                                """))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -234,6 +247,9 @@ class ClusterNodeApiTest {
                         .content("{\"description\":\"still locked\"}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("CLUSTER_CONFIGURATION_LOCKED"));
+
+        mvc.perform(post("/api/clusters/{id}/unlock", clusterId))
+                .andExpect(status().isNotFound());
     }
 
     private long createCluster(String name) throws Exception {
@@ -256,7 +272,7 @@ class ClusterNodeApiTest {
 
     private static String nodeJson(String hostname, String ip, String password) {
         return """
-                {"hostname":"%s","ip":"%s","role":"worker","ssh_user":"root",
+                {"hostname":"%s","ip":"%s","roles":["worker"],"ssh_user":"root",
                  "ssh_port":22,"password":"%s"}
                 """.formatted(hostname, ip, password);
     }
