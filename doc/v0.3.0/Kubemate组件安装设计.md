@@ -17,7 +17,7 @@ v0.2.1 已完成 Kubernetes 基础框架安装、集群配置与安装模块拆�
 “03 / Kubemate 组件”页面目前只保存 `nfs`、`loki`、`traefik` 三个开关，并明确不参与安装。现有 phase3 脚本也仍保留以下问题：
 
 - 依赖管理节点本地环境或目标节点上的固定介质目录，未按 Java 远程步骤的资源分发模型运行。
-- Helm 只在旧 Bash 主入口运行前检查，Java 安装流程不会把 Helm 部署到控制节点。
+- Helm 只在旧 Bash 主入口运行前检查，Java 安装流程不会把 Helm 部署到主控制节点。
 - 部分脚本包含固定主机名、固定路径、交互式命令、重复执行失败或输出敏感信息等问题。
 - `main.sh` 将组件、运维配置、备份和清理任务混合在同一 phase3 流程中，范围大于本版本需求。
 - 已由 v0.2.1 安装完成的集群处于配置锁定状态，如果只在原安装计划末尾追加 phase3，将无法直接补装组件。
@@ -28,7 +28,7 @@ v0.3.0 完成以下目标：
 
 1. 将选定的 phase3 组件纳入 Java 安装编排、任务日志、失败处理和验证体系。
 2. 在“03 / Kubemate 组件”中配置是否启用 Kubemate 组件及各组件组。
-3. 由 KubeFoundry 离线介质向所有控制节点部署与节点架构匹配的 Helm。
+3. 由 KubeFoundry 离线介质向主控制节点部署与节点架构匹配的 Helm。
 4. 支持新集群在 Kubernetes 基础安装完成后继续安装组件。
 5. 支持 v0.2.1 已安装集群直接补装尚未安装的组件组，不要求先执行远程重置。
 6. 将有强依赖的 `OpenEBS、MinIO、Loki、Alloy` 作为一个不可拆分的原子配置组。
@@ -82,7 +82,7 @@ v0.3.0 完成以下目标：
 | --- | --- | --- | --- | --- |
 | `nfs` | NFS 存储 | NFS 服务配置、Provisioner、Worker 挂载 | 可用 | 是 |
 | `kubemate` | Kubemate 管理组件 | Kubemate UI 及所需配置 | 可用 | 是 |
-| `traefik` | Traefik 网关 | Traefik、Traefik Mesh、必要的 CoreDNS 配置 | 可用 | 是 |
+| `traefik` | Traefik 网关 | Traefik | 可用 | 是 |
 | `storage_observability` | 存储与日志套件 | OpenEBS、MinIO、Loki、Alloy | 可用 | 是 |
 | `prometheus` | Prometheus 监控 | Prometheus 套件、Metrics Server | 可用 | 是 |
 | `redis_sentinel` | Redis 哨兵模式 | Redis Sentinel | 暂不可用 | 是，后续实现 |
@@ -93,18 +93,18 @@ v0.3.0 完成以下目标：
 
 只要至少一个可用组件组的有效状态为启用，就加入以下公共步骤：
 
-1. 在所有控制节点离线安装 Helm。
+1. 在主控制节点离线安装 Helm。
 2. 在主控制节点验证 Kubernetes API 健康。
 3. 按需创建 `kubemate-system` 等公共命名空间。
 4. 在主控制节点设置 `KUBECONFIG=/etc/kubernetes/admin.conf` 并验证 Helm 可访问集群。
 
-Helm 是控制节点工具，不归属于任何单一组件组。重复执行时，如果现有 Helm 版本与介质版本一致则直接通过；版本不一致时必须明确升级，不得静默继续使用未知版本。
+Helm 是组件公共前置工具，不归属于任何单一组件组。v0.3.0 的所有 Helm 和 kubectl 组件操作均在主控制节点执行，其他控制节点无需安装 Helm。重复执行时，如果主控制节点现有 Helm 版本与介质版本一致则直接通过；版本不一致时必须明确升级，不得静默继续使用未知版本。
 
 ### 6.3 依赖图与执行顺序
 
 ```text
 Kubernetes 集群健康
-  └── 所有控制节点安装 Helm
+  └── 主控制节点安装 Helm
         └── 创建公共命名空间
               ├── NFS 组
               ├── Kubemate 组
@@ -127,15 +127,13 @@ NFS -> Kubemate -> Traefik -> 存储与日志套件 -> Prometheus
 
 | 计划步骤 | 现有脚本来源 | 目标范围 | 处理方式 |
 | --- | --- | --- | --- |
-| 安装 Helm | 新增脚本 | 所有控制节点 | 按 `amd64/arm64` 分发离线二进制 |
+| 安装 Helm | 新增脚本 | 主控制节点 | 按主控制节点架构分发离线二进制 |
 | 创建命名空间 | `30-create-namespace.sh` | 主控制节点 | 改为 `kubectl create --dry-run=client -o yaml \| kubectl apply -f -` |
 | 安装 Kubemate | `31-install-kubemate-ui.sh` | 主控制节点 | 远端执行，不修改本地介质文件 |
 | 配置 NFS exports | `32-configure-nfs-exports.sh` | 匹配的集群节点 | 拆除脚本内二次 SSH，目标由 Java 解析 |
 | 安装 NFS Provisioner | `32-install-nfs.sh` | 主控制节点 | 改为 `helm upgrade --install` |
 | 挂载 NFS | `32-mount-nfs-workers.sh` | Worker 节点 | 拆除脚本内循环 SSH，由 Java 并发执行 |
 | 安装 Traefik | `36-install-traefik.sh` | 主控制节点 | 使用分发到任务目录的清单 |
-| 安装 Traefik Mesh | `37-install-traefik-mesh.sh` | 主控制节点 | 纳入 Traefik 组 |
-| 更新 CoreDNS | `39-update-coredns.sh` | 主控制节点 | 删除 `kubectl edit` 交互命令，改为声明式应用 |
 | 安装 OpenEBS | `47-install-openebs.sh` | 主控制节点及 Worker 准备步骤 | 目录准备由独立 Worker 步骤完成 |
 | 安装 MinIO | `49-install-minio.sh` | 主控制节点 | 禁止打印访问令牌，补齐非交互验证 |
 | 安装 Loki | `35-install-loki.sh` | 主控制节点 | 在 OpenEBS、MinIO 就绪后执行 |
@@ -156,25 +154,25 @@ helm_amd64 -> tools/helm-amd
 helm_arm64 -> tools/helm-arm
 ```
 
-Java 根据每个控制节点的架构选择资源，分发到任务临时目录，校验 SHA-256 后安装到 `/usr/local/bin/helm`。不得从互联网下载，不得把 amd64 二进制分发到 arm64 节点。
+Java 根据主控制节点的架构选择资源，分发到任务临时目录，校验 SHA-256 后安装到 `/usr/local/bin/helm`。不得从互联网下载，不得把 amd64 二进制分发到 arm64 主控制节点。其他控制节点不参与 Helm 资源选择、分发和验证。
 
 ### 8.2 幂等和所有权
 
 - `helm version --short` 成功且版本符合要求时跳过复制。
 - KubeFoundry 覆盖或新装 Helm 时，在受管目录写入版本和校验和标记。
-- 如果节点已存在非 KubeFoundry 管理且版本不兼容的 Helm，预检查失败并提示用户处理，不直接覆盖未知文件。
+- 如果主控制节点已存在非 KubeFoundry 管理且版本不兼容的 Helm，预检查失败并提示用户处理，不直接覆盖未知文件。
 - 远程重置只清理由 KubeFoundry 标记安装的 Helm；用户原有 Helm 保留。
 
 ### 8.3 可用性验证
 
-每个控制节点执行：
+主控制节点执行：
 
 ```bash
 helm version --short
 KUBECONFIG=/etc/kubernetes/admin.conf helm list -A
 ```
 
-任一控制节点失败则公共前置步骤失败，不继续安装组件。
+主控制节点失败则公共前置步骤失败，不继续安装组件。其他控制节点不需要安装 Helm，也不作为该前置步骤的失败目标。
 
 ## 9. 配置模型
 
@@ -362,7 +360,7 @@ phase3 脚本不得假设远端存在 `${APP_DIR}/kube-media`。每个 `InstallS
 公共检查：
 
 1. 主控制节点 Kubernetes API 可访问且核心节点 Ready。
-2. 所有控制节点架构已识别，并存在对应 Helm 二进制和校验和。
+2. 主控制节点架构已识别，并存在对应 Helm 二进制和校验和。
 3. 主控制节点 `/etc/kubernetes/admin.conf` 存在且权限可用。
 4. 目标节点任务目录可创建、空间充足。
 5. 已启用组的全部离线资源存在且为普通文件或目录。
@@ -371,7 +369,7 @@ phase3 脚本不得假设远端存在 `${APP_DIR}/kube-media`。每个 `InstallS
 组级检查示例：
 
 - NFS：地址、导出目录、挂载目录、StorageClass 名称、2049 端口和管理模式。
-- Traefik：清单完整、端口冲突、CoreDNS 目标配置可声明式更新。
+- Traefik：清单完整、端口冲突和 Traefik 工作负载可就绪。
 - 存储与日志：Worker 数量、数据目录空间、StorageClass、Chart 和 values 完整性。
 - Prometheus：至少一个 Worker、动态节点标签目标、监控数据目录空间。
 - Kubemate：清单完整、NodePort 冲突、主控制节点地址可解析。
@@ -414,7 +412,7 @@ phase3 脚本不得假设远端存在 `${APP_DIR}/kube-media`。每个 `InstallS
 
 - 将安装的组件组及组内组件。
 - 将跳过的组件组。
-- Helm 目标控制节点和版本。
+- Helm 目标主控制节点和版本。
 - NFS、数据目录、StorageClass 等关键非敏感参数。
 - 新集群全量安装或存量集群组件补装的任务类型。
 
@@ -490,7 +488,7 @@ NFS Provisioner -> Worker 挂载 -> 受管 exports 行
 
 ### 18.2 Bash
 
-- amd64、arm64 控制节点分别获得正确 Helm 二进制。
+- amd64、arm64 主控制节点分别获得正确 Helm 二进制。
 - 所有脚本至少连续执行两次，第二次成功且不会创建重复资源或重复系统配置行。
 - 使用伪造的 `kubectl/helm/ssh` 命令验证参数、顺序、超时和错误传播。
 - 脚本内不存在二次 SSH、固定节点名、`kubectl edit`、明文 Token 输出和介质原地修改。
@@ -558,7 +556,7 @@ NFS Provisioner -> Worker 挂载 -> 受管 exports 行
 - 六个组件组在页面和 API 中可见，Redis 哨兵明确不可用，其余五组可安装。
 - 新集群能够按配置完成 Kubernetes 基础与组件一键安装。
 - v0.2.1 已安装集群能够直接补装未安装组件组。
-- Helm 在所有控制节点按架构离线部署并验证可用。
+- Helm 在主控制节点按架构离线部署并验证可用，其他控制节点无需安装。
 - `OpenEBS、MinIO、Loki、Alloy` 只能作为一个组配置和执行。
 - 所有纳入计划的 phase3 脚本满足幂等、非交互、无二次 SSH、无敏感信息输出要求。
 - 配置、快照、计划、任务步骤和最终组件状态一致。

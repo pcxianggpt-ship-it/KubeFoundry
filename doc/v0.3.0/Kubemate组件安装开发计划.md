@@ -18,7 +18,7 @@
 2. v0.2.1 已安装集群不重置 Kubernetes 即可补装组件。
 3. NFS、Kubemate、Traefik、存储与日志套件、Prometheus 五个组件组可独立选择和安装。
 4. OpenEBS、MinIO、Loki、Alloy 作为一个不可拆分的原子组执行。
-5. 所有控制节点按架构离线部署 Helm。
+5. 主控制节点按架构离线部署 Helm，组件安装过程只在主控制节点执行 Helm/kubectl 操作。
 6. Redis 哨兵组可见但不可启用，待后续脚本完善。
 7. 组件配置、安装快照、执行计划、任务状态和重置结果保持一致。
 
@@ -273,7 +273,7 @@
 
 ### 目标
 
-通过 Java 远程步骤向所有控制节点部署正确架构的 Helm，并按已选组分发最小组件资源集。
+通过 Java 远程步骤向主控制节点部署正确架构的 Helm，并按已选组分发最小组件资源集；其他控制节点无需安装 Helm。
 
 ### 主要文件
 
@@ -290,10 +290,10 @@
 
 - [ ] 统一 `tools/helm-amd` 与 `tools/helm-arm` 的架构映射。
 - [ ] 为 Helm 二进制建立 SHA-256 校验。
-- [ ] 根据每个控制节点架构选择唯一资源。
+- [ ] 根据主控制节点架构选择唯一资源。
 - [ ] 安装到 `/usr/local/bin/helm` 并记录 KubeFoundry 受管标记。
 - [ ] 发现不兼容且非受管 Helm 时预检查失败，不静默覆盖。
-- [ ] 验证所有控制节点的 `helm version` 和 `helm list -A`。
+- [ ] 验证主控制节点的 `helm version` 和 `helm list -A`。
 - [ ] 组件资源分发到 `/tmp/kubefoundry/jobs/{jobId}/resources/{groupKey}`。
 - [ ] 只分发实际启用组资源，禁止依赖远端同路径的 `kube-media`。
 - [ ] 运行时统一设置 `KUBECONFIG=/etc/kubernetes/admin.conf`。
@@ -302,7 +302,7 @@
 ### 验收
 
 - amd64 和 arm64 选择不会交叉。
-- 所有控制节点均能离线使用 Helm 访问集群。
+- 主控制节点能离线使用 Helm 访问集群，其他控制节点不被要求安装 Helm。
 - 未启用组件的 Chart 和 YAML 不会被发送到远端。
 - 资源分发失败能定位本地路径、目标节点和安全错误原因。
 
@@ -429,33 +429,29 @@
 
 ### 目标
 
-将 Traefik、Traefik Mesh 和必要 CoreDNS 调整作为一个可独立安装组。
+将 Traefik 作为一个可独立安装组；Traefik Mesh 和 CoreDNS 不纳入 v0.3.0。
 
 ### 主要文件
 
 - 修改：`36-install-traefik.sh`
-- 修改：`37-install-traefik-mesh.sh`
-- 修改：`39-update-coredns.sh`
-- 修改：对应三个 verify 脚本。
+- 修改：`verify-36-install-traefik.sh`
 - 新增：`scripts/tests/test_phase3_traefik.sh`
 - 修改：计划和预检查测试。
 
 ### 实施步骤
 
-- [ ] 显式声明并分发 Traefik 与 Mesh 清单。
+- [ ] 显式声明并分发 Traefik 清单。
 - [ ] 删除重复 apply 和固定目录切换。
-- [ ] 删除 `kubectl edit`，将 CoreDNS 变更改为声明式受管配置。
 - [ ] 预检查 Service 端口和集群资源冲突。
-- [ ] 等待 Traefik、Mesh Controller 和 CoreDNS rollout 完成。
-- [ ] 验证 Ingress/Service、Mesh 和 DNS 解析。
-- [ ] 保留 CoreDNS 原配置快照或受管片段，供重置安全恢复。
+- [ ] 等待 Traefik rollout 完成。
+- [ ] 验证 Ingress/Service 通过 Traefik 访问。
 - [ ] 明确不接入 `45-setup-traefik-cleanup.sh`。
 
 ### 验收
 
 - Traefik 组可在未选择其他组件时独立安装。
 - 安装过程无交互命令。
-- CoreDNS 变更可追踪、可验证、可安全清理。
+- Traefik 工作负载、Service 和路由可追踪、可验证。
 
 ### 建议提交
 
@@ -606,7 +602,6 @@
 - [ ] 从最近安装快照和组件状态生成逆序清理计划。
 - [ ] 依赖逆序清理 Alloy、Loki、MinIO、OpenEBS。
 - [ ] 清理 Prometheus、Traefik、Kubemate 和 NFS 受管资源。
-- [ ] CoreDNS 只恢复 KubeFoundry 管理的变更。
 - [ ] `/etc/fstab`、`/etc/exports` 只删除带受管标记的行。
 - [ ] external NFS 模式不触碰外部服务器。
 - [ ] 仅删除明确归属于任务快照的目录和 Kubernetes 资源。

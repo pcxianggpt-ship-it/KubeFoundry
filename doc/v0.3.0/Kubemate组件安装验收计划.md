@@ -27,7 +27,7 @@
 - 六个组件组配置与 Redis 不可用状态。
 - V8 到 V9 升级和 V1 到 V9 新库迁移。
 - 服务端组件计划与不可变快照。
-- 所有控制节点的 amd64/arm64 Helm 离线分发。
+- 主控制节点的 amd64/arm64 Helm 离线分发；其他控制节点无需安装 Helm。
 - NFS、Kubemate、Traefik、存储与日志套件、Prometheus 五组。
 - 新集群全量安装。
 - v0.2.1 已安装集群组件补装。
@@ -78,7 +78,7 @@
 
 ### 4.3 ARM64 专用环境
 
-至少准备一个 ARM64 控制节点，完成：
+至少准备一个 ARM64 主控制节点，完成：
 
 - 节点架构识别。
 - `helm-arm` 资源选择、校验、分发和执行。
@@ -208,9 +208,9 @@ git diff --check
 
 | 编号 | 场景 | 预期结果 |
 | --- | --- | --- |
-| HELM-01 | amd64 控制节点 | 选择 `helm-amd`，校验后安装并可执行 |
-| HELM-02 | arm64 控制节点 | 选择 `helm-arm`，不会发送 amd64 文件 |
-| HELM-03 | 三控制节点 | 所有控制节点均完成 Helm 验证 |
+| HELM-01 | amd64 主控制节点 | 选择 `helm-amd`，校验后安装并可执行 |
+| HELM-02 | arm64 主控制节点 | 选择 `helm-arm`，不会发送 amd64 文件 |
+| HELM-03 | 三控制节点 | 仅主控制节点完成 Helm 验证，其他控制节点不被修改 |
 | HELM-04 | 已有兼容受管 Helm | 幂等跳过或明确升级，任务成功 |
 | HELM-05 | 已有不兼容非受管 Helm | 预检查返回 `HELM_CONFLICT`，不覆盖文件 |
 | HELM-06 | Helm 介质缺失或损坏 | 任务创建前失败，返回 `HELM_MEDIA_MISSING` 或校验错误 |
@@ -224,7 +224,7 @@ helm version --short
 KUBECONFIG=/etc/kubernetes/admin.conf helm list -A
 ```
 
-- [ ] 每个控制节点命令成功。
+- [ ] 主控制节点命令成功，其他控制节点不执行 Helm 验证。
 - [ ] 任务临时目录不包含未选择组资源。
 - [ ] 任务结束后临时介质按规则清理，日志仍可查询。
 
@@ -293,13 +293,12 @@ KUBECONFIG=/etc/kubernetes/admin.conf helm list -A
 
 | 编号 | 场景 | 预期结果 |
 | --- | --- | --- |
-| TRAE-01 | 单独安装 | Traefik、Mesh、CoreDNS 受管调整按序完成 |
-| TRAE-02 | 工作负载 | Traefik 和 Mesh Controller Ready |
+| TRAE-01 | 单独安装 | 仅 Traefik 受管安装完成 |
+| TRAE-02 | 工作负载 | Traefik Ready |
 | TRAE-03 | 路由 | 测试 Ingress/Service 可通过 Traefik 访问 |
 | TRAE-04 | DNS | 集群内测试 Pod 解析服务域名成功 |
-| TRAE-05 | 声明式更新 | 执行日志不存在 `kubectl edit`，CoreDNS rollout 成功 |
-| TRAE-06 | 重复安装 | CoreDNS 片段和其他资源无重复 |
-| TRAE-07 | 范围排除 | 不创建 Traefik cleanup cron |
+| TRAE-05 | 重复安装 | Traefik 资源和 Helm release 无重复 |
+| TRAE-06 | 范围排除 | 不安装 Traefik Mesh、不修改 CoreDNS、不创建 Traefik cleanup cron |
 
 ## 15. 存储与日志套件验收
 
@@ -419,7 +418,7 @@ KUBECONFIG=/etc/kubernetes/admin.conf helm list -A
 | RESET-03 | external NFS | 外部服务器没有任何配置变化 |
 | RESET-04 | 非受管 Helm | 用户已有 Helm 保留 |
 | RESET-05 | 受管 Helm | 校验和和标记匹配时按设计清理 |
-| RESET-06 | CoreDNS 恢复 | 只撤销 KubeFoundry 受管变更 |
+| RESET-06 | Traefik 清理 | 只清理 KubeFoundry 管理的 Traefik 资源 |
 | RESET-07 | 组件清理失败 | 重置任务失败，集群保持锁定 |
 | RESET-08 | 修复后重试 | 已清理资源幂等跳过，最终重置成功 |
 | RESET-09 | 状态回写 | 全部组件组回到 not_installed |
