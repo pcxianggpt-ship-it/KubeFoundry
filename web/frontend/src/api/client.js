@@ -149,8 +149,8 @@ export function listJobs(clusterId = null) {
   return request(`/api/jobs${query}`);
 }
 
-export function getInstallPlan() {
-  return request('/api/install-plan');
+export function getInstallPlan(clusterId) {
+  return request(`/api/clusters/${clusterId}/install-plan`);
 }
 
 export function getJob(jobId) {

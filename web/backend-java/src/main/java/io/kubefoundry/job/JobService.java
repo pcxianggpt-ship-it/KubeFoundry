@@ -4,6 +4,7 @@ import io.kubefoundry.cluster.Cluster;
 import io.kubefoundry.cluster.ClusterRepository;
 import io.kubefoundry.cluster.Node;
 import io.kubefoundry.cluster.NodeRepository;
+import io.kubefoundry.installer.ComponentInstallationStateService;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -28,6 +29,7 @@ public class JobService {
     private final JobExecutor executor;
     private final EventService events;
     private final JobSubmissionFailureHandler submissionFailures;
+    private final ComponentInstallationStateService componentStates;
 
     public JobService(
             ClusterRepository clusters,
@@ -37,7 +39,8 @@ public class JobService {
             JobStepNodeRepository stepNodes,
             JobExecutor executor,
             EventService events,
-            JobSubmissionFailureHandler submissionFailures) {
+            JobSubmissionFailureHandler submissionFailures,
+            ComponentInstallationStateService componentStates) {
         this.clusters = clusters;
         this.nodes = nodes;
         this.jobs = jobs;
@@ -46,6 +49,7 @@ public class JobService {
         this.executor = executor;
         this.events = events;
         this.submissionFailures = submissionFailures;
+        this.componentStates = componentStates;
     }
 
     @Transactional
@@ -59,11 +63,15 @@ public class JobService {
             for (StepDefinition stepDefinition : definition.steps().stream()
                     .sorted(Comparator.comparingInt(StepDefinition::order)).toList()) {
                 JobStep step = steps.saveAndFlush(
-                        new JobStep(job, stepDefinition.name(), stepDefinition.order()));
+                        new JobStep(job, stepDefinition.name(), stepDefinition.order(),
+                                stepDefinition.componentGroupKey()));
                 for (NodeOperation operation : stepDefinition.nodes()) {
                     Node node = operationNodes.get(operation.nodeId());
                     stepNodes.save(new JobStepNode(step, node));
                 }
+            }
+            if (ComponentInstallationStateService.JOB_TYPE.equals(job.getType())) {
+                componentStates.markAccepted(job, definition.componentGroupKeys());
             }
             submitAfterCommit(job.getId(), definition);
         } catch (RuntimeException exception) {
@@ -97,6 +105,13 @@ public class JobService {
     }
 
     public int recoverInterruptedJobs() {
+        List<Job> componentJobs = jobs.findByTypeAndStatusIn(
+                ComponentInstallationStateService.JOB_TYPE, List.of("pending", "running"));
+        for (Job job : componentJobs) {
+            job.markInterrupted();
+            jobs.save(job);
+            componentStates.recoverInterrupted(job);
+        }
         List<Job> resetJobs = jobs.findByTypeAndStatusIn("reset", List.of("pending", "running"));
         for (Job job : resetJobs) {
             job.markInterrupted();
@@ -106,7 +121,7 @@ public class JobService {
                 clusters.save(cluster);
             });
         }
-        return resetJobs.size() + jobs.replaceStatus("running");
+        return componentJobs.size() + resetJobs.size() + jobs.replaceStatus("running");
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -196,17 +211,20 @@ public class JobService {
                 }
                 step.markSuccess();
                 steps.saveAndFlush(step);
+                componentStates.onStepSucceeded(job, step.getComponentGroupKey());
                 events.publish(jobId, "step.status", Map.of(
                         "step_id", step.getId(), "status", "success"));
             }
             job.markSuccess();
             jobs.saveAndFlush(job);
+            componentStates.complete(job, true);
             updateInstallStatus(job, true);
             events.publish(jobId, "job.status", Map.of("status", "success"));
         } catch (RuntimeException exception) {
             failRunningStepsAndNodes(jobId, stableMessage(exception));
             job.markFailed();
             jobs.saveAndFlush(job);
+            componentStates.complete(job, false);
             updateInstallStatus(job, false);
             events.publish(jobId, "job.status", Map.of("status", "failed"));
         }
@@ -220,6 +238,7 @@ public class JobService {
                 "step_id", step.getId(), "status", "failed"));
         job.markFailed();
         jobs.saveAndFlush(job);
+        componentStates.complete(job, false);
         updateInstallStatus(job, false);
         events.publish(jobId, "job.status", Map.of("status", "failed"));
     }
@@ -313,6 +332,16 @@ public class JobService {
     }
 
     public record JobDefinition(long clusterId, String type, List<StepDefinition> steps) {
+        Set<String> componentGroupKeys() {
+            Set<String> values = new HashSet<>();
+            for (StepDefinition step : steps == null ? List.<StepDefinition>of() : steps) {
+                if (step != null && step.componentGroupKey() != null
+                        && !step.componentGroupKey().isBlank()) {
+                    values.add(step.componentGroupKey());
+                }
+            }
+            return values;
+        }
     }
 
     public record StepDefinition(
@@ -320,9 +349,14 @@ public class JobService {
             int order,
             int maxWorkers,
             boolean failFast,
-            List<NodeOperation> nodes) {
+            List<NodeOperation> nodes,
+            String componentGroupKey) {
+        public StepDefinition(String name, int order, int maxWorkers, boolean failFast,
+                List<NodeOperation> nodes) {
+            this(name, order, maxWorkers, failFast, nodes, null);
+        }
         public StepDefinition(String name, int order, List<NodeOperation> nodes) {
-            this(name, order, 5, false, nodes);
+            this(name, order, 5, false, nodes, null);
         }
     }
 

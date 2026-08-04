@@ -61,7 +61,7 @@ describe('Java Web API 客户端契约', () => {
     await client.startNodeTest(7);
     await client.startInstall(7);
     await client.listJobs(7);
-    await client.getInstallPlan();
+    await client.getInstallPlan(7);
     await client.getJob(11);
     await client.getJobSteps(11);
     await client.getJobLogs(11);
@@ -86,7 +86,7 @@ describe('Java Web API 客户端契约', () => {
       ['/api/clusters/7/node-test', 'POST'],
       ['/api/clusters/7/install', 'POST'],
       ['/api/jobs?cluster_id=7', 'GET'],
-      ['/api/install-plan', 'GET'],
+      ['/api/clusters/7/install-plan', 'GET'],
       ['/api/jobs/11', 'GET'],
       ['/api/jobs/11/steps', 'GET'],
       ['/api/jobs/11/logs', 'GET'],

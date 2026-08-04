@@ -111,7 +111,7 @@ class InstallerControllerTest {
 
     @Test
     void exposesPlanSettingsPrecheckResultsAndAcceptedInstallContracts() throws Exception {
-        mvc.perform(get("/api/install-plan"))
+        mvc.perform(get("/api/clusters/{id}/install-plan", cluster.getId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(14))
                 .andExpect(jsonPath("$.items[13].key").value("web-verify-cluster-health"))
@@ -154,7 +154,7 @@ class InstallerControllerTest {
 
         mvc.perform(post("/api/clusters/{id}/install", cluster.getId())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"steps\":[\"13-install-k8s-deps\"]}"))
+                        .content("{}"))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.job_id").isNumber())
                 .andExpect(jsonPath("$.status").value("pending"));
@@ -174,7 +174,7 @@ class InstallerControllerTest {
                         .content("{\"steps\":[\"does-not-exist\"]}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
-                .andExpect(jsonPath("$.message").value(containsString("does-not-exist")));
+                .andExpect(jsonPath("$.message").value(containsString("服务端计划决定")));
 
         Job active = new Job(cluster, "install");
         active.markRunning();

@@ -10,6 +10,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -109,7 +111,8 @@ public class RemoteStepRunner {
             Files.createDirectories(workDirectory);
             Path runtimeFile = workDirectory.resolve("runtime.env");
             Path scriptFile = workDirectory.resolve("step.sh");
-            Files.writeString(runtimeFile, runtimeRenderer.render(cluster, normalizedNodes, node, settings),
+            Files.writeString(runtimeFile, runtimeRenderer.render(cluster, normalizedNodes, node, settings,
+                    runtimeEnvironment(jobId, step, resources.files())),
                     StandardCharsets.UTF_8);
             writeStepScript(scriptFile, cluster, normalizedNodes, step);
             String remoteDirectory = "/tmp/kubefoundry/" + jobId + "/";
@@ -125,12 +128,16 @@ public class RemoteStepRunner {
                         ssh.upload(session, resource.localPath(), resource.remotePath());
                     }
                 }
-                SshCommandResult executed = ssh.execute(
-                        session, buildExecutionCommand(
-                                remoteDirectory, step, cluster, normalizedNodes, node),
-                        STEP_TIMEOUT);
-                if (executed.exitCode() == 0) collectOutputs(session, jobId, step);
-                return executed;
+                try {
+                    SshCommandResult executed = ssh.execute(
+                            session, buildExecutionCommand(
+                                    remoteDirectory, step, cluster, normalizedNodes, node),
+                            STEP_TIMEOUT);
+                    if (executed.exitCode() == 0) collectOutputs(session, jobId, step);
+                    return executed;
+                } finally {
+                    cleanupJobResources(session, jobId, step, resources.files());
+                }
             });
             writeLog(logPath, result.stdout(), result.stderr());
             boolean success = result.exitCode() == 0;
@@ -237,6 +244,26 @@ public class RemoteStepRunner {
         }
     }
 
+    private void cleanupJobResources(
+            SshSession session, long jobId, InstallStep step, List<ResolvedResource> resources)
+            throws IOException {
+        String group = step.componentGroupKey() == null ? "shared" : step.componentGroupKey();
+        if (!group.matches("[a-z0-9_]+")) {
+            throw new IOException("非法组件资源目录键");
+        }
+        String directory = "/tmp/kubefoundry/jobs/" + jobId + "/resources/" + group;
+        if (resources.stream().noneMatch(resource -> resource.remotePath().equals(directory)
+                || resource.remotePath().startsWith(directory + "/"))) {
+            return;
+        }
+        SshCommandResult result = ssh.execute(session,
+                "bash -lc " + RuntimeEnvRenderer.shellQuote("rm -rf -- "
+                        + RuntimeEnvRenderer.shellQuote(directory)), DIRECTORY_TIMEOUT);
+        if (result.exitCode() != 0) {
+            throw new IOException("清理任务组件资源失败，退出码: " + result.exitCode());
+        }
+    }
+
     private String buildExecutionCommand(
             String remoteDirectory,
             InstallStep step,
@@ -259,11 +286,13 @@ public class RemoteStepRunner {
             long jobId, InstallStep step, RuntimeSettings paths) {
         List<ResolvedResource> resolved = new ArrayList<>();
         for (InstallStep.Resource resource : step.resources()) {
-            Path local = resource.artifactKey() == null
-                    ? paths.localPath(resource.pathKey())
-                    : dataDirectory.resolve("jobs").resolve(Long.toString(jobId))
-                            .resolve("artifacts").resolve(resource.artifactKey());
-            String key = resource.artifactKey() == null ? resource.pathKey() : resource.artifactKey();
+            Path local = resource.localPath() != null ? resource.localPath()
+                    : resource.artifactKey() == null
+                            ? paths.localPath(resource.pathKey())
+                            : dataDirectory.resolve("jobs").resolve(Long.toString(jobId))
+                                    .resolve("artifacts").resolve(resource.artifactKey());
+            String key = resource.localPath() != null ? resource.localPath().toString()
+                    : resource.artifactKey() == null ? resource.pathKey() : resource.artifactKey();
             if (local == null || !Files.exists(local)) {
                 return new ResourceResolution(List.of(), "步骤资源不可用: " + key);
             }
@@ -273,10 +302,33 @@ public class RemoteStepRunner {
             if (!"directory".equals(resource.kind()) && !Files.isRegularFile(local)) {
                 return new ResourceResolution(List.of(), "步骤资源不是普通文件: " + key);
             }
-            String remote = resource.remotePath().replace("{k8s_home}", paths.k8sHome());
-            resolved.add(new ResolvedResource(local, remote, resource.kind()));
+            if (resource.checksum() != null) {
+                try {
+                    if (!resource.checksum().equals(sha256(local))) {
+                        return new ResourceResolution(List.of(), "步骤资源校验和不匹配: " + key);
+                    }
+                } catch (IOException exception) {
+                    return new ResourceResolution(List.of(), "步骤资源校验失败: " + key);
+                }
+            }
+            String remote = resource.remotePath().replace("{k8s_home}", paths.k8sHome())
+                    .replace("{job_id}", Long.toString(jobId));
+            resolved.add(new ResolvedResource(local, remote, resource.kind(), resource.checksum()));
         }
         return new ResourceResolution(List.copyOf(resolved), null);
+    }
+
+    private static Map<String, String> runtimeEnvironment(
+            long jobId, InstallStep step, List<ResolvedResource> resources) {
+        String group = step.componentGroupKey() == null ? "shared" : step.componentGroupKey();
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put("KF_COMPONENT_RESOURCE_DIR", "/tmp/kubefoundry/jobs/" + jobId
+                + "/resources/" + group);
+        if ("29-install-helm".equals(step.key()) && !resources.isEmpty()
+                && resources.get(0).checksum() != null) {
+            values.put("KF_HELM_SHA256", resources.get(0).checksum());
+        }
+        return values;
     }
 
     private void collectOutputs(SshSession session, long jobId, InstallStep step) throws IOException {
@@ -355,6 +407,42 @@ public class RemoteStepRunner {
                 .replace("{primary_control_hostname}", RuntimeEnvRenderer.shellQuote(primary.getHostname()));
     }
 
+    private static String sha256(Path source) throws IOException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            if (Files.isDirectory(source)) {
+                try (var paths = Files.walk(source)) {
+                    for (Path path : paths.sorted().toList()) {
+                        if (Files.isDirectory(path)) continue;
+                        digest.update(source.relativize(path).toString().replace('\\', '/')
+                                .getBytes(StandardCharsets.UTF_8));
+                        digest.update((byte) 0);
+                        try (var input = Files.newInputStream(path)) {
+                            input.transferTo(new java.io.OutputStream() {
+                                @Override public void write(int value) { digest.update((byte) value); }
+                                @Override public void write(byte[] data, int offset, int length) {
+                                    digest.update(data, offset, length);
+                                }
+                            });
+                        }
+                    }
+                }
+            } else {
+                try (var input = Files.newInputStream(source)) {
+                    input.transferTo(new java.io.OutputStream() {
+                        @Override public void write(int value) { digest.update((byte) value); }
+                        @Override public void write(byte[] data, int offset, int length) {
+                            digest.update(data, offset, length);
+                        }
+                    });
+                }
+            }
+            return java.util.HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
+    }
+
     private static void writeLog(Path path, String stdout, String stderr) throws IOException {
         Files.createDirectories(path.getParent());
         Files.writeString(path, (stdout == null ? "" : stdout) + (stderr == null ? "" : stderr),
@@ -429,7 +517,7 @@ public class RemoteStepRunner {
         }
     }
 
-    private record ResolvedResource(Path localPath, String remotePath, String kind) {
+    private record ResolvedResource(Path localPath, String remotePath, String kind, String checksum) {
     }
 
     private record ResourceResolution(List<ResolvedResource> files, String error) {

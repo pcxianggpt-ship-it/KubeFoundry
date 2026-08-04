@@ -1,6 +1,7 @@
 package io.kubefoundry.job;
 
 import java.util.Map;
+import io.kubefoundry.installer.ComponentInstallationStateService;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,16 +15,19 @@ public class JobSubmissionFailureHandler {
     private final JobStepRepository steps;
     private final JobStepNodeRepository stepNodes;
     private final EventService events;
+    private final ComponentInstallationStateService componentStates;
 
     public JobSubmissionFailureHandler(
             JobRepository jobs,
             JobStepRepository steps,
             JobStepNodeRepository stepNodes,
-            EventService events) {
+            EventService events,
+            ComponentInstallationStateService componentStates) {
         this.jobs = jobs;
         this.steps = steps;
         this.stepNodes = stepNodes;
         this.events = events;
+        this.componentStates = componentStates;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -48,6 +52,7 @@ public class JobSubmissionFailureHandler {
         }
         job.markInterrupted();
         jobs.save(job);
+        componentStates.markNotStarted(job);
         events.publish(jobId, "job.status", Map.of("status", "interrupted"));
     }
 }

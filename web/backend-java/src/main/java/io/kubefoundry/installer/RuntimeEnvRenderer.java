@@ -15,6 +15,15 @@ public class RuntimeEnvRenderer {
     }
 
     public String render(Cluster cluster, List<Node> nodes, Node node, RuntimeSettings settings) {
+        return render(cluster, nodes, node, settings, Map.of());
+    }
+
+    public String render(
+            Cluster cluster,
+            List<Node> nodes,
+            Node node,
+            RuntimeSettings settings,
+            Map<String, String> additionalValues) {
         List<Node> normalizedNodes = InstallationNodes.normalize(nodes);
         Node primary = PrimaryControlPlaneSelector.select(normalizedNodes);
         Map<String, String> values = new TreeMap<>();
@@ -26,6 +35,7 @@ public class RuntimeEnvRenderer {
         values.put("KF_INSTALL_MEDIA", settings.installMedia());
         values.put("KF_K8S_HOME", settings.k8sHome());
         values.put("KF_K8S_VERSION", cluster.getKubernetesVersion());
+        values.put("KF_KUBECONFIG", "/etc/kubernetes/admin.conf");
         values.put("KF_KUBELET_ROOT", settings.kubeletRoot());
         values.put("KF_NODE_HOSTNAME", node.getHostname());
         values.put("KF_NODE_IP", node.getIp());
@@ -40,6 +50,11 @@ public class RuntimeEnvRenderer {
                 ? value(cluster.getRegistryIp(), "") : value(registry.getIp(), value(cluster.getRegistryIp(), "")));
         values.put("KF_REGISTRY_PORT", Integer.toString(cluster.getRegistryPort() > 0
                 ? cluster.getRegistryPort() : 5000));
+        if (additionalValues != null) {
+            additionalValues.forEach((key, item) -> {
+                if (key != null && key.matches("KF_[A-Z0-9_]+")) values.put(key, value(item, ""));
+            });
+        }
 
         Map<String, String> compatibility = new TreeMap<>();
         compatibility.put("ARCH", "KF_ARCH");
@@ -50,6 +65,7 @@ public class RuntimeEnvRenderer {
         compatibility.put("K8S_HOME", "KF_K8S_HOME");
         compatibility.put("K8S_SOFT", "KF_K8S_HOME");
         compatibility.put("K8S_VERSION", "KF_K8S_VERSION");
+        compatibility.put("KUBECONFIG", "KF_KUBECONFIG");
         compatibility.put("KUBELET_ROOT", "KF_KUBELET_ROOT");
         compatibility.put("PRIMARY_CONTROL_HOSTNAME", "KF_PRIMARY_CONTROL_HOSTNAME");
         compatibility.put("PRIMARY_CONTROL_IP", "KF_PRIMARY_CONTROL_IP");

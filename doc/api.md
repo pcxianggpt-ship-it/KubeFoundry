@@ -46,11 +46,13 @@ v0.2.1 基础路径为 `/api`，后端实现为 Java 17 + Spring Boot。前端�
 | GET | `/api/clusters/{cluster_id}/components` | 查询 Kubemate 组件选择 |
 | PUT | `/api/clusters/{cluster_id}/components` | 保存 Kubemate 组件选择，仅保存配置，不执行安装 |
 
-组件接口返回聚合对象，固定包含 `nfs`、`kubemate`、`traefik`、`storage_observability`、`prometheus`、`redis_sentinel` 六组。每组返回中文名称、组内组件、期望启用值、`available`、实际 `status` 和配置；Redis 哨兵组 `available=false`，启用时返回 `COMPONENT_GROUP_UNAVAILABLE`。总开关字段为 `enabled`，关闭时保留各子组的保存值但不纳入安装计划。
+组件接口返回聚合对象，固定包含 `nfs`、`kubemate`、`traefik`、`storage_observability`、`prometheus`、`redis_sentinel` 六组。每组返回中文名称、组内组件、期望启用值、`available`、实际 `status` 和配置；Redis 哨兵组 `available=false`，启用时返回 `COMPONENT_GROUP_UNAVAILABLE`。总开关字段为 `enabled`，关闭时保留各子组的保存值但不纳入安装计划。`configurationVersion` 仅在有效组件配置变化时递增，`precheckStatus` 表示该版本的组件预检查状态；两者不影响节点连通性测试版本。
 
 ```json
 {
   "enabled": true,
+  "configurationVersion": 1,
+  "precheckStatus": "stale",
   "groups": [
     {
       "key": "storage_observability",
@@ -65,7 +67,7 @@ v0.2.1 基础路径为 `/api`，后端实现为 Java 17 + Spring Boot。前端�
 }
 ```
 
-PUT 请求只接受已知组键和唯一组键；未知组、重复组、不可用组启用或非法 NFS 配置返回 `400` 及稳定错误码。
+PUT 请求只接受已知组键和唯一组键；未知组、重复组、不可用组启用或非法 NFS 配置返回 `400` 及稳定错误码。基础集群安装完成后，`not_installed` 和 `failed` 组件组仍可调整；`installed` 与 `installing` 组件组为只读，修改时返回 `409 COMPONENT_GROUP_READ_ONLY`。
 
 节点响应仅返回 `has_password`，不返回密码、密文、IV 或私钥。节点测试通过密码首次连接，安装集群级 Ed25519 公钥，再用私钥验证免密登录。
 

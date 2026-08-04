@@ -24,6 +24,12 @@ public interface ClusterRepository extends JpaRepository<Cluster, Long> {
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional
+    @Query("update Cluster cluster set cluster.componentConfigVersion = cluster.componentConfigVersion + 1, "
+            + "cluster.componentPrecheckStatus = 'stale' where cluster.id = :clusterId")
+    int markComponentConfigurationChanged(@Param("clusterId") long clusterId);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Transactional
     @Query("update Cluster cluster set cluster.nodeTestStatus = :status "
             + "where cluster.id = :clusterId "
             + "and cluster.nodeConfigVersion = :expectedVersion")

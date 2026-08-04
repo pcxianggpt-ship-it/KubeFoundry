@@ -17,15 +17,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.stubbing.Answer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.when;
 
 @SpringBootTest(properties = {
         "spring.datasource.url=jdbc:h2:mem:install-job-concurrency;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
@@ -45,13 +40,10 @@ class InstallJobConcurrencyIntegrationTest {
     JobRepository jobs;
 
     @Autowired
-    InstallService installs;
+    JobService jobService;
 
     @Autowired
     JobExecutor executor;
-
-    @MockBean
-    RemoteStepRunner runner;
 
     Cluster cluster;
 
@@ -84,13 +76,19 @@ class InstallJobConcurrencyIntegrationTest {
         CountDownLatch first16BatchEntered = new CountDownLatch(5);
         CountDownLatch release13 = new CountDownLatch(1);
         CountDownLatch release16 = new CountDownLatch(1);
-        when(runner.run(anyLong(), any(), any(), any(), any(), any(RuntimeSettings.class)))
-                .thenAnswer(countingAnswer(active, maximum, Map.of(
-                        "13-install-k8s-deps", new Gate(first13BatchEntered, release13),
-                        "16-install-containerd", new Gate(first16BatchEntered, release16))));
+        Map<String, Gate> gates = Map.of(
+                "13-install-k8s-deps", new Gate(first13BatchEntered, release13),
+                "16-install-containerd", new Gate(first16BatchEntered, release16));
+        List<Node> configuredNodes = nodes.findByClusterIdOrderById(cluster.getId());
+        List<Node> kubernetesNodes = configuredNodes.stream()
+                .filter(node -> hasRole(node, "control_plane") || hasRole(node, "worker"))
+                .toList();
 
-        long jobId = installs.start(cluster.getId(),
-                List.of("13-install-k8s-deps", "16-install-containerd"));
+        long jobId = jobService.submit(new JobService.JobDefinition(cluster.getId(), "install", List.of(
+                countedStep("13-install-k8s-deps", 1, 5, false, kubernetesNodes,
+                        active, maximum, gates),
+                countedStep("16-install-containerd", 2, 5, false, configuredNodes,
+                        active, maximum, gates))));
         assertThat(first13BatchEntered.await(5, TimeUnit.SECONDS)).isTrue();
         release13.countDown();
         assertThat(first16BatchEntered.await(5, TimeUnit.SECONDS)).isTrue();
@@ -106,44 +104,62 @@ class InstallJobConcurrencyIntegrationTest {
     void realJobServiceRunsStep20SeriallyAndStopsAfterFailFastStep18Failure() throws Exception {
         Map<String, AtomicInteger> active = new ConcurrentHashMap<>();
         Map<String, AtomicInteger> maximum = new ConcurrentHashMap<>();
-        when(runner.run(anyLong(), any(), any(), any(), any(), any(RuntimeSettings.class)))
-                .thenAnswer(countingAnswer(active, maximum, Map.of()));
+        List<Node> controlPlanes = nodes.findByClusterIdOrderById(cluster.getId()).stream()
+                .filter(node -> hasRole(node, "control_plane"))
+                .toList();
+        Node primaryControlPlane = controlPlanes.get(0);
+        Node otherControlPlane = controlPlanes.get(1);
 
-        long successJobId = installs.start(cluster.getId(),
-                List.of("18-init-k8s-cluster", "20-add-control-nodes"));
+        long successJobId = jobService.submit(new JobService.JobDefinition(cluster.getId(), "install", List.of(
+                countedStep("18-init-k8s-cluster", 1, 1, true, List.of(primaryControlPlane),
+                        active, maximum, Map.of()),
+                countedStep("20-add-control-nodes", 2, 1, true, List.of(otherControlPlane),
+                        active, maximum, Map.of()))));
         assertThat(executor.awaitIdle(5, TimeUnit.SECONDS)).isTrue();
         assertThat(jobs.findById(successJobId).orElseThrow().getStatus()).isEqualTo("success");
         assertThat(maximum.get("18-init-k8s-cluster")).hasValue(1);
         assertThat(maximum.get("20-add-control-nodes")).hasValue(1);
 
-        when(runner.run(anyLong(), any(), any(), any(), any(), any(RuntimeSettings.class)))
-                .thenAnswer(invocation -> {
-                    InstallStep step = invocation.getArgument(4);
-                    if ("18-init-k8s-cluster".equals(step.key())) {
-                        return new JobService.NodeOutcome(false, 9, "初始化失败", "logs/cp-1.log");
-                    }
-                    return JobService.NodeOutcome.successful();
-                });
-        long failedJobId = installs.start(cluster.getId(),
-                List.of("18-init-k8s-cluster", "20-add-control-nodes"));
+        AtomicInteger failedStep20Executions = new AtomicInteger();
+        long failedJobId = jobService.submit(new JobService.JobDefinition(cluster.getId(), "install", List.of(
+                new JobService.StepDefinition("18-init-k8s-cluster", 1, 1, true, List.of(
+                        JobService.NodeOperation.withOutcome(primaryControlPlane.getId(), ignored ->
+                                new JobService.NodeOutcome(false, 9, "initialization failed", "logs/cp-1.log")))),
+                new JobService.StepDefinition("20-add-control-nodes", 2, 1, true, List.of(
+                        new JobService.NodeOperation(otherControlPlane.getId(),
+                                failedStep20Executions::incrementAndGet))))));
         assertThat(executor.awaitIdle(5, TimeUnit.SECONDS)).isTrue();
 
         Job failed = jobs.findById(failedJobId).orElseThrow();
         assertThat(failed.getStatus()).isEqualTo("failed");
-        assertThat(jobs.findById(failedJobId).orElseThrow().getStatus()).isEqualTo("failed");
+        assertThat(failedStep20Executions).hasValue(0);
     }
 
-    private Answer<JobService.NodeOutcome> countingAnswer(
+    private JobService.StepDefinition countedStep(
+            String stepKey,
+            int order,
+            int maxWorkers,
+            boolean failFast,
+            List<Node> targets,
             Map<String, AtomicInteger> active,
             Map<String, AtomicInteger> maximum,
             Map<String, Gate> gates) {
-        return invocation -> {
-            InstallStep step = invocation.getArgument(4);
-            AtomicInteger current = active.computeIfAbsent(step.key(), ignored -> new AtomicInteger());
-            AtomicInteger max = maximum.computeIfAbsent(step.key(), ignored -> new AtomicInteger());
+        return new JobService.StepDefinition(stepKey, order, maxWorkers, failFast,
+                targets.stream().map(node -> JobService.NodeOperation.withOutcome(node.getId(),
+                        countingAction(stepKey, active, maximum, gates))).toList());
+    }
+
+    private JobService.OutcomeJobAction countingAction(
+            String stepKey,
+            Map<String, AtomicInteger> active,
+            Map<String, AtomicInteger> maximum,
+            Map<String, Gate> gates) {
+        return ignored -> {
+            AtomicInteger current = active.computeIfAbsent(stepKey, ignoredKey -> new AtomicInteger());
+            AtomicInteger max = maximum.computeIfAbsent(stepKey, ignoredKey -> new AtomicInteger());
             int now = current.incrementAndGet();
             max.accumulateAndGet(now, Math::max);
-            Gate gate = gates.get(step.key());
+            Gate gate = gates.get(stepKey);
             try {
                 if (gate != null) {
                     gate.entered().countDown();
@@ -163,6 +179,10 @@ class InstallJobConcurrencyIntegrationTest {
         node.update(hostname, ip, "", role, "root", 22);
         node.completeNodeTest("kylin", "V10", "amd64");
         return nodes.saveAndFlush(node);
+    }
+
+    private boolean hasRole(Node node, String role) {
+        return node.hasRole(role) || role.equals(node.getRole());
     }
 
     private record Gate(CountDownLatch entered, CountDownLatch release) {

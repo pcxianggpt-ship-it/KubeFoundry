@@ -11,7 +11,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Component
 public class InstallerAdmission {
 
-    private static final List<String> INSTALLER_TYPES = List.of("install", "precheck", "reset");
+    private static final List<String> INSTALLER_TYPES = List.of(
+            "install", ComponentInstallationStateService.JOB_TYPE, "precheck", "reset");
     private static final List<String> ACTIVE_STATUSES = List.of("pending", "running");
 
     private final ClusterRepository clusters;
@@ -41,6 +42,16 @@ public class InstallerAdmission {
     }
 
     public void requireConfigurationWritable(long clusterId, boolean installationLocked) {
+        requireNoActiveInstallerJob(clusterId);
+        if (installationLocked) {
+            throw new ClusterConfigurationLockedException("安装成功后必须先完成远程重置，才能修改集群配置");
+        }
+    }
+
+    /**
+     * 组件配置在基础集群安装完成后仍可调整，但不能与安装、预检查或重置并发。
+     */
+    public void requireNoActiveInstallerJob(long clusterId) {
         transactions.executeWithoutResult(status -> {
             clusters.findByIdForUpdate(clusterId)
                     .orElseThrow(() -> new IllegalArgumentException("集群不存在: " + clusterId));
@@ -50,9 +61,6 @@ public class InstallerAdmission {
                         throw new ActiveInstallerJobException(job.getType(), job.getId());
                     });
         });
-        if (installationLocked) {
-            throw new ClusterConfigurationLockedException("安装成功后必须先完成远程重置，才能修改集群配置");
-        }
     }
 
 }

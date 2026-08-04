@@ -26,6 +26,7 @@ class RuntimeEnvRendererTest {
         assertThat(rendered).contains("export KF_NODE_HOSTNAME='worker-a'");
         assertThat(rendered).contains("export KF_ARCH='arm64'");
         assertThat(rendered).contains("export KF_PRIMARY_CONTROL_HOSTNAME='cp-a'");
+        assertThat(rendered).contains("export KUBECONFIG=\"${KF_KUBECONFIG}\"");
         assertThat(rendered).contains("export K8S_VERSION=\"${KF_K8S_VERSION}\"");
         assertThat(rendered).contains("log_info()", "log_success()", "log_error()");
         assertThat(rendered).doesNotContainIgnoringCase("password");

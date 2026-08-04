@@ -175,6 +175,24 @@ class SchemaMigrationTest {
     }
 
     @Test
+    void createsComponentConfigurationVersionInV11() throws SQLException {
+        try (Connection connection = openConnection()) {
+            DatabaseMetaData metadata = connection.getMetaData();
+            assertThat(successfulMigration(connection, "11")).isTrue();
+            assertThat(columnExists(metadata, "CLUSTERS", "COMPONENT_CONFIG_VERSION")).isTrue();
+            assertThat(columnExists(metadata, "CLUSTERS", "COMPONENT_PRECHECK_STATUS")).isTrue();
+        }
+    }
+
+    @Test
+    void createsComponentGroupAssociationForJobStepsInV12() throws SQLException {
+        try (Connection connection = openConnection()) {
+            assertThat(successfulMigration(connection, "12")).isTrue();
+            assertThat(columnExists(connection.getMetaData(), "JOB_STEPS", "COMPONENT_GROUP_KEY")).isTrue();
+        }
+    }
+
+    @Test
     void migratesExistingComponentSelectionsIntoNotInstalledStates() throws SQLException {
         String databaseUrl = "jdbc:h2:mem:schema-v8-components;MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
         Flyway.configure()

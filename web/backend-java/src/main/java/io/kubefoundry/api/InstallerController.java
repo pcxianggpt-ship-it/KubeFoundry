@@ -2,7 +2,6 @@ package io.kubefoundry.api;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.kubefoundry.installer.ClusterSettingsService;
-import io.kubefoundry.installer.InstallPlanFactory;
 import io.kubefoundry.installer.InstallService;
 import io.kubefoundry.installer.InstallStep;
 import io.kubefoundry.installer.PrecheckService;
@@ -22,17 +21,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class InstallerController {
 
-    private final InstallPlanFactory plans;
     private final PrecheckService prechecks;
     private final InstallService installs;
     private final ClusterSettingsService settings;
 
     public InstallerController(
-            InstallPlanFactory plans,
             PrecheckService prechecks,
             InstallService installs,
             ClusterSettingsService settings) {
-        this.plans = plans;
         this.prechecks = prechecks;
         this.installs = installs;
         this.settings = settings;
@@ -59,9 +55,9 @@ public class InstallerController {
         return settings.updateClusterSettings(clusterId, request == null ? Map.of() : request);
     }
 
-    @GetMapping("/install-plan")
-    public Items<PlanItem> plan() {
-        List<InstallStep> steps = plans.create().steps();
+    @GetMapping("/clusters/{clusterId}/install-plan")
+    public Items<PlanItem> plan(@PathVariable long clusterId) {
+        List<InstallStep> steps = installs.preview(clusterId).steps();
         return new Items<>(java.util.stream.IntStream.range(0, steps.size())
                 .mapToObj(index -> PlanItem.from(index + 1, steps.get(index))).toList());
     }
@@ -75,10 +71,11 @@ public class InstallerController {
     @PostMapping("/clusters/{clusterId}/install")
     public ResponseEntity<JobAccepted> install(
             @PathVariable long clusterId, @RequestBody(required = false) InstallRequest request) {
-        List<String> selected = request == null || request.steps() == null
-                ? List.of() : request.steps();
+        if (request != null && request.steps() != null && !request.steps().isEmpty()) {
+            throw new IllegalArgumentException("安装步骤由服务端计划决定，不能由客户端选择");
+        }
         return ResponseEntity.status(HttpStatus.ACCEPTED)
-                .body(new JobAccepted(installs.start(clusterId, selected), "pending"));
+                .body(new JobAccepted(installs.start(clusterId), "pending"));
     }
 
     public record Items<T>(List<T> items) {

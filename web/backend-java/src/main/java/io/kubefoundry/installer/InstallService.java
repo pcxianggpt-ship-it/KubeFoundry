@@ -18,12 +18,37 @@ public class InstallService {
     private final NodeRepository nodes;
     private final JobService jobService;
     private final InstallPlanFactory plans;
+    private final InstallPlanAssembler assembler;
     private final RemoteStepRunner runner;
     private final ClusterSettingsService settings;
     private final InstallerAdmission admission;
     private final InstallationSnapshotService snapshots;
+    private final ComponentMediaService media;
 
     @Autowired
+    public InstallService(
+            ClusterRepository clusters,
+            NodeRepository nodes,
+            JobService jobService,
+            InstallPlanFactory plans,
+            InstallPlanAssembler assembler,
+            RemoteStepRunner runner,
+            ClusterSettingsService settings,
+            InstallerAdmission admission,
+            InstallationSnapshotService snapshots,
+            ComponentMediaService media) {
+        this.clusters = clusters;
+        this.nodes = nodes;
+        this.jobService = jobService;
+        this.plans = plans;
+        this.assembler = assembler;
+        this.runner = runner;
+        this.settings = settings;
+        this.admission = admission;
+        this.snapshots = snapshots;
+        this.media = media;
+    }
+
     public InstallService(
             ClusterRepository clusters,
             NodeRepository nodes,
@@ -33,24 +58,28 @@ public class InstallService {
             ClusterSettingsService settings,
             InstallerAdmission admission,
             InstallationSnapshotService snapshots) {
-        this.clusters = clusters;
-        this.nodes = nodes;
-        this.jobService = jobService;
-        this.plans = plans;
-        this.runner = runner;
-        this.settings = settings;
-        this.admission = admission;
-        this.snapshots = snapshots;
+        this(clusters, nodes, jobService, plans, null, runner, settings, admission, snapshots, null);
     }
 
+    public long start(long clusterId) {
+        return start(clusterId, List.of());
+    }
+
+    /** Client step selection is retained only to return a stable validation error for legacy callers. */
     public long start(long clusterId, List<String> selectedSteps) {
+        if (selectedSteps != null && !selectedSteps.isEmpty()) {
+            throw new IllegalArgumentException("安装步骤由服务端计划决定，不能由客户端选择");
+        }
         Cluster cluster = clusters.findById(clusterId)
                 .orElseThrow(() -> ResourceNotFoundException.cluster(clusterId));
-        InstallPlan plan = plans.select(selectedSteps);
         List<Node> configuredNodes = InstallationNodes.normalize(
                 nodes.findByClusterIdOrderById(clusterId));
         ClusterTopologyValidator.requireValid(configuredNodes, cluster.getImageRegistryType());
         InstallationGate.requireSuccessfulNodeTests(cluster, configuredNodes);
+        InstallPlan generatedPlan = assembler == null
+                ? plans.create()
+                : assembler.forNewCluster(snapshots.previewPayload(cluster, configuredNodes));
+        InstallPlan plan = media == null ? generatedPlan : media.verifyAndChecksum(generatedPlan);
         List<JobService.StepDefinition> definitions = new ArrayList<>();
         for (int index = 0; index < plan.steps().size(); index++) {
             InstallStep step = plan.steps().get(index);
@@ -69,7 +98,8 @@ public class InstallService {
                     }))
                     .toList();
             definitions.add(new JobService.StepDefinition(
-                    step.name(), index + 1, step.maxWorkers(), step.failFast(), operations));
+                    step.name(), index + 1, step.maxWorkers(), step.failFast(), operations,
+                    step.componentGroupKey()));
         }
         return admission.submit(clusterId, () -> {
             Cluster admittedCluster = clusters.findById(clusterId)
@@ -77,8 +107,20 @@ public class InstallService {
             admittedCluster.markInstallationStarted();
             clusters.save(admittedCluster);
             long jobId = jobService.submit(new JobService.JobDefinition(clusterId, "install", definitions));
-            snapshots.capture(jobId, admittedCluster, configuredNodes);
+            if (media == null) {
+                snapshots.capture(jobId, admittedCluster, configuredNodes);
+            } else {
+                snapshots.capture(jobId, admittedCluster, configuredNodes, media.checksums(plan));
+            }
             return jobId;
         });
+    }
+
+    public InstallPlan preview(long clusterId) {
+        Cluster cluster = clusters.findById(clusterId)
+                .orElseThrow(() -> ResourceNotFoundException.cluster(clusterId));
+        List<Node> configuredNodes = InstallationNodes.normalize(nodes.findByClusterIdOrderById(clusterId));
+        return assembler == null ? plans.create()
+                : assembler.forNewCluster(snapshots.previewPayload(cluster, configuredNodes));
     }
 }

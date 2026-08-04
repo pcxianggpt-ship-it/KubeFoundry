@@ -1,6 +1,8 @@
 package io.kubefoundry.job;
 
 import io.kubefoundry.cluster.Cluster;
+import io.kubefoundry.cluster.ClusterComponentState;
+import io.kubefoundry.cluster.ClusterComponentStateRepository;
 import io.kubefoundry.cluster.ClusterRepository;
 import io.kubefoundry.cluster.Node;
 import io.kubefoundry.cluster.NodeRepository;
@@ -39,6 +41,9 @@ class JobServiceTest {
 
     @Autowired
     JobEventRepository events;
+
+    @Autowired
+    ClusterComponentStateRepository componentStates;
 
     @Autowired
     JobExecutor executor;
@@ -144,6 +149,54 @@ class JobServiceTest {
                 .filter(event -> "node.status".equals(event.getType()))
                 .map(event -> (String) event.getPayload().get("status")))
                 .containsExactly("running", "success");
+    }
+
+    @Test
+    void recordsEachComponentGroupAsSoonAsItsStepsFinish() throws Exception {
+        Cluster cluster = clusters.save(new Cluster("component-group-status"));
+        Node node = node(cluster, "node-1", "10.0.0.1");
+        ClusterComponentState traefik = componentStates.save(new ClusterComponentState(cluster, "traefik"));
+        ClusterComponentState prometheus = componentStates.save(new ClusterComponentState(cluster, "prometheus"));
+        ClusterComponentState kubemate = componentStates.save(new ClusterComponentState(cluster, "kubemate"));
+
+        long jobId = service.submit(new JobService.JobDefinition(cluster.getId(), "component_install", List.of(
+                new JobService.StepDefinition("安装 Traefik", 1, 1, true, List.of(
+                        new JobService.NodeOperation(node.getId(), () -> { })), "traefik"),
+                new JobService.StepDefinition("安装 Prometheus", 2, 1, true, List.of(
+                        new JobService.NodeOperation(node.getId(), () -> {
+                            throw new IllegalStateException("Prometheus 安装失败");
+                        })), "prometheus"),
+                new JobService.StepDefinition("安装 Kubemate", 3, 1, true, List.of(
+                        new JobService.NodeOperation(node.getId(), () -> { })), "kubemate"))));
+        assertThat(executor.awaitIdle(5, TimeUnit.SECONDS)).isTrue();
+
+        assertThat(componentStates.findById(traefik.getId()).orElseThrow().getStatus())
+                .isEqualTo(ClusterComponentState.INSTALLED);
+        assertThat(componentStates.findById(prometheus.getId()).orElseThrow())
+                .satisfies(state -> {
+                    assertThat(state.getStatus()).isEqualTo(ClusterComponentState.FAILED);
+                    assertThat(state.getLastJobId()).isEqualTo(jobId);
+                    assertThat(state.getLastErrorCode()).isEqualTo("COMPONENT_INSTALL_FAILED");
+                });
+        assertThat(componentStates.findById(kubemate.getId()).orElseThrow().getStatus())
+                .isEqualTo(ClusterComponentState.NOT_INSTALLED);
+    }
+
+    @Test
+    void recoversUnstartedComponentGroupsWithoutMarkingThemFailed() {
+        Cluster cluster = clusters.save(new Cluster("component-recovery"));
+        Node node = node(cluster, "node-1", "10.0.0.1");
+        ClusterComponentState state = componentStates.save(new ClusterComponentState(cluster, "traefik"));
+        Job job = jobs.save(new Job(cluster, "component_install"));
+        state.markInstalling(job.getId());
+        componentStates.save(state);
+        steps.save(new JobStep(job, "安装 Traefik", 1, "traefik"));
+
+        assertThat(service.recoverInterruptedJobs()).isEqualTo(1);
+
+        assertThat(jobs.findById(job.getId()).orElseThrow().getStatus()).isEqualTo("interrupted");
+        assertThat(componentStates.findById(state.getId()).orElseThrow().getStatus())
+                .isEqualTo(ClusterComponentState.NOT_INSTALLED);
     }
 
     private Node node(Cluster cluster, String hostname, String ip) {

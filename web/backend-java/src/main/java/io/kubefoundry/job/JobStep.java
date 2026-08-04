@@ -28,6 +28,9 @@ public class JobStep {
     @Column(name = "step_order", nullable = false)
     private int order;
 
+    @Column(name = "component_group_key", length = 64)
+    private String componentGroupKey;
+
     @Column(nullable = false, length = 32)
     private String status = "pending";
 
@@ -38,15 +41,22 @@ public class JobStep {
     }
 
     public JobStep(Job job, String name, int order) {
+        this(job, name, order, null);
+    }
+
+    public JobStep(Job job, String name, int order, String componentGroupKey) {
         this.job = job;
         this.name = name;
         this.order = order;
+        this.componentGroupKey = componentGroupKey == null || componentGroupKey.isBlank()
+                ? null : componentGroupKey.trim();
     }
 
     public Long getId() { return id; }
     public Job getJob() { return job; }
     public String getName() { return name; }
     public int getOrder() { return order; }
+    public String getComponentGroupKey() { return componentGroupKey; }
     public String getStatus() { return status; }
     public String getLogPath() { return logPath; }
     public void markRunning() { status = "running"; }

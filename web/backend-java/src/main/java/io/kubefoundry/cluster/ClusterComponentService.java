@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.kubefoundry.installer.InstallerAdmission;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,46 +52,56 @@ public class ClusterComponentService {
                     state == null ? ClusterComponentState.NOT_INSTALLED : state.getStatus(),
                     parseConfig(component == null ? "{}" : component.getConfigJson()));
         }).toList();
-        return new ComponentsResponse(cluster.isKubemateEnabled(), groups);
+        return new ComponentsResponse(cluster.isKubemateEnabled(), cluster.getComponentConfigVersion(),
+                cluster.getComponentPrecheckStatus(), groups);
     }
 
     @Transactional
     public ComponentsResponse replace(long clusterId, ComponentsRequest request) {
         Cluster cluster = requireCluster(clusterId);
-        admission.requireConfigurationWritable(clusterId, cluster.isInstallationLocked());
+        admission.requireNoActiveInstallerJob(clusterId);
         if (request == null) throw invalid("请求体不能为空");
         List<GroupRequest> requested = request.groups();
         Map<String, GroupRequest> values = new LinkedHashMap<>();
-        if (requested == null) {
-            components.findByClusterIdOrderByComponentKey(clusterId).forEach(component -> {
-                GroupRequest group = new GroupRequest(component.getComponentKey(), component.isEnabled(), parseConfig(component.getConfigJson()));
-                group.setValidatedConfig(component.getConfigJson());
-                values.put(component.getComponentKey(), group);
-            });
-        }
+        Set<String> requestedKeys = new HashSet<>();
+        components.findByClusterIdOrderByComponentKey(clusterId).forEach(component -> {
+            GroupRequest group = new GroupRequest(component.getComponentKey(), component.isEnabled(), parseConfig(component.getConfigJson()));
+            group.setValidatedConfig(component.getConfigJson());
+            values.put(component.getComponentKey(), group);
+        });
         for (GroupRequest group : requested == null ? List.<GroupRequest>of() : requested) {
             if (group == null || group.key() == null || KubemateComponentCatalog.find(group.key()) == null) {
                 throw new ComponentConfigurationException("COMPONENT_GROUP_UNKNOWN", "未知的 Kubemate 组件组");
             }
-            if (values.putIfAbsent(group.key(), group) != null) {
+            if (!requestedKeys.add(group.key())) {
                 throw invalid("组件组不能重复: " + group.key());
             }
             KubemateComponentCatalog.Group definition = KubemateComponentCatalog.find(group.key());
             if (group.enabled() && !definition.available()) {
                 throw new ComponentConfigurationException("COMPONENT_GROUP_UNAVAILABLE", "组件组暂不可用: " + group.key());
             }
+            values.put(group.key(), group);
+        }
+        for (KubemateComponentCatalog.Group definition : KubemateComponentCatalog.GROUPS) {
+            GroupRequest group = values.getOrDefault(definition.key(), new GroupRequest(definition.key(), false, Map.of()));
             String config = validateConfig(definition, group.config(), group.enabled());
-            ClusterComponentState state = states.findByClusterIdAndComponentKey(clusterId, group.key()).orElse(null);
-            ClusterComponent old = components.findByClusterIdAndComponentKey(clusterId, group.key()).orElse(null);
-            if (state != null && ClusterComponentState.INSTALLED.equals(state.getStatus())
+            ClusterComponentState state = states.findByClusterIdAndComponentKey(clusterId, definition.key()).orElse(null);
+            ClusterComponent old = components.findByClusterIdAndComponentKey(clusterId, definition.key()).orElse(null);
+            if (state != null && (ClusterComponentState.INSTALLED.equals(state.getStatus())
+                    || ClusterComponentState.INSTALLING.equals(state.getStatus()))
                     && (old == null || old.isEnabled() != group.enabled()
                     || !parseConfig(old.getConfigJson()).equals(parseConfig(config)))) {
-                throw new ComponentConfigurationException("CLUSTER_CONFIGURATION_LOCKED", "已安装组件组不可修改: " + group.key());
+                throw new ComponentConfigurationException("COMPONENT_GROUP_READ_ONLY",
+                        "已安装或正在安装的组件组不可修改: " + definition.key());
             }
             group.setValidatedConfig(config);
+            values.put(definition.key(), group);
         }
+        boolean configurationChanged = cluster.isKubemateEnabled() != request.enabled()
+                || configurationChanged(clusterId, values);
         cluster.updateKubemateEnabled(request.enabled());
         components.deleteByClusterId(clusterId);
+        components.flush();
         for (KubemateComponentCatalog.Group definition : KubemateComponentCatalog.GROUPS) {
             GroupRequest group = values.get(definition.key());
             if (group == null) group = new GroupRequest(definition.key(), false, Map.of());
@@ -99,7 +110,24 @@ public class ClusterComponentService {
                 states.save(new ClusterComponentState(cluster, definition.key()));
             }
         }
+        if (configurationChanged) {
+            cluster.markComponentConfigurationChanged();
+        }
         return list(clusterId);
+    }
+
+    private boolean configurationChanged(long clusterId, Map<String, GroupRequest> values) {
+        Map<String, ClusterComponent> existing = components.findByClusterIdOrderByComponentKey(clusterId).stream()
+                .collect(Collectors.toMap(ClusterComponent::getComponentKey, component -> component));
+        for (KubemateComponentCatalog.Group definition : KubemateComponentCatalog.GROUPS) {
+            GroupRequest requested = values.get(definition.key());
+            ClusterComponent current = existing.get(definition.key());
+            if (current == null || requested == null || current.isEnabled() != requested.enabled()
+                    || !parseConfig(current.getConfigJson()).equals(parseConfig(requested.validatedConfig()))) {
+                return true;
+            }
+        }
+        return existing.size() != KubemateComponentCatalog.GROUPS.size();
     }
 
     private String validateConfig(KubemateComponentCatalog.Group definition, Map<String, Object> config, boolean enabled) {
@@ -175,7 +203,11 @@ public class ClusterComponentService {
         public String validatedConfig() { return validatedConfig; }
         void setValidatedConfig(String value) { validatedConfig = value; }
     }
-    public record ComponentsResponse(boolean enabled, List<GroupResponse> groups) { }
+    public record ComponentsResponse(
+            boolean enabled,
+            long configurationVersion,
+            String precheckStatus,
+            List<GroupResponse> groups) { }
     public record GroupResponse(String key, String name, boolean enabled, boolean available,
             List<String> components, String status, Map<String, Object> config) { }
 

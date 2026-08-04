@@ -31,8 +31,8 @@ cluster:
 control_plane:
   # 控制节点 1（主控制节点，执行 yum 源配置和集群初始化）
   - hostname: "k8sc1"
-    ip: "192.168.123.130"
-    ipv6: "fd00:42::130"
+    ip: "192.168.123.139"
+    ipv6: "fd00:42::139"
 
   # # 控制节点 2（从控制节点）
   # - hostname: "k8sc2"
@@ -54,8 +54,8 @@ workers:
     ipv6: "fd00:42::131"
 
   - hostname: "k8sw2"
-    ip: "192.168.123.132"
-    ipv6: "fd00:42::132"
+    ip: "192.168.123.138"
+    ipv6: "fd00:42::138"
 
   # - hostname: "k8sw3"
   #   ip: "192.168.123.23"
@@ -82,7 +82,7 @@ registry:
   hostname: "registry"
 
   # 镜像仓库 IP 地址
-  ip: "192.168.123.130"
+  ip: "192.168.123.139"
 
   # 镜像仓库 IPv6 地址（可选）
   # ipv6: "fd00:42::20"
@@ -160,7 +160,7 @@ paths:
   # 100 年证书版本 kubeadm 文件路径（3.5 替换kubeadm使用）
   # 说明：这是修改过证书有效期的 kubeadm 二进制文件
   # 示例：/data/k8s_install/01.rpm_package/kubeadm-1.29.0-100y-amd64
-  kubeadm_100y: "${install_media}/01.rpm_package/kubeadm-1.30.14-100y-amd64"
+  kubeadm_100y: "${install_media}/01.rpm_package/kubeadm-v1.30.14-100y-amd64"
 
   # Containerd 安装包路径（3.7 安装containerd使用）
   # 说明：此目录应包含以下文件：
@@ -184,7 +184,7 @@ paths:
 #===============================================================================
 storage:
   # NFS 服务器IP地址
-  nfs_server: "192.168.123.130"
+  nfs_server: "192.168.123.139"
 
   # NFS 共享路径
   nfs_path: "/data/nfs_root"

@@ -170,15 +170,19 @@ class RemoteStepRunnerTest {
         InstallStep step = InstallStep.script(
                 "directory-step", "目录资源", "test", "primary_control_plane", script,
                 "serial", 1, true,
-                List.of(new InstallStep.Resource("container_runtime", null, "directory", "/tmp/runtime")),
+                List.of(InstallStep.Resource.local(directory, "directory",
+                        "/tmp/kubefoundry/jobs/{job_id}/resources/shared")),
                 List.of(), List.of(), "");
 
         JobService.NodeOutcome outcome = runner().run(
                 8L, cluster, List.of(node), node, step,
-                new RemoteStepRunner.RuntimePaths().with("container_runtime", directory));
+                new RemoteStepRunner.RuntimePaths());
 
         assertThat(outcome.success()).isTrue();
-        assertThat(remoteRoot.resolve("tmp/runtime/bin/tools/containerd")).hasContent("binary");
+        assertThat(remoteRoot.resolve("tmp/kubefoundry/jobs/8/resources/shared/bin/tools/containerd"))
+                .hasContent("binary");
+        assertThat(commands).anyMatch(command -> command.contains("rm -rf --")
+                && command.contains("/tmp/kubefoundry/jobs/8/resources/shared"));
     }
 
     @Test

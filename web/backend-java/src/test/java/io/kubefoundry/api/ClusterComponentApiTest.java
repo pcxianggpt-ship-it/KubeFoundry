@@ -9,6 +9,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -85,9 +86,56 @@ class ClusterComponentApiTest {
         mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"enabled\":true,\"groups\":[{\"key\":\"nfs\",\"enabled\":true,\"config\":" + nfs + "},{\"key\":\"traefik\",\"enabled\":true,\"config\":{}}]}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(true))
+                .andExpect(jsonPath("$.configurationVersion").value(1))
+                .andExpect(jsonPath("$.precheckStatus").value("stale"))
                 .andExpect(jsonPath("$.groups[0].enabled").value(true))
                 .andExpect(jsonPath("$.groups[0].config.server_address").value("10.0.0.10"))
                 .andExpect(jsonPath("$.groups[2].enabled").value(true));
+    }
+
+    @Test
+    void onlyInvalidatesComponentPrechecksWhenTheSavedConfigurationChanges() throws Exception {
+        long clusterId = createCluster("components-version");
+        String body = "{\"enabled\":true,\"groups\":[{\"key\":\"traefik\",\"enabled\":true,\"config\":{}}]}";
+
+        mvc.perform(put("/api/clusters/{id}/components", clusterId)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.configurationVersion").value(1));
+        mvc.perform(put("/api/clusters/{id}/components", clusterId)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.configurationVersion").value(1));
+
+        Integer nodeConfigVersion = jdbc.queryForObject(
+                "select node_config_version from clusters where id = ?", Integer.class, clusterId);
+        Integer componentConfigVersion = jdbc.queryForObject(
+                "select component_config_version from clusters where id = ?", Integer.class, clusterId);
+        assertThat(nodeConfigVersion).isZero();
+        assertThat(componentConfigVersion).isEqualTo(1);
+    }
+
+    @Test
+    void allowsChangingUninstalledGroupsAfterBaseInstallationButKeepsInstalledGroupsReadOnly() throws Exception {
+        long clusterId = createCluster("components-installed");
+        jdbc.update("update clusters set installation_locked = true, status = 'installed' where id = ?", clusterId);
+
+        mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"enabled\":true,\"groups\":[{\"key\":\"traefik\",\"enabled\":true,\"config\":{}}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.groups[2].enabled").value(true));
+
+        jdbc.update("update cluster_component_states set status = 'installed' where cluster_id = ? and component_key = 'traefik'", clusterId);
+        mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"enabled\":true,\"groups\":[{\"key\":\"traefik\",\"enabled\":false,\"config\":{}}]}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("COMPONENT_GROUP_READ_ONLY"));
+
+        jdbc.update("update cluster_component_states set status = 'installing' where cluster_id = ? and component_key = 'traefik'", clusterId);
+        mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"enabled\":true,\"groups\":[{\"key\":\"traefik\",\"enabled\":false,\"config\":{}}]}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("COMPONENT_GROUP_READ_ONLY"));
     }
 
     private long createCluster(String name) throws Exception {

@@ -33,6 +33,10 @@ public class ApiExceptionHandler {
     @ExceptionHandler({IllegalArgumentException.class, HttpMessageNotReadableException.class})
     public ResponseEntity<Map<String, String>> validation(Exception exception) {
         if (exception instanceof ComponentConfigurationException component) {
+            if ("COMPONENT_GROUP_READ_ONLY".equals(component.code())) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                        "code", component.code(), "message", component.getMessage()));
+            }
             return ResponseEntity.badRequest().body(Map.of(
                     "code", component.code(), "message", component.getMessage()));
         }

@@ -61,6 +61,12 @@ public class Cluster {
     @Column(name = "node_test_status", nullable = false, length = 32)
     private String nodeTestStatus = "pending";
 
+    @Column(name = "component_config_version", nullable = false)
+    private long componentConfigVersion;
+
+    @Column(name = "component_precheck_status", nullable = false, length = 32)
+    private String componentPrecheckStatus = "pending";
+
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -90,6 +96,8 @@ public class Cluster {
     public boolean isInstallationLocked() { return installationLocked; }
     public long getNodeConfigVersion() { return nodeConfigVersion; }
     public String getNodeTestStatus() { return nodeTestStatus; }
+    public long getComponentConfigVersion() { return componentConfigVersion; }
+    public String getComponentPrecheckStatus() { return componentPrecheckStatus; }
 
     public void update(
             String name,
@@ -124,6 +132,15 @@ public class Cluster {
 
     public void updateKubemateEnabled(boolean enabled) {
         kubemateEnabled = enabled;
+    }
+
+    public void markComponentConfigurationChanged() {
+        componentConfigVersion++;
+        componentPrecheckStatus = "stale";
+    }
+
+    public void markComponentPrecheckStatus(String value) {
+        componentPrecheckStatus = value;
     }
 
     public void markNodeTestStatus(String value) {
