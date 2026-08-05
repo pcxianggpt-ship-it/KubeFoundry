@@ -440,12 +440,12 @@
 
 ### 实施步骤
 
-- [ ] 显式声明并分发 Traefik 清单。
-- [ ] 删除重复 apply 和固定目录切换。
-- [ ] 预检查 Service 端口和集群资源冲突。
-- [ ] 等待 Traefik rollout 完成。
-- [ ] 验证 Ingress/Service 通过 Traefik 访问。
-- [ ] 明确不接入 `45-setup-traefik-cleanup.sh`。
+- [x] 显式声明并分发 Traefik 清单。
+- [x] 删除重复 apply 和固定目录切换。
+- [x] 预检查 Service 端口和集群资源冲突。
+- [x] 等待 Traefik rollout 完成。
+- [x] 验证 Ingress/Service 通过 Traefik 访问。
+- [x] 明确不接入 `45-setup-traefik-cleanup.sh`。
 
 ### 验收
 

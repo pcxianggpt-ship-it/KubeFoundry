@@ -2,35 +2,45 @@
 
 #===============================================================================
 # 脚本名称：36-install-traefik.sh
-# 功能：安装traefik网关（3.3版本）
-# 执行机器：k8sc1控制节点执行
-# 作者：KubeFoundry Team
-# 版本：1.1.0
+# 功能：在主控节点声明式安装 Traefik 网关
+# 版本：0.3.0
 #===============================================================================
 
-# PROJECT_ROOT 由 main.sh export，无需推算
-
-# 加载公共函数库
-source "${PROJECT_ROOT}/scripts/lib/logger.sh"
-source "${PROJECT_ROOT}/scripts/lib/config.sh"
-
-log_info "开始安装Traefik网关（3.3版本）..."
-
-cd "${INSTALL_MEDIA}/03.setup_file/v1.30.14/traefik"
-
-# 检查 traefik 3.3 目录是否存在
-if [ ! -d "3.3" ]; then
-    log_error "Traefik 3.3 目录不存在"
+if [ -f "./phase3.sh" ]; then source "./phase3.sh"; else source "${PROJECT_ROOT}/scripts/lib/phase3.sh"; fi
+phase3_init
+manifest_dir=$(phase3_resource_path .)
+[ -d "${manifest_dir}" ] || {
+    log_error "Traefik 清单目录不存在: ${manifest_dir}"
     exit 1
-fi
+}
 
-# 应用 traefik 3.3 配置
-kubectl apply -f 3.3/
-kubectl apply -f 3.3/
+nodeports=$(grep -RhoE 'nodePort:[[:space:]]*[0-9]+' "${manifest_dir}" 2>/dev/null \
+    | awk '{ print $2 }' | sort -u || true)
+existing=$(kubectl get service --all-namespaces --no-headers 2>/dev/null || true)
+while IFS= read -r port; do
+    [ -z "${port}" ] && continue
+    if printf '%s\n' "${existing}" | awk -v port="${port}" '$0 ~ (":" port "/") && $2 !~ /^traefik($|-)/ { found=1 } END { exit found }'; then
+        :
+    else
+        log_error "Traefik NodePort 已被占用: ${port}"
+        exit 1
+    fi
+done <<< "${nodeports}"
 
-if [ $? -eq 0 ]; then
-    log_success "Traefik网关（3.3版本）安装完成"
-else
-    log_error "Traefik网关安装失败"
+kubectl apply --server-side --field-manager=kubefoundry -f "${manifest_dir}"
+deployments=$(kubectl get deployment --all-namespaces --no-headers 2>/dev/null \
+    | awk '$2 ~ /^traefik($|-)/ { print $1 "/" $2 }')
+while IFS= read -r target; do
+    [ -z "${target}" ] && continue
+    namespace=${target%%/*}
+    name=${target#*/}
+    phase3_wait_rollout deployment "${name}" "${namespace}"
+done <<< "${deployments}"
+
+services=$(kubectl get service --all-namespaces --no-headers 2>/dev/null \
+    | awk '$2 ~ /^traefik($|-)/ { print $1 "/" $2 }')
+[ -n "${services}" ] || {
+    log_error "Traefik Service 未创建"
     exit 1
-fi
+}
+log_success "Traefik 网关已幂等安装并通过 rollout 检查"
