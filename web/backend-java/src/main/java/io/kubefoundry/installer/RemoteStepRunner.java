@@ -111,16 +111,21 @@ public class RemoteStepRunner {
             Files.createDirectories(workDirectory);
             Path runtimeFile = workDirectory.resolve("runtime.env");
             Path scriptFile = workDirectory.resolve("step.sh");
+            Path phase3Library = workDirectory.resolve("phase3.sh");
             Files.writeString(runtimeFile, runtimeRenderer.render(cluster, normalizedNodes, node, settings,
                     runtimeEnvironment(jobId, step, resources.files())),
                     StandardCharsets.UTF_8);
             writeStepScript(scriptFile, cluster, normalizedNodes, step);
+            writePhase3Library(phase3Library, step);
             String remoteDirectory = "/tmp/kubefoundry/" + jobId + "/";
 
             SshCommandResult result = sessions.withSession(cluster, node, session -> {
                 createRemoteDirectories(session, remoteDirectory, resources.files());
                 ssh.upload(session, runtimeFile, remoteDirectory + "runtime.env");
                 ssh.upload(session, scriptFile, remoteDirectory + "step.sh");
+                if (Files.exists(phase3Library)) {
+                    ssh.upload(session, phase3Library, remoteDirectory + "phase3.sh");
+                }
                 for (ResolvedResource resource : resources.files()) {
                     if ("directory".equals(resource.kind())) {
                         ssh.uploadDirectory(session, resource.localPath(), resource.remotePath());
@@ -272,7 +277,9 @@ public class RemoteStepRunner {
             Node node) {
         StringBuilder inner = new StringBuilder("cd ")
                 .append(RuntimeEnvRenderer.shellQuote(remoteDirectory))
-                .append(" && chmod +x ./step.sh && source ./runtime.env && bash ./step.sh");
+                .append(" && chmod +x ./step.sh && source ./runtime.env")
+                .append("kubemate_component".equals(step.phase()) ? " && source ./phase3.sh" : "")
+                .append(" && bash ./step.sh");
         for (InstallStep.Argument argument : step.arguments()) {
             inner.append(' ').append(RuntimeEnvRenderer.shellQuote(resolveArgument(argument, nodes)));
         }
@@ -350,6 +357,17 @@ public class RemoteStepRunner {
             throw new IOException("安装脚本不存在: " + step.script());
         }
         Files.copy(step.script(), target, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    private static void writePhase3Library(Path target, InstallStep step) throws IOException {
+        if (!"kubemate_component".equals(step.phase())) return;
+        Path script = step.script();
+        Path root = script == null ? null : script.getParent().getParent().getParent().getParent();
+        Path library = root == null ? null : root.resolve("scripts/lib/phase3.sh");
+        if (library == null || !Files.isRegularFile(library)) {
+            throw new IOException("phase3 公共函数库不存在: " + library);
+        }
+        Files.copy(library, target, StandardCopyOption.REPLACE_EXISTING);
     }
 
     private static String renderHostnameScript(Cluster cluster, List<Node> nodes) {
