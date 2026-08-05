@@ -96,7 +96,7 @@ class ApiContractTest {
         mvc.perform(get("/api/health"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ok"))
-                .andExpect(jsonPath("$.version").value("0.2.1"));
+                .andExpect(jsonPath("$.version").value("0.3.0"));
         mvc.perform(get("/api/clusters"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].id").value(cluster.getId()))

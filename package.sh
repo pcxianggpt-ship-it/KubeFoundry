@@ -8,7 +8,7 @@ unset KF_PACKAGE_BASH_REEXEC
 
 #===============================================================================
 # 脚本名称：package.sh
-# 功能：构建 KubeFoundry v0.2.1 Java 双架构离线部署包
+# 功能：构建 KubeFoundry v0.3.0 Java 双架构离线部署包
 # 作者：KubeFoundry Team
 # 版本：2.0.0
 #===============================================================================
@@ -31,14 +31,14 @@ log_error() { printf '[ERROR] %s\n' "$*" >&2; }
 
 show_usage() {
     cat <<'EOF'
-KubeFoundry v0.2.1 Java 离线包构建脚本
+KubeFoundry v0.3.0 Java 离线包构建脚本
 
 用法:
   KF_TARGET_ARCH=x86_64 bash package.sh
   KF_TARGET_ARCH=aarch64 bash package.sh
 
 输出:
-  dist/kubefoundry-web-v0.2.1-{x86_64|aarch64}.tar.gz
+  dist/kubefoundry-web-v0.3.0-{x86_64|aarch64}.tar.gz
 
 说明:
   使用 JDK 17 构建；交叉构建时必须通过 KF_TARGET_JDK_HOME 提供真实目标架构 JDK。
@@ -75,7 +75,7 @@ check_environment() {
     for name in tar sha256sum; do
         command -v "${name}" >/dev/null 2>&1 || { log_error "缺少命令: ${name}"; return 1; }
     done
-    for path in web/backend-java/pom.xml web/frontend/package.json deploy.sh scripts/steps scripts/verify/reset/verify-reset-kubernetes-node.sh scripts/build/build-jre.sh; do
+    for path in web/backend-java/pom.xml web/frontend/package.json deploy.sh scripts/steps scripts/verify/reset/verify-reset-kubernetes-node.sh scripts/steps/reset/reset-kubemate-components.sh scripts/build/build-jre.sh tools/helm-amd tools/helm-arm; do
         [ -e "${PROJECT_ROOT}/${path}" ] || { log_error "项目文件缺失: ${path}"; return 1; }
     done
 }
@@ -85,12 +85,12 @@ build_application() {
     mkdir -p "${release_dir}/app" "${release_dir}/web"
     if [ "${TEST_MODE}" = "1" ]; then
         printf 'test jar\n' > "${release_dir}/app/kubefoundry.jar"
-        printf '<!doctype html><html><body>KubeFoundry v0.2.1</body></html>\n' > "${release_dir}/web/index.html"
+        printf '<!doctype html><html><body>KubeFoundry v0.3.0</body></html>\n' > "${release_dir}/web/index.html"
         return
     fi
 
     if [ "${USE_PREBUILT}" = "1" ]; then
-        local jar="${PROJECT_ROOT}/web/backend-java/target/kubefoundry-backend-0.2.1.jar"
+        local jar="${PROJECT_ROOT}/web/backend-java/target/kubefoundry-backend-0.3.0.jar"
         local web="${PROJECT_ROOT}/web/frontend/dist"
         [ -f "${jar}" ] || { log_error "预构建 JAR 不存在: ${jar}"; return 1; }
         [ -f "${web}/index.html" ] || { log_error "预构建前端不存在: ${web}/index.html"; return 1; }
@@ -140,9 +140,21 @@ build_application() {
         tar -xf -
     )
     (cd "${frontend_build_dir}" && npm "${npm_ci_args[@]}" && npm test && npm run build)
-    cp "${backend_build_dir}/target/kubefoundry-backend-0.2.1.jar" \
+    cp "${backend_build_dir}/target/kubefoundry-backend-0.3.0.jar" \
         "${release_dir}/app/kubefoundry.jar"
     cp -a "${frontend_build_dir}/dist/." "${release_dir}/web/"
+}
+
+copy_helm_media() {
+    local release_dir="$1"
+    mkdir -p "${release_dir}/tools"
+    if [ "${TEST_MODE}" = "1" ]; then
+        printf '%s\n' 'test helm amd64' > "${release_dir}/tools/helm-amd"
+        printf '%s\n' 'test helm arm64' > "${release_dir}/tools/helm-arm"
+    else
+        cp "${PROJECT_ROOT}/tools/helm-amd" "${PROJECT_ROOT}/tools/helm-arm" "${release_dir}/tools/"
+    fi
+    chmod 0755 "${release_dir}/tools/helm-amd" "${release_dir}/tools/helm-arm"
 }
 
 build_runtime() {
@@ -166,6 +178,7 @@ create_archive() {
 
     build_application "${release_dir}"
     build_runtime "${release_dir}"
+    copy_helm_media "${release_dir}"
     cp -a "${PROJECT_ROOT}/scripts/steps" "${release_dir}/scripts/steps"
     cp -a "${PROJECT_ROOT}/scripts/verify" "${release_dir}/scripts/verify"
     cp "${PROJECT_ROOT}/deploy.sh" "${release_dir}/deploy.sh"
@@ -187,7 +200,7 @@ main() {
     check_environment
     local version
     version="$(read_version)"
-    [ "${version}" = "0.2.1" ] || { log_error "后端版本必须为 0.2.1，实际为 ${version:-未知}"; return 1; }
+    [ "${version}" = "0.3.0" ] || { log_error "后端版本必须为 0.3.0，实际为 ${version:-未知}"; return 1; }
     STAGING_ROOT="$(mktemp -d)"
     create_archive "${version}"
 }

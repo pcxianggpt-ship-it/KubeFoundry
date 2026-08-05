@@ -11,6 +11,6 @@ public class HealthController {
 
     @GetMapping("/health")
     public Map<String, String> getHealth() {
-        return Map.of("status", "ok", "version", "0.2.1");
+        return Map.of("status", "ok", "version", "0.3.0");
     }
 }

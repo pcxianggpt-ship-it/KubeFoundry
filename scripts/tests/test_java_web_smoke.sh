@@ -41,7 +41,7 @@ java_major=$(java -version 2>&1 | sed -n '1s/.*version "\([0-9][0-9]*\).*/\1/p')
 (cd "${BACKEND_DIR}" && mvn -q -DskipTests package)
 
 KF_DATA_DIR="${TEST_ROOT}/data" \
-    java -jar "${BACKEND_DIR}/target/kubefoundry-backend-0.2.1.jar" \
+    java -jar "${BACKEND_DIR}/target/kubefoundry-backend-0.3.0.jar" \
     --server.port="${API_PORT}" >"${TEST_ROOT}/backend.log" 2>&1 &
 BACKEND_PID=$!
 
@@ -57,7 +57,7 @@ ready=0
 for _ in $(seq 1 90); do
     if health=$(curl -fsS "${base_url}/api/health" 2>/dev/null); then
         case "${health}" in
-            *'"status":"ok"'*'"version":"0.2.1"'*) ready=1; break ;;
+            *'"status":"ok"'*'"version":"0.3.0"'*) ready=1; break ;;
         esac
     fi
     sleep 1
@@ -69,6 +69,20 @@ cluster_response=$(curl -fsS -X POST -H 'Content-Type: application/json' \
     --data-binary "${cluster_json}" "${base_url}/api/clusters") || fail "创建集群失败"
 cluster_id=$(printf '%s' "${cluster_response}" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
 [ -n "${cluster_id}" ] || fail "创建集群响应缺少 id"
+
+components_response=$(curl -fsS "${base_url}/api/clusters/${cluster_id}/components") ||
+    fail "读取组件配置失败"
+case "${components_response}" in
+    *'"items"'*'"storage_observability"'*) ;;
+    *) fail "组件配置响应缺少组件组" ;;
+esac
+
+plan_response=$(curl -fsS "${base_url}/api/clusters/${cluster_id}/install-plan") ||
+    fail "读取安装计划预览失败"
+case "${plan_response}" in
+    *'"items"'*'"key":"10-setup-yum-source"'*) ;;
+    *) fail "安装计划预览响应缺少基础步骤" ;;
+esac
 
 node_secret=$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24 || true)
 [ "${#node_secret}" -eq 24 ] || fail "无法生成临时节点凭据"

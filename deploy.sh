@@ -8,7 +8,7 @@ unset KF_DEPLOY_BASH_REEXEC
 
 #===============================================================================
 # 脚本名称：deploy.sh
-# 功能：部署 KubeFoundry v0.2.1 Java Web 服务
+# 功能：部署 KubeFoundry v0.3.0 Java Web 服务
 # 作者：KubeFoundry Team
 # 版本：2.0.0
 #===============================================================================
@@ -32,10 +32,10 @@ log_error() { printf '[ERROR] %s\n' "$*" | tee -a "${LOG_DIR}/deploy.log" >&2; }
 
 show_usage() {
     cat <<'EOF'
-KubeFoundry v0.2.1 Java Web 一键部署脚本
+KubeFoundry v0.3.0 Java Web 一键部署脚本
 
 用法:
-  sudo bash deploy.sh [--port PORT] kubefoundry-web-v0.2.1-<架构>.tar.gz
+  sudo bash deploy.sh [--port PORT] kubefoundry-web-v0.3.0-<架构>.tar.gz
   sudo bash deploy.sh --status|--restart|--stop|--uninstall
 
 选项:
@@ -132,7 +132,7 @@ extract_and_validate_package() {
     release_dir="$(find "${TEMP_DIR}" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
     [ -n "${release_dir}" ] || { log_error "发布包中未找到发布目录"; return 1; }
     validate_extracted_links "${release_dir}" || return 1
-    for path in runtime/bin/java runtime/.architecture app/kubefoundry.jar web/index.html scripts/steps scripts/verify/reset/verify-reset-kubernetes-node.sh deploy.sh VERSION ARCHITECTURE SHA256SUMS; do
+    for path in runtime/bin/java runtime/.architecture app/kubefoundry.jar web/index.html tools/helm-amd tools/helm-arm scripts/steps scripts/verify/reset/verify-reset-kubernetes-node.sh scripts/steps/reset/reset-kubemate-components.sh deploy.sh VERSION ARCHITECTURE SHA256SUMS; do
         [ -e "${release_dir}/${path}" ] || { log_error "发布包缺少: ${path}"; return 1; }
     done
     (cd "${release_dir}" && sha256sum -c SHA256SUMS >/dev/null) || { log_error "发布包文件校验失败"; return 1; }
@@ -148,18 +148,22 @@ extract_and_validate_package() {
 }
 
 install_release() {
-    local release_dir="$1" new_app="${DEPLOY_ROOT}/.app.new.$$"
+    local release_dir="$1" new_app="${DEPLOY_ROOT}/.app.new.$$" new_tools="${DEPLOY_ROOT}/.tools.new.$$"
     rm -rf "${new_app}"
+    rm -rf "${new_tools}"
     mkdir -p "${new_app}" "${DATA_DIR}" "${LOG_DIR}"
     chmod 0700 "${DATA_DIR}" "${LOG_DIR}"
     cp -a "${release_dir}/runtime" "${release_dir}/app" "${release_dir}/web" "${new_app}/"
     cp "${release_dir}/VERSION" "${release_dir}/ARCHITECTURE" "${new_app}/"
+    cp -a "${release_dir}/tools" "${new_tools}"
     rm -rf "${DEPLOY_ROOT}/scripts.new"
     cp -a "${release_dir}/scripts" "${DEPLOY_ROOT}/scripts.new"
     rm -rf "${DEPLOY_ROOT}/scripts"
     mv "${DEPLOY_ROOT}/scripts.new" "${DEPLOY_ROOT}/scripts"
     rm -rf "${APP_DIR}"
     mv "${new_app}" "${APP_DIR}"
+    rm -rf "${DEPLOY_ROOT}/tools"
+    mv "${new_tools}" "${DEPLOY_ROOT}/tools"
 }
 
 write_service_file() {
@@ -167,7 +171,7 @@ write_service_file() {
     [ "${TEST_MODE}" = "1" ] && service_file="${LOG_DIR}/${SERVICE_NAME}.service.test"
     cat > "${service_file}" <<EOF
 [Unit]
-Description=KubeFoundry v0.2.1 Web Wizard
+Description=KubeFoundry v0.3.0 Web Wizard
 After=network-online.target
 Wants=network-online.target
 
