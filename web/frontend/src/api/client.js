@@ -144,6 +144,10 @@ export function startInstall(clusterId) {
   });
 }
 
+export function startComponentInstall(clusterId) {
+  return request(`/api/clusters/${clusterId}/components/install`, { method: 'POST' });
+}
+
 export function listJobs(clusterId = null) {
   const query = clusterId ? `?cluster_id=${clusterId}` : '';
   return request(`/api/jobs${query}`);

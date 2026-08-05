@@ -2,6 +2,7 @@ package io.kubefoundry.api;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.kubefoundry.installer.ClusterSettingsService;
+import io.kubefoundry.installer.ComponentInstallService;
 import io.kubefoundry.installer.InstallService;
 import io.kubefoundry.installer.InstallStep;
 import io.kubefoundry.installer.PrecheckService;
@@ -24,14 +25,17 @@ public class InstallerController {
     private final PrecheckService prechecks;
     private final InstallService installs;
     private final ClusterSettingsService settings;
+    private final ComponentInstallService componentInstalls;
 
     public InstallerController(
             PrecheckService prechecks,
             InstallService installs,
-            ClusterSettingsService settings) {
+            ClusterSettingsService settings,
+            ComponentInstallService componentInstalls) {
         this.prechecks = prechecks;
         this.installs = installs;
         this.settings = settings;
+        this.componentInstalls = componentInstalls;
     }
 
     @GetMapping("/settings")
@@ -76,6 +80,12 @@ public class InstallerController {
         }
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(new JobAccepted(installs.start(clusterId), "pending"));
+    }
+
+    @PostMapping("/clusters/{clusterId}/components/install")
+    public ResponseEntity<JobAccepted> installComponents(@PathVariable long clusterId) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(new JobAccepted(componentInstalls.start(clusterId), "pending"));
     }
 
     public record Items<T>(List<T> items) {

@@ -17,6 +17,7 @@ import {
   getPrecheckResults,
   listJobs,
   listNodes,
+  startComponentInstall,
   startInstall,
   startPrecheck
 } from '../api/client';
@@ -30,6 +31,7 @@ vi.mock('../api/client', () => ({
   getPrecheckResults: vi.fn(),
   listJobs: vi.fn(),
   listNodes: vi.fn(),
+  startComponentInstall: vi.fn(),
   startInstall: vi.fn(),
   startPrecheck: vi.fn()
 }));
@@ -106,6 +108,19 @@ describe('安装流程', () => {
     await flushPromises();
 
     expect(router.currentRoute.value.fullPath).toBe('/cluster-install/42/reset');
+  });
+
+  it('存量集群可从安装概览启动组件补装任务', async () => {
+    getCluster.mockResolvedValue({ id: 42, name: '生产集群', status: 'installed', configuration_locked: true });
+    listJobs.mockResolvedValue({ items: [] });
+    startComponentInstall.mockResolvedValue({ job_id: 123, status: 'pending' });
+    const { router, wrapper } = await mountAt(InstallOverviewView, '/cluster-install/42/overview');
+
+    await wrapper.get('[data-testid="start-component-install"]').trigger('click');
+    await flushPromises();
+
+    expect(startComponentInstall).toHaveBeenCalledWith('42');
+    expect(router.currentRoute.value.fullPath).toBe('/jobs/123/execution');
   });
 
   it('确认页展示目标信息，只有点击开始安装才创建任务并跳转', async () => {

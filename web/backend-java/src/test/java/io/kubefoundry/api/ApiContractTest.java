@@ -11,6 +11,7 @@ import io.kubefoundry.job.JobStep;
 import io.kubefoundry.job.JobStepNode;
 import io.kubefoundry.job.JobStepNodeRepository;
 import io.kubefoundry.job.JobStepRepository;
+import io.kubefoundry.installer.ComponentInstallService;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
@@ -30,6 +32,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest(properties = {
         "spring.datasource.url=jdbc:h2:mem:api-contract;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
@@ -46,6 +49,7 @@ class ApiContractTest {
     @Autowired JobRepository jobs;
     @Autowired JobStepRepository steps;
     @Autowired JobStepNodeRepository stepNodes;
+    @MockBean ComponentInstallService componentInstalls;
 
     private final Path dataDirectory = Path.of("target/api-contract-data").toAbsolutePath();
     private Cluster cluster;
@@ -66,6 +70,7 @@ class ApiContractTest {
         cluster.update("API contract", null, "1.30.14", "10.244.0.0/16", "10.96.0.0/16",
                 "registry", "10.0.0.9", 5000, null);
         cluster = clusters.saveAndFlush(cluster);
+        when(componentInstalls.start(cluster.getId())).thenReturn(55L);
 
         Node node = new Node(cluster);
         node.update("cp-1", "10.0.0.1", "", null, "root", 22);
@@ -132,6 +137,9 @@ class ApiContractTest {
         mvc.perform(post("/api/clusters/{id}/install", cluster.getId())
                         .contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isBadRequest());
+        mvc.perform(post("/api/clusters/{id}/components/install", cluster.getId()))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.job_id").value(55));
     }
 
     @Test

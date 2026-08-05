@@ -56,7 +56,7 @@ const progress = computed(() => stages.value.length ? Math.round(completedStages
 const statusTone = computed(() => job.value.status === 'success' ? 'success' : terminal.value ? 'error' : 'running');
 const statusIcon = computed(() => job.value.status === 'success' ? CircleCheckFilled : terminal.value ? WarningFilled : Clock);
 const clusterRoute = computed(() => ({ name: 'install-overview', params: { clusterId: String(job.value.cluster_id) } }));
-const jobTypeLabel = computed(() => ({ install: '安装', reset: '重置', precheck: '预检查' }[job.value.job_type] || '集群'));
+const jobTypeLabel = computed(() => ({ install: '安装', component_install: '组件补装', reset: '重置', precheck: '预检查' }[job.value.job_type] || '集群'));
 const selectedStage = computed(() => stages.value.find((stage) => stage.id === selectedStageId.value));
 const visibleNodes = computed(() => selectedStage.value?.nodes || stages.value.flatMap((stage) => stage.nodes || []));
 const nodeOptions = computed(() => {
