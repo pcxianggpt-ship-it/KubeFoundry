@@ -405,13 +405,13 @@
 
 ### 实施步骤
 
-- [ ] 将 Kubemate YAML 作为步骤资源分发到任务目录。
-- [ ] 从 `/etc/kubernetes/admin.conf` 创建或更新所需 ConfigMap。
-- [ ] 在任务副本中渲染主控制节点地址，不修改管理端介质。
-- [ ] 用声明式 apply 和 readiness timeout 替换固定 sleep 与重复 apply。
-- [ ] 检查 NodePort 冲突。
-- [ ] 验证 Deployment/Pod Ready、Service 和访问端口。
-- [ ] 增加重复执行和 API 暂时不可用的失败测试。
+- [x] 将 Kubemate YAML 作为步骤资源分发到任务目录。
+- [x] 从 `/etc/kubernetes/admin.conf` 创建或更新所需 ConfigMap。
+- [x] 在任务副本中渲染主控制节点地址，不修改管理端介质。
+- [x] 用声明式 apply 和 readiness timeout 替换固定 sleep 与重复 apply。
+- [x] 检查 NodePort 冲突。
+- [x] 验证 Deployment/Pod Ready、Service 和访问端口。
+- [x] 增加重复执行和 API 暂时不可用的失败测试。
 
 ### 验收
 

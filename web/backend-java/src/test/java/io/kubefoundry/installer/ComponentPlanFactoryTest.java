@@ -56,6 +56,18 @@ class ComponentPlanFactoryTest {
         assertThat(combined.steps().get(14).key()).isEqualTo("29-install-helm");
     }
 
+    @Test
+    void sendsKubemateManifestToTheJobResourceDirectory() {
+        ComponentPlanFactory factory = new ComponentPlanFactory(temporaryDirectory);
+
+        InstallStep step = factory.create(snapshot(true, List.of(group("kubemate", true))))
+                .require("31-install-kubemate-ui");
+
+        assertThat(step.resources()).hasSize(1);
+        assertThat(step.resources().get(0).remotePath())
+                .endsWith("/resources/kubemate/31-install-kubemate-ui");
+    }
+
     private static InstallationSnapshotPayload snapshot(
             boolean enabled, List<InstallationSnapshotPayload.ComponentGroup> groups) {
         Cluster cluster = new Cluster("component-plan");

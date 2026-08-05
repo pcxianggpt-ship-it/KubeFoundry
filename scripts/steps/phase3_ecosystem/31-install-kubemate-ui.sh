@@ -2,34 +2,55 @@
 
 #===============================================================================
 # 脚本名称：31-install-kubemate-ui.sh
-# 功能：安装kubemate管理界面（本地执行）
-# 执行机器：管理节点
-# 作者：KubeFoundry Team
-# 版本：1.0.0
+# 功能：在主控节点声明式安装 Kubemate UI
+# 版本：0.3.0
 #===============================================================================
 
-log_info "开始安装kubemate管理界面..."
+if [ -f "./phase3.sh" ]; then source "./phase3.sh"; else source "${PROJECT_ROOT}/scripts/lib/phase3.sh"; fi
+phase3_init
+: "${KF_PRIMARY_CONTROL_IP:?缺少主控制节点地址}"
 
-kubectl create cm kubemate-etc -n kubemate-system --from-file=k8s_config.yml=/root/.kube/config
+kubemate_namespace="${KF_KUBEMATE_NAMESPACE:-kubemate-system}"
+kubemate_nodeport="${KF_KUBEMATE_NODEPORT:-30088}"
+manifest=$(phase3_resource_path "31-install-kubemate-ui")
+[ -f "${manifest}" ] || {
+    log_error "Kubemate YAML 不存在: ${manifest}"
+    exit 1
+}
+[ -f "${KUBECONFIG}" ] || {
+    log_error "Kubernetes 管理配置不存在: ${KUBECONFIG}"
+    exit 1
+}
 
-install_media=$(config_resolve '.paths.install_media')
-KUBEMATE_FILE="${install_media}/03.setup_file/v1.30.14/kubemate.yml"
+phase3_ensure_namespace "${kubemate_namespace}"
+kubectl create configmap kubemate-etc --namespace "${kubemate_namespace}" \
+    --from-file=k8s_config.yml="${KUBECONFIG}" --dry-run=client -o yaml | kubectl apply -f -
 
-# 1. 检查配置文件
-if [ ! -f "$KUBEMATE_FILE" ]; then
-    log_error "kubemate配置文件不存在: ${KUBEMATE_FILE}"
+# 只在任务目录生成副本，保留原始离线介质不变。
+rendered=$(mktemp)
+trap 'rm -f -- "${rendered}"' EXIT
+escaped_ip=$(printf '%s' "${KF_PRIMARY_CONTROL_IP}" | sed 's/[&|\\]/\\&/g')
+sed -e "s|__KF_PRIMARY_CONTROL_IP__|${escaped_ip}|g" \
+    -e "s|\${KF_PRIMARY_CONTROL_IP}|${escaped_ip}|g" "${manifest}" > "${rendered}"
+
+nodeports=$(kubectl get service --all-namespaces -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{" "}{.spec.ports[*].nodePort}{"\n"}{end}')
+if printf '%s\n' "${nodeports}" | awk -v port="${kubemate_nodeport}" \
+    '$3 == port && !($1 == "kubemate-system" && $2 == "kubemate-ui") { found = 1 } END { exit found }'; then
+    :
+else
+    log_error "NodePort 已被其他 Service 占用: ${kubemate_nodeport}"
     exit 1
 fi
 
-# 2. 修改hostAliases中的IP为主控节点IP（sed精确替换，不影响其他资源）
-primary_cp=$(get_all_control_plane_ips | head -1)
-sed -i "s/- ip: .*/- ip: ${primary_cp}/" "$KUBEMATE_FILE"
-log_info "已将hostAliases IP修改为: ${primary_cp}"
-
-# 3. 安装kubemate（执行两遍，避免CRD未就绪错误）
-kubectl apply -f "$KUBEMATE_FILE"
-sleep 5
-kubectl apply -f "$KUBEMATE_FILE"
-
-log_success "kubemate管理界面安装完成"
-log_info "访问地址: http://${primary_cp}:30088"
+kubectl apply --server-side --field-manager=kubefoundry -f "${rendered}"
+deployments=$(kubectl get deployment --namespace "${kubemate_namespace}" -o name)
+if [ -n "${deployments}" ]; then
+    while IFS= read -r deployment; do
+        [ -z "${deployment}" ] || phase3_wait_rollout "${deployment%%/*}" "${deployment#*/}" "${kubemate_namespace}"
+    done <<< "${deployments}"
+fi
+kubectl get service --namespace "${kubemate_namespace}" -o name | grep -q . || {
+    log_error "Kubemate Service 未创建"
+    exit 1
+}
+log_success "Kubemate UI 已幂等安装并通过就绪检查"
