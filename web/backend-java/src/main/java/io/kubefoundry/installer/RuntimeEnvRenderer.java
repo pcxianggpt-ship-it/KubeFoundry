@@ -37,6 +37,8 @@ public class RuntimeEnvRenderer {
         values.put("KF_K8S_VERSION", cluster.getKubernetesVersion());
         values.put("KF_KUBECONFIG", "/etc/kubernetes/admin.conf");
         values.put("KF_KUBELET_ROOT", settings.kubeletRoot());
+        values.put("KF_RESET_COMPONENT_GROUPS", settings.envValue("reset_component_groups"));
+        values.put("KF_RESET_HELM_RELEASE_CHECKSUMS", settings.envValue("reset_helm_release_checksums"));
         values.put("KF_NODE_HOSTNAME", node.getHostname());
         values.put("KF_NODE_IP", node.getIp());
         values.put("KF_NODE_ROLE", node.getRole());

@@ -1,6 +1,7 @@
 package io.kubefoundry.installer;
 
 import io.kubefoundry.cluster.Cluster;
+import io.kubefoundry.cluster.ClusterComponentStateRepository;
 import io.kubefoundry.cluster.ClusterRepository;
 import io.kubefoundry.cluster.NodeRepository;
 import io.kubefoundry.job.JobService;
@@ -23,7 +24,8 @@ class ClusterResetServiceTest {
         ClusterResetService service = new ClusterResetService(
                 clusters, mock(NodeRepository.class), mock(JobService.class),
                 mock(RemoteStepRunner.class), mock(InstallerAdmission.class),
-                mock(InstallationSnapshotService.class), mock(ResetPlanFactory.class));
+                mock(InstallationSnapshotService.class), mock(ResetPlanFactory.class),
+                mock(ClusterComponentStateRepository.class));
 
         assertThatThrownBy(() -> service.start(1L, false, "RESET production"))
                 .isInstanceOf(ResetConfirmationMismatchException.class);

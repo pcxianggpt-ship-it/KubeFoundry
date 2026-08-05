@@ -12,7 +12,7 @@ resource_dir=$(phase3_resource_path .)
 find "${resource_dir}" -type f \( -name '*.yaml' -o -name '*.yml' \) -print0 \
     | sort -z \
     | while IFS= read -r -d '' manifest; do
-        kubectl apply --server-side --field-manager=kubefoundry -f "${manifest}"
+        phase3_apply_managed "${manifest}"
     done
 phase3_wait_rollout deployment metrics-server kube-system
 kubectl top nodes --no-headers >/dev/null

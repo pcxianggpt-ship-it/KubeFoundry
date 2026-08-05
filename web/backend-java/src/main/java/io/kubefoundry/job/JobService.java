@@ -252,6 +252,7 @@ public class JobService {
                         node.markTestStale(false);
                         nodes.save(node);
                     }
+                    componentStates.resetCluster(cluster.getId());
                     cluster.resetInstallation();
                 } else {
                     cluster.markResetFailed();

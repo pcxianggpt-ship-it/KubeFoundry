@@ -38,8 +38,20 @@ phase3_helm_upgrade() {
     local namespace="$2"
     local chart="$3"
     shift 3
+    local labels='app.kubernetes.io/managed-by=kubefoundry'
+    if [[ "${KF_COMPONENT_MEDIA_SHA256:-}" =~ ^[0-9a-f]{64}$ ]]; then
+        labels+=",kubefoundry.io/media-sha256=${KF_COMPONENT_MEDIA_SHA256}"
+    fi
     helm upgrade --install "${release}" "${chart}" --namespace "${namespace}" \
-        --create-namespace --wait --timeout "${KF_HELM_TIMEOUT:-10m}" "$@"
+        --create-namespace --wait --timeout "${KF_HELM_TIMEOUT:-10m}" --labels "${labels}" "$@"
+    helm get manifest "${release}" --namespace "${namespace}" \
+        | kubectl label --overwrite -f - app.kubernetes.io/managed-by=kubefoundry
+}
+
+phase3_apply_managed() {
+    local manifest="$1"
+    kubectl apply --server-side --field-manager=kubefoundry -f "${manifest}"
+    kubectl label --overwrite -f "${manifest}" app.kubernetes.io/managed-by=kubefoundry
 }
 
 phase3_ensure_namespace() {
@@ -75,4 +87,4 @@ phase3_log_safe() {
 }
 
 export -f phase3_init phase3_resource_path phase3_helm_upgrade phase3_ensure_namespace \
-    phase3_apply_configmap phase3_wait_rollout phase3_redact phase3_log_safe
+    phase3_apply_configmap phase3_apply_managed phase3_wait_rollout phase3_redact phase3_log_safe

@@ -16,7 +16,7 @@ chart_dir=$(phase3_resource_path .)
 
 values_file="${chart_dir}/openebs-values.yaml"
 storage_class_file="${chart_dir}/openebssc.yaml"
-[ -f "${storage_class_file}" ] && kubectl apply --server-side --field-manager=kubefoundry -f "${storage_class_file}"
+[ -f "${storage_class_file}" ] && phase3_apply_managed "${storage_class_file}"
 if [ -f "${values_file}" ]; then
     phase3_helm_upgrade openebs kubemate-system "${chart_dir}" -f "${values_file}"
 else

@@ -73,6 +73,103 @@ has_role() {
     [[ "$roles" == *",${role},"* ]]
 }
 
+managed_block_exists() {
+    local file="$1"
+    local begin_marker="$2"
+    [ -f "${file}" ] && [ ! -L "${file}" ] && grep -qF -- "${begin_marker}" "${file}"
+}
+
+validate_managed_block() {
+    local file="$1"
+    local begin_marker="$2"
+    local end_marker="$3"
+
+    awk -v begin="${begin_marker}" -v end="${end_marker}" '
+        $0 == begin {
+            if (inside || ++blocks > 1) exit 21
+            inside = 1
+            next
+        }
+        $0 == end {
+            if (!inside) exit 22
+            inside = 0
+        }
+        END { if (inside || blocks != 1) exit 23 }
+    ' "${file}"
+}
+
+remove_managed_block() {
+    local file="$1"
+    local begin_marker="$2"
+    local end_marker="$3"
+    local temporary
+
+    [ -e "${file}" ] || return 0
+    [ -f "${file}" ] && [ ! -L "${file}" ] || fail "拒绝修改非普通文件或符号链接: ${file}"
+    managed_block_exists "${file}" "${begin_marker}" || return 0
+    temporary=$(mktemp "${file}.kubefoundry.XXXXXX") || fail "无法创建系统配置临时文件: ${file}"
+    if ! validate_managed_block "${file}" "${begin_marker}" "${end_marker}"; then
+        rm -f -- "${temporary}"
+        fail "受管标记块不完整或重复，拒绝修改系统配置: ${file}"
+    fi
+    awk -v begin="${begin_marker}" -v end="${end_marker}" '
+        $0 == begin { inside = 1; next }
+        $0 == end { inside = 0; next }
+        !inside { print }
+    ' "${file}" > "${temporary}"
+    if ! chmod --reference="${file}" "${temporary}"; then
+        rm -f -- "${temporary}"
+        fail "无法保留系统配置权限: ${file}"
+    fi
+    if ! chown --reference="${file}" "${temporary}"; then
+        rm -f -- "${temporary}"
+        fail "无法保留系统配置属主: ${file}"
+    fi
+    if ! mv -f -- "${temporary}" "${file}"; then
+        rm -f -- "${temporary}"
+        fail "无法原子更新系统配置: ${file}"
+    fi
+}
+
+managed_nfs_mount_points() {
+    local fstab_file="$1"
+    awk '
+        $0 == "# >>>KubeFoundry NFS fstab>>>" { inside = 1; next }
+        $0 == "# <<<KubeFoundry NFS fstab<<<" { inside = 0; next }
+        inside && $0 !~ /^[[:space:]]*#/ && NF >= 2 { print $2 }
+    ' "${fstab_file}"
+}
+
+cleanup_managed_nfs() {
+    local fstab_file="/etc/fstab"
+    local exports_file="/etc/exports"
+    local mount_point
+
+    if managed_block_exists "${fstab_file}" '# >>>KubeFoundry NFS fstab>>>'; then
+        validate_managed_block "${fstab_file}" '# >>>KubeFoundry NFS fstab>>>' '# <<<KubeFoundry NFS fstab<<<' \
+            || fail "受管标记块不完整或重复，拒绝卸载 NFS 挂载"
+        while IFS= read -r mount_point; do
+            [[ "${mount_point}" == /* && "${mount_point}" != / && "${mount_point}" != *$'\n'* \
+                && "${mount_point}" != *$'\r'* && "${mount_point}" != *".."* ]] \
+                || fail "受管 NFS 挂载点不安全: ${mount_point}"
+            if mountpoint -q -- "${mount_point}"; then
+                log_info "卸载受管 NFS 挂载点: ${mount_point}"
+                umount -- "${mount_point}" || umount -l -- "${mount_point}" \
+                    || fail "无法卸载受管 NFS 挂载点: ${mount_point}"
+            fi
+        done < <(managed_nfs_mount_points "${fstab_file}")
+        remove_managed_block "${fstab_file}" '# >>>KubeFoundry NFS fstab>>>' '# <<<KubeFoundry NFS fstab<<<'
+    fi
+
+    if managed_block_exists "${exports_file}" '# >>>KubeFoundry NFS exports>>>'; then
+        validate_managed_block "${exports_file}" '# >>>KubeFoundry NFS exports>>>' '# <<<KubeFoundry NFS exports<<<' \
+            || fail "受管标记块不完整或重复，拒绝刷新 NFS exports"
+        remove_managed_block "${exports_file}" '# >>>KubeFoundry NFS exports>>>' '# <<<KubeFoundry NFS exports<<<'
+        command -v exportfs >/dev/null 2>&1 || fail "缺少 exportfs，无法安全刷新 NFS exports"
+        exportfs -ra || fail "无法刷新 NFS exports"
+    fi
+}
+
 cleanup_registry() {
     has_role registry || return 0
     local container_cmd=""
@@ -94,7 +191,8 @@ resolved_work_dir=$(readlink -f -- "${KF_K8S_HOME}" 2>/dev/null || true)
     || fail "Kubernetes 工作目录解析后发生变化，拒绝清理"
 
 log_info "开始清理 Kubernetes 节点: ${KF_NODE_HOSTNAME}"
-kubeadm reset -f || true
+cleanup_managed_nfs
+kubeadm reset -f || fail "kubeadm reset 执行失败"
 systemctl stop kubelet || true
 
 cleanup_registry

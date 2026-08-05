@@ -349,6 +349,10 @@ public class RemoteStepRunner {
                 && resources.get(0).checksum() != null) {
             values.put("KF_HELM_SHA256", resources.get(0).checksum());
         }
+        if ("kubemate_component".equals(step.phase()) && !resources.isEmpty()
+                && resources.get(0).checksum() != null) {
+            values.put("KF_COMPONENT_MEDIA_SHA256", resources.get(0).checksum());
+        }
         if ("nfs".equals(step.componentGroupKey()) && nfsTargets != null) {
             values.putAll(nfsTargets.runtimeValues(cluster));
         }

@@ -25,6 +25,8 @@ manifest=$(phase3_resource_path "31-install-kubemate-ui")
 phase3_ensure_namespace "${kubemate_namespace}"
 kubectl create configmap kubemate-etc --namespace "${kubemate_namespace}" \
     --from-file=k8s_config.yml="${KUBECONFIG}" --dry-run=client -o yaml | kubectl apply -f -
+kubectl label configmap kubemate-etc --namespace "${kubemate_namespace}" --overwrite \
+    app.kubernetes.io/managed-by=kubefoundry
 
 # 只在任务目录生成副本，保留原始离线介质不变。
 rendered=$(mktemp)
@@ -42,7 +44,7 @@ else
     exit 1
 fi
 
-kubectl apply --server-side --field-manager=kubefoundry -f "${rendered}"
+phase3_apply_managed "${rendered}"
 deployments=$(kubectl get deployment --namespace "${kubemate_namespace}" -o name)
 if [ -n "${deployments}" ]; then
     while IFS= read -r deployment; do

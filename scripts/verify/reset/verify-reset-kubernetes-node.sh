@@ -27,6 +27,14 @@ assert_absent() {
     [[ ! -e "$target" && ! -L "$target" ]] || fail "重置残留未清理: ${target}"
 }
 
+assert_no_managed_block() {
+    local file="$1"
+    local marker="$2"
+    [ ! -L "${file}" ] || fail "验证文件不能是符号链接: ${file}"
+    [ ! -f "${file}" ] || ! grep -qF -- "${marker}" "${file}" \
+        || fail "受管 NFS 配置残留未清理: ${file}"
+}
+
 has_role() {
     local role="$1"
     local roles=",${KF_NODE_ROLES:-${KF_NODE_ROLE:-}},"
@@ -61,6 +69,8 @@ assert_absent "${KF_ETCD_DATA_DIR:-}"
 assert_absent "${KF_CONTAINERD_ROOT:-}"
 assert_absent /etc/kubernetes
 assert_absent /etc/cni/net.d
+assert_no_managed_block /etc/fstab '# >>>KubeFoundry NFS fstab>>>'
+assert_no_managed_block /etc/exports '# >>>KubeFoundry NFS exports>>>'
 verify_registry
 
 log_success "Kubernetes 节点重置验证通过: ${KF_NODE_HOSTNAME}"

@@ -55,6 +55,14 @@ public class ComponentInstallationStateService {
     }
 
     @Transactional
+    public void resetCluster(long clusterId) {
+        for (ClusterComponentState state : states.findByClusterIdOrderByComponentKey(clusterId)) {
+            state.reset();
+            states.save(state);
+        }
+    }
+
+    @Transactional
     public void complete(Job job, boolean success) {
         if (!isComponentJob(job)) return;
         for (String groupKey : groupKeys(job.getId())) {

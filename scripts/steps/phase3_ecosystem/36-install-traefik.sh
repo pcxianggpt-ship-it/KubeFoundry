@@ -27,7 +27,7 @@ while IFS= read -r port; do
     fi
 done <<< "${nodeports}"
 
-kubectl apply --server-side --field-manager=kubefoundry -f "${manifest_dir}"
+phase3_apply_managed "${manifest_dir}"
 deployments=$(kubectl get deployment --all-namespaces --no-headers 2>/dev/null \
     | awk '$2 ~ /^traefik($|-)/ { print $1 "/" $2 }')
 while IFS= read -r target; do

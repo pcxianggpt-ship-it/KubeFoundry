@@ -44,6 +44,10 @@ public record RuntimeSettings(
         return env.getOrDefault("etcd_data_dir", "");
     }
 
+    public String envValue(String key) {
+        return env.getOrDefault(key, "");
+    }
+
     public boolean dualStackEnabled() {
         Object value = advanced.get("enable_ipv6_dual_stack");
         if (value instanceof Boolean bool) return bool;

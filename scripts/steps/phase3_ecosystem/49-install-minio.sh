@@ -14,7 +14,7 @@ operator_manifest="${resource_dir}/minio-operator.yaml"
     log_error "MinIO Operator 清单不存在: ${operator_manifest}"
     exit 1
 }
-kubectl apply --server-side --field-manager=kubefoundry -f "${operator_manifest}"
+phase3_apply_managed "${operator_manifest}"
 deployments=$(kubectl get deployment --namespace kubemate-system --no-headers 2>/dev/null \
     | awk '$1 ~ /minio/ { print $1 }')
 while IFS= read -r name; do
@@ -22,7 +22,7 @@ while IFS= read -r name; do
 done <<< "${deployments}"
 tenant_manifest="${resource_dir}/minio-tenant.yaml"
 if [ -f "${tenant_manifest}" ]; then
-    kubectl apply --server-side --field-manager=kubefoundry -f "${tenant_manifest}"
+    phase3_apply_managed "${tenant_manifest}"
 fi
 kubectl get pods --namespace kubemate-system --no-headers 2>/dev/null | grep -q minio || {
     log_error "MinIO 工作负载未就绪"

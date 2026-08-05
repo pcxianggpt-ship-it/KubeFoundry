@@ -21,6 +21,8 @@ chart_dir="${resource_dir}"
 }
 kubectl create configmap alloy --namespace kubemate-system --from-file=config.alloy="${config_file}" \
     --dry-run=client -o yaml | kubectl apply --server-side --field-manager=kubefoundry -f -
+kubectl label configmap alloy --namespace kubemate-system --overwrite \
+    app.kubernetes.io/managed-by=kubefoundry
 values_file="${chart_dir}/alloy-values.yaml"
 if [ -f "${values_file}" ]; then
     phase3_helm_upgrade alloy kubemate-system "${chart_dir}" -f "${values_file}"

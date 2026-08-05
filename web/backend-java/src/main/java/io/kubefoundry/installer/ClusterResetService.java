@@ -1,6 +1,7 @@
 package io.kubefoundry.installer;
 
 import io.kubefoundry.cluster.Cluster;
+import io.kubefoundry.cluster.ClusterComponentStateRepository;
 import io.kubefoundry.cluster.ClusterRepository;
 import io.kubefoundry.cluster.ClusterService.ResourceNotFoundException;
 import io.kubefoundry.cluster.Node;
@@ -22,10 +23,12 @@ public class ClusterResetService {
     private final InstallerAdmission admission;
     private final InstallationSnapshotService snapshots;
     private final ResetPlanFactory plans;
+    private final ClusterComponentStateRepository componentStates;
 
     public ClusterResetService(ClusterRepository clusters, NodeRepository nodes, JobService jobs,
             RemoteStepRunner runner, InstallerAdmission admission,
-            InstallationSnapshotService snapshots, ResetPlanFactory plans) {
+            InstallationSnapshotService snapshots, ResetPlanFactory plans,
+            ClusterComponentStateRepository componentStates) {
         this.clusters = clusters;
         this.nodes = nodes;
         this.jobs = jobs;
@@ -33,6 +36,7 @@ public class ClusterResetService {
         this.admission = admission;
         this.snapshots = snapshots;
         this.plans = plans;
+        this.componentStates = componentStates;
     }
 
     public long start(long clusterId, boolean acknowledged, String confirmationPhrase) {
@@ -44,14 +48,17 @@ public class ClusterResetService {
         }
         InstallationSnapshotPayload snapshot = snapshots.latestInstallPayload(clusterId);
         List<SnapshotTarget> targets = resolveSnapshotTargets(clusterId, snapshot);
-        RuntimeSettings runtimeSettings = plans.runtimeSettings(snapshot);
+        Set<String> componentGroups = ResetPlanFactory.componentGroups(snapshot,
+                componentStates.findByClusterIdOrderByComponentKey(clusterId));
+        RuntimeSettings runtimeSettings = plans.runtimeSettings(snapshot, componentGroups);
+        InstallStep componentCleanup = componentGroups.isEmpty() ? null : plans.componentCleanupStep();
         InstallStep cleanup = plans.nodeCleanupStep();
         InstallStep verification = plans.nodeVerificationStep();
         return admission.submit(clusterId, () -> {
             Cluster admittedCluster = clusters.findById(clusterId)
                     .orElseThrow(() -> ResourceNotFoundException.cluster(clusterId));
             long jobId = jobs.submit(new JobService.JobDefinition(clusterId, "reset",
-                    stepDefinitions(cluster, targets, cleanup, verification, runtimeSettings)));
+                    stepDefinitions(cluster, targets, componentCleanup, cleanup, verification, runtimeSettings)));
             admittedCluster.markResetStarted();
             clusters.save(admittedCluster);
             return jobId;
@@ -70,6 +77,7 @@ public class ClusterResetService {
     private List<JobService.StepDefinition> stepDefinitions(
             Cluster cluster,
             List<SnapshotTarget> targets,
+            InstallStep componentCleanup,
             InstallStep cleanup,
             InstallStep verification,
             RuntimeSettings runtimeSettings) {
@@ -88,6 +96,14 @@ public class ClusterResetService {
                         && !target.roles().contains("control_plane")).toList());
         List<String> names = List.of("重置工作节点", "重置其他控制节点", "重置主控制节点", "清理 Registry 节点");
         List<JobService.StepDefinition> definitions = new java.util.ArrayList<>();
+        if (componentCleanup != null) {
+            if (primary == null) {
+                throw new IllegalArgumentException("安装快照没有主控制节点，拒绝清理 Kubemate 组件");
+            }
+            definitions.add(new JobService.StepDefinition("清理 Kubemate 受管组件", 1, 1, true,
+                    List.of(JobService.NodeOperation.withOutcome(primary.node().getId(), jobId -> runner.run(
+                            jobId, cluster, allTargets, primary.node(), componentCleanup, runtimeSettings)))));
+        }
         for (int index = 0; index < groups.size(); index++) {
             List<JobService.NodeOperation> operations = groups.get(index).stream().map(target ->
                     JobService.NodeOperation.withOutcome(target.node().getId(), jobId -> runner.run(

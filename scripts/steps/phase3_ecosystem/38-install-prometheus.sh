@@ -19,7 +19,7 @@ find "${rendered}" -type f \( -name '*.yaml' -o -name '*.yml' \) -exec sed -i "s
 find "${rendered}" -type f \( -name '*.yaml' -o -name '*.yml' \) -print0 \
     | sort -z \
     | while IFS= read -r -d '' manifest; do
-        kubectl apply --server-side --field-manager=kubefoundry -f "${manifest}"
+        phase3_apply_managed "${manifest}"
     done
 kubectl wait --for=condition=Established crd --all --timeout "${KF_CRD_TIMEOUT:-10m}"
 deployments=$(kubectl get deployment --namespace "${namespace}" --no-headers 2>/dev/null | awk '{print $1}')

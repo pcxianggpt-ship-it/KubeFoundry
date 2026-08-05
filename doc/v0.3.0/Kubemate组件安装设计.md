@@ -448,6 +448,7 @@ NFS Provisioner -> Worker 挂载 -> 受管 exports 行
 清理必须遵守：
 
 - 只删除带 KubeFoundry 标记或明确记录在快照中的资源。
+- Helm release 还必须同时具备 `app.kubernetes.io/managed-by=kubefoundry` 和与安装快照一致的 `kubefoundry.io/media-sha256` 标签；任一条件不满足时跳过卸载。
 - NFS `/etc/fstab` 和 `/etc/exports` 只删除带受管注释的行，不覆盖用户其他配置。
 - 外部 NFS 模式不修改外部服务器。
 - 组件清理失败时重置任务失败并保持配置锁，不能继续宣称集群已清理。
