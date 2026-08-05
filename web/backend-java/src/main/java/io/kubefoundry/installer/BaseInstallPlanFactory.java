@@ -16,16 +16,24 @@ import org.springframework.stereotype.Component;
 public class BaseInstallPlanFactory {
 
     private final Path projectRoot;
+    private final NfsTargetResolver nfsTargets;
 
     public BaseInstallPlanFactory(Path projectRoot) {
-        this.projectRoot = projectRoot.toAbsolutePath().normalize();
+        this(projectRoot, null);
     }
 
     @Autowired
-    public BaseInstallPlanFactory(@Value("${kubefoundry.project-dir:}") String configuredProjectRoot) {
+    public BaseInstallPlanFactory(
+            @Value("${kubefoundry.project-dir:}") String configuredProjectRoot,
+            NfsTargetResolver nfsTargets) {
         this(configuredProjectRoot == null || configuredProjectRoot.isBlank()
                 ? discoverProjectRoot(Path.of("").toAbsolutePath())
-                : Path.of(configuredProjectRoot));
+                : Path.of(configuredProjectRoot), nfsTargets);
+    }
+
+    private BaseInstallPlanFactory(Path projectRoot, NfsTargetResolver nfsTargets) {
+        this.projectRoot = projectRoot.toAbsolutePath().normalize();
+        this.nfsTargets = nfsTargets;
     }
 
     public InstallPlan create() {
@@ -111,6 +119,10 @@ public class BaseInstallPlanFactory {
 
     public List<Node> resolveTargets(InstallStep step, Cluster cluster, List<Node> configuredNodes) {
         List<Node> nodes = InstallationNodes.normalize(configuredNodes);
+        if (nfsTargets != null && "nfs_server".equals(step.targetScope())) {
+            List<Node> resolved = nfsTargets.resolve(step, cluster, nodes);
+            return resolved == null ? List.of() : resolved;
+        }
         List<Node> controls = filter(nodes, node -> hasRole(node, "control_plane"));
         Node primary = PrimaryControlPlaneSelector.select(nodes);
         return switch (step.targetScope()) {

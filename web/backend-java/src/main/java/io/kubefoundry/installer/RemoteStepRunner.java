@@ -34,14 +34,17 @@ public class RemoteStepRunner {
     private final RuntimeEnvRenderer runtimeRenderer;
     private final Path dataDirectory;
     private final ClusterHealthRetryPolicy clusterHealthRetryPolicy;
+    private final NfsTargetResolver nfsTargets;
 
     @Autowired
     public RemoteStepRunner(
             SshService ssh,
             RemoteSessionProvider sessions,
             RuntimeEnvRenderer runtimeRenderer,
-            @Value("${kubefoundry.data-dir:data}") String dataDirectory) {
-        this(ssh, sessions, runtimeRenderer, Path.of(dataDirectory));
+            @Value("${kubefoundry.data-dir:data}") String dataDirectory,
+            NfsTargetResolver nfsTargets) {
+        this(ssh, sessions, runtimeRenderer, Path.of(dataDirectory),
+                ClusterHealthRetryPolicy.defaults(), nfsTargets);
     }
 
     public RemoteStepRunner(
@@ -58,12 +61,23 @@ public class RemoteStepRunner {
             RuntimeEnvRenderer runtimeRenderer,
             Path dataDirectory,
             ClusterHealthRetryPolicy clusterHealthRetryPolicy) {
+        this(ssh, sessions, runtimeRenderer, dataDirectory, clusterHealthRetryPolicy, null);
+    }
+
+    private RemoteStepRunner(
+            SshService ssh,
+            RemoteSessionProvider sessions,
+            RuntimeEnvRenderer runtimeRenderer,
+            Path dataDirectory,
+            ClusterHealthRetryPolicy clusterHealthRetryPolicy,
+            NfsTargetResolver nfsTargets) {
         this.ssh = ssh;
         this.sessions = sessions;
         this.runtimeRenderer = runtimeRenderer;
         this.dataDirectory = dataDirectory.toAbsolutePath().normalize();
         this.clusterHealthRetryPolicy = clusterHealthRetryPolicy == null
                 ? ClusterHealthRetryPolicy.defaults() : clusterHealthRetryPolicy;
+        this.nfsTargets = nfsTargets;
     }
 
     public JobService.NodeOutcome run(
@@ -113,7 +127,7 @@ public class RemoteStepRunner {
             Path scriptFile = workDirectory.resolve("step.sh");
             Path phase3Library = workDirectory.resolve("phase3.sh");
             Files.writeString(runtimeFile, runtimeRenderer.render(cluster, normalizedNodes, node, settings,
-                    runtimeEnvironment(jobId, step, resources.files())),
+                    runtimeEnvironment(jobId, cluster, step, resources.files())),
                     StandardCharsets.UTF_8);
             writeStepScript(scriptFile, cluster, normalizedNodes, step);
             writePhase3Library(phase3Library, step);
@@ -325,8 +339,8 @@ public class RemoteStepRunner {
         return new ResourceResolution(List.copyOf(resolved), null);
     }
 
-    private static Map<String, String> runtimeEnvironment(
-            long jobId, InstallStep step, List<ResolvedResource> resources) {
+    private Map<String, String> runtimeEnvironment(
+            long jobId, Cluster cluster, InstallStep step, List<ResolvedResource> resources) {
         String group = step.componentGroupKey() == null ? "shared" : step.componentGroupKey();
         Map<String, String> values = new LinkedHashMap<>();
         values.put("KF_COMPONENT_RESOURCE_DIR", "/tmp/kubefoundry/jobs/" + jobId
@@ -334,6 +348,9 @@ public class RemoteStepRunner {
         if ("29-install-helm".equals(step.key()) && !resources.isEmpty()
                 && resources.get(0).checksum() != null) {
             values.put("KF_HELM_SHA256", resources.get(0).checksum());
+        }
+        if ("nfs".equals(step.componentGroupKey()) && nfsTargets != null) {
+            values.putAll(nfsTargets.runtimeValues(cluster));
         }
         return values;
     }

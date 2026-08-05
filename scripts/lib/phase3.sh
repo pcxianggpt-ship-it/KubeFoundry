@@ -14,6 +14,7 @@ phase3_init() {
     set -o errexit -o nounset -o pipefail
     : "${KUBECONFIG:=/etc/kubernetes/admin.conf}"
     export KUBECONFIG
+    mkdir -p -- "${KF_COMPONENT_RESOURCE_DIR}"
     : "${KF_COMPONENT_RESOURCE_DIR:?缺少任务组件资源目录}"
     if [ ! -d "${KF_COMPONENT_RESOURCE_DIR}" ]; then
         log_error "任务组件资源目录不存在: ${KF_COMPONENT_RESOURCE_DIR}"
@@ -72,3 +73,6 @@ phase3_log_safe() {
         log_info "${line}"
     done
 }
+
+export -f phase3_init phase3_resource_path phase3_helm_upgrade phase3_ensure_namespace \
+    phase3_apply_configmap phase3_wait_rollout phase3_redact phase3_log_safe

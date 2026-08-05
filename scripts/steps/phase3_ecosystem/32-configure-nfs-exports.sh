@@ -2,30 +2,51 @@
 
 #===============================================================================
 # 脚本名称：32-configure-nfs-exports.sh
-# 功能：判断NFS服务器是否在集群内，如果是则远程配置其/etc/exports文件
-# 执行机器：管理节点（本地执行，通过SSH远程配置目标节点）
-# 作者：KubeFoundry Team
-# 版本：1.0.0
+# 功能：在 Java 选定的 NFS 节点维护 exports，或验证外部 NFS
+# 版本：0.3.0
 #===============================================================================
 
-log_info "检查NFS服务器是否在集群内..."
+if [ -f "./phase3.sh" ]; then source "./phase3.sh"; else source "${PROJECT_ROOT}/scripts/lib/phase3.sh"; fi
+phase3_init
+: "${KF_NFS_SERVER:?缺少 NFS 服务地址}"
+: "${KF_NFS_SHARE_PATH:?缺少 NFS 共享目录}"
+: "${KF_NFS_EXPORTS_MODE:?缺少 NFS exports 模式}"
 
-nfs_server=$(config_get '.storage.nfs_server')
-nfs_path=$(config_get '.storage.nfs_path')
+managed_marker_begin="# >>>KubeFoundry NFS exports>>>"
+managed_marker_end="# <<<KubeFoundry NFS exports<<<"
+export_entry="${KF_NFS_SHARE_PATH} *(rw,sync,no_subtree_check,no_root_squash)"
+exports_file="${KF_NFS_EXPORTS_FILE:-/etc/exports}"
 
-all_node_ips=$(get_all_node_ips)
-if echo "$all_node_ips" | grep -qF "$nfs_server"; then
-    log_info "NFS服务器(${nfs_server})在集群内，远程配置/etc/exports..."
-    export_entry="${nfs_path} *(rw,sync,no_subtree_check,no_root_squash)"
-    ssh_exec "$nfs_server" "mkdir -p ${nfs_path} && systemctl enable nfs-server --now && grep -qF '${nfs_path}' /etc/exports 2>/dev/null || (echo '${export_entry}' >> /etc/exports && exportfs -ra)"
-    if [ $? -ne 0 ]; then
-        log_error "远程配置NFS服务器/etc/exports失败"
-        return 1
+if [ "${KF_NFS_EXPORTS_MODE}" = "managed" ]; then
+    [ "${KF_NODE_IP}" = "${KF_NFS_SERVER}" ] || {
+        log_error "当前节点不是配置的 managed NFS 服务节点"
+        exit 1
+    }
+    mkdir -p -- "${KF_NFS_SHARE_PATH}"
+    systemctl enable --now nfs-server
+    if ! grep -qF "${managed_marker_begin}" "${exports_file}" 2>/dev/null; then
+        {
+            printf '%s\n' "${managed_marker_begin}"
+            printf '%s\n' "${export_entry}"
+            printf '%s\n' "${managed_marker_end}"
+        } >> "${exports_file}"
     fi
-    log_success "NFS服务器(${nfs_server}) /etc/exports配置完成"
+    exportfs -ra
+    log_success "managed NFS exports 已幂等配置"
+elif [ "${KF_NFS_EXPORTS_MODE}" = "external" ]; then
+    command -v showmount >/dev/null 2>&1 || {
+        log_error "验证 external NFS 需要 showmount"
+        exit 1
+    }
+    showmount -e "${KF_NFS_SERVER}" | grep -Fq -- "${KF_NFS_SHARE_PATH}" || {
+        log_error "external NFS 共享目录不可访问: ${KF_NFS_SHARE_PATH}"
+        exit 1
+    }
+    verify_mount=$(mktemp -d)
+    trap 'umount "${verify_mount}" >/dev/null 2>&1 || true; rmdir "${verify_mount}" 2>/dev/null || true' EXIT
+    mount -t nfs -o ro "${KF_NFS_SERVER}:${KF_NFS_SHARE_PATH}" "${verify_mount}"
+    log_success "external NFS 共享已验证，未修改外部服务器"
 else
-    log_info "NFS服务器(${nfs_server})不在集群内，跳过/etc/exports配置"
+    log_error "不支持的 NFS exports 模式: ${KF_NFS_EXPORTS_MODE}"
+    exit 1
 fi
-
-# 重启nfs-server
-systemctl restart nfs-server

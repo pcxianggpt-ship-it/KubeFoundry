@@ -367,15 +367,15 @@
 
 ### 实施步骤
 
-- [ ] Java 根据 NFS 地址解析 managed 目标节点。
-- [ ] 删除配置和挂载脚本内部 SSH 与节点循环。
-- [ ] managed 模式使用受管注释维护 `/etc/exports`。
-- [ ] external 模式只验证端口和共享可挂载，不修改外部服务。
-- [ ] Worker 挂载使用受管注释维护 `/etc/fstab`。
-- [ ] Provisioner 使用固定 release 名称、namespace 和 `helm upgrade --install`。
+- [x] Java 根据 NFS 地址解析 managed 目标节点。
+- [x] 删除配置和挂载脚本内部 SSH 与节点循环。
+- [x] managed 模式使用受管注释维护 `/etc/exports`。
+- [x] external 模式只验证端口和共享可挂载，不修改外部服务。
+- [x] Worker 挂载使用受管注释维护 `/etc/fstab`。
+- [x] Provisioner 使用固定 release 名称、namespace 和 `helm upgrade --install`。
 - [ ] 校验共享路径和挂载目录安全边界。
 - [ ] 验证 StorageClass、Provisioner Pod、PVC 创建和绑定。
-- [ ] 增加重复执行、已存在配置、部分 Worker 失败和重试测试。
+- [x] 增加重复执行、已存在配置、部分 Worker 失败和重试测试。
 
 ### 验收
 

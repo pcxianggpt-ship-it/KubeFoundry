@@ -84,7 +84,7 @@ public class InstallService {
         for (int index = 0; index < plan.steps().size(); index++) {
             InstallStep step = plan.steps().get(index);
             List<Node> targets = plans.resolveTargets(step, cluster, configuredNodes);
-            if (targets.isEmpty() && List.of("primary_control_plane", "registry")
+            if (targets.isEmpty() && List.of("primary_control_plane", "registry", "nfs_server")
                     .contains(step.targetScope())) {
                 throw new IllegalArgumentException("安装步骤缺少目标节点: " + step.key());
             }

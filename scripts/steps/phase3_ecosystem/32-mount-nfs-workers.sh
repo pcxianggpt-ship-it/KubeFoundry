@@ -2,32 +2,30 @@
 
 #===============================================================================
 # 脚本名称：32-mount-nfs-workers.sh
-# 功能：配置Worker节点挂载NFS（跳过NFS服务器节点本身）
-# 执行机器：管理节点（本地执行，通过SSH远程配置Worker节点）
-# 作者：KubeFoundry Team
-# 版本：1.0.0
+# 功能：在当前 Worker 节点幂等维护 NFS 挂载
+# 版本：0.3.0
 #===============================================================================
 
-nfs_server=$(config_get '.storage.nfs_server')
-nfs_path=$(config_get '.storage.nfs_path')
-nfs_mount_point=$(config_get '.storage.nfs_mount_point')
+if [ -f "./phase3.sh" ]; then source "./phase3.sh"; else source "${PROJECT_ROOT}/scripts/lib/phase3.sh"; fi
+phase3_init
+: "${KF_NFS_SERVER:?缺少 NFS 服务地址}"
+: "${KF_NFS_SHARE_PATH:?缺少 NFS 共享目录}"
+: "${KF_NFS_WORKER_MOUNT_PATH:?缺少 Worker 挂载目录}"
 
-worker_ips=$(get_all_worker_ips)
-if [ -z "$worker_ips" ]; then
-    log_info "无Worker节点，跳过NFS挂载"
-    return 0
+managed_marker_begin="# >>>KubeFoundry NFS fstab>>>"
+managed_marker_end="# <<<KubeFoundry NFS fstab<<<"
+fstab_entry="${KF_NFS_SERVER}:${KF_NFS_SHARE_PATH} ${KF_NFS_WORKER_MOUNT_PATH} nfs defaults,_netdev 0 0"
+fstab_file="${KF_NFS_FSTAB_FILE:-/etc/fstab}"
+
+mkdir -p -- "${KF_NFS_WORKER_MOUNT_PATH}"
+if ! grep -qF "${managed_marker_begin}" "${fstab_file}" 2>/dev/null; then
+    {
+        printf '%s\n' "${managed_marker_begin}"
+        printf '%s\n' "${fstab_entry}"
+        printf '%s\n' "${managed_marker_end}"
+    } >> "${fstab_file}"
 fi
-
-log_info "配置Worker节点挂载NFS..."
-while IFS= read -r wip; do
-    [ -z "$wip" ] && continue
-    if [ "$wip" = "$nfs_server" ]; then
-        continue
-    fi
-    ssh_exec "$wip" "mkdir -p ${nfs_mount_point} && grep -q '${nfs_server}:${nfs_path}' /etc/fstab 2>/dev/null || echo '${nfs_server}:${nfs_path} ${nfs_mount_point} nfs defaults 0 0' >> /etc/fstab; mountpoint -q ${nfs_mount_point} || mount -t nfs ${nfs_server}:${nfs_path} ${nfs_mount_point}"
-    if [ $? -ne 0 ]; then
-        log_warn "Worker节点(${wip}) NFS挂载失败"
-    else
-        log_success "Worker节点(${wip}) NFS挂载完成"
-    fi
-done <<< "$worker_ips"
+if ! mountpoint -q -- "${KF_NFS_WORKER_MOUNT_PATH}"; then
+    mount -t nfs "${KF_NFS_SERVER}:${KF_NFS_SHARE_PATH}" "${KF_NFS_WORKER_MOUNT_PATH}"
+fi
+log_success "当前 Worker 的 NFS 挂载已幂等完成"
