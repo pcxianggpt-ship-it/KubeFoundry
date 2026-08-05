@@ -519,14 +519,14 @@
 
 ### 实施步骤
 
-- [ ] Java 将 Worker 准备步骤定向到实际 Worker 节点。
-- [ ] 删除固定 `k8sw1/k8sw2` 和错误的远端 kubectl 调用。
-- [ ] 按规范化组件数据目录创建存储路径。
-- [ ] 声明式创建 CRD、Operator、Prometheus、Exporter 和 Alertmanager。
-- [ ] 将 Metrics Server 纳入同组并避免重复安装资源。
-- [ ] 等待 CRD Established、Deployment/StatefulSet Ready。
-- [ ] 验证 Prometheus targets、Node Exporter、kube-state-metrics 和 `kubectl top nodes`。
-- [ ] 增加单 Worker、多 Worker、重复安装和就绪超时测试。
+- [x] Java 将 Worker 准备步骤定向到实际 Worker 节点。
+- [x] 删除固定 `k8sw1/k8sw2` 和错误的远端 kubectl 调用。
+- [x] 按规范化组件数据目录创建存储路径。
+- [x] 声明式创建 CRD、Operator、Prometheus、Exporter 和 Alertmanager。
+- [x] 将 Metrics Server 纳入同组并避免重复安装资源。
+- [x] 等待 CRD Established、Deployment/StatefulSet Ready。
+- [x] 验证 Prometheus targets、Node Exporter、kube-state-metrics 和 `kubectl top nodes`。
+- [x] 增加单 Worker、多 Worker、重复安装和就绪超时测试。
 
 ### 验收
 
