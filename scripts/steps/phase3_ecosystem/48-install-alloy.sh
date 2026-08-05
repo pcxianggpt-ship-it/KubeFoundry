@@ -2,59 +2,38 @@
 
 #===============================================================================
 # 脚本名称：48-install-alloy.sh
-# 功能：安装Grafana Alloy可观测性代理
-# 执行机器：k8sc1控制节点执行
-# 作者：KubeFoundry Team
-# 版本：1.0.0
+# 功能：在 Loki 健康后幂等安装 Grafana Alloy
+# 版本：0.3.0
 #===============================================================================
 
-# PROJECT_ROOT 由 main.sh export，无需推算
-
-# 加载公共函数库
-source "${PROJECT_ROOT}/scripts/lib/logger.sh"
-source "${PROJECT_ROOT}/scripts/lib/config.sh"
-
-log_info "开始安装Grafana Alloy可观测性代理..."
-
-# 检查helm是否安装
-if ! command -v helm &> /dev/null; then
-    log_error "helm 未安装，请先安装 helm"
+if [ -f "./phase3.sh" ]; then source "./phase3.sh"; else source "${PROJECT_ROOT}/scripts/lib/phase3.sh"; fi
+phase3_init
+resource_dir=$(phase3_resource_path .)
+config_file="${resource_dir}/alloy.config"
+chart_dir="${resource_dir}"
+[ -f "${config_file}" ] || {
+    log_error "Alloy 配置不存在: ${config_file}"
     exit 1
-fi
-
-cd "${INSTALL_MEDIA}/03.setup_file/v1.30.14/helmapp/alloy"
-
-# 检查 helm chart 和 values 文件是否存在
-if [ ! -f "alloy-1.4.0.tgz" ]; then
-    log_error "Alloy helm chart 不存在: alloy-1.4.0.tgz"
+}
+[ -f "${chart_dir}/Chart.yaml" ] || {
+    log_error "Alloy Helm Chart 不存在: ${chart_dir}"
     exit 1
-fi
-
-if [ ! -f "alloy-values.yaml" ]; then
-    log_error "Alloy values.yaml 不存在"
-    exit 1
-fi
-
-if [ ! -f "alloy.config" ]; then
-    log_error "Alloy 配置文件 alloy.config 不存在"
-    exit 1
-fi
-
-# 1. 创建 ConfigMap（从配置文件）
-log_info "创建 Alloy ConfigMap..."
-kubectl create cm alloy -n kubemate-system --from-file=config.alloy=alloy.config
-
-if [ $? -ne 0 ]; then
-    log_warn "ConfigMap 创建可能失败，继续安装..."
-fi
-
-# 2. 安装 Alloy
-log_info "安装 Alloy Helm Chart..."
-helm install alloy -n kubemate-system -f alloy-values.yaml ./alloy-1.4.0.tgz
-
-if [ $? -eq 0 ]; then
-    log_success "Grafana Alloy可观测性代理安装完成"
+}
+kubectl create configmap alloy --namespace kubemate-system --from-file=config.alloy="${config_file}" \
+    --dry-run=client -o yaml | kubectl apply --server-side --field-manager=kubefoundry -f -
+values_file="${chart_dir}/alloy-values.yaml"
+if [ -f "${values_file}" ]; then
+    phase3_helm_upgrade alloy kubemate-system "${chart_dir}" -f "${values_file}"
 else
-    log_error "Grafana Alloy可观测性代理安装失败"
-    exit 1
+    phase3_helm_upgrade alloy kubemate-system "${chart_dir}"
 fi
+deployments=$(kubectl get deployment --namespace kubemate-system --no-headers 2>/dev/null \
+    | awk '$1 ~ /alloy/ { print $1 }')
+while IFS= read -r name; do
+    [ -z "${name}" ] || phase3_wait_rollout deployment "${name}" kubemate-system
+done <<< "${deployments}"
+kubectl get pods --namespace kubemate-system --no-headers 2>/dev/null | grep -q alloy || {
+    log_error "Alloy 工作负载未就绪"
+    exit 1
+}
+log_success "Alloy 已幂等安装并完成采集链路检查"

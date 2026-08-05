@@ -36,7 +36,7 @@ class ComponentPlanFactoryTest {
         InstallPlan plan = factory.create(snapshot(true, List.of(group("storage_observability", true))));
 
         assertThat(plan.steps()).extracting(InstallStep::key).containsExactly(
-                "29-install-helm", "30-create-namespace", "47-install-openebs",
+                "29-install-helm", "30-create-namespace", "46-prepare-storage-workers", "47-install-openebs",
                 "49-install-minio", "35-install-loki", "48-install-alloy");
         assertThat(plan.steps().subList(2, 6)).extracting(InstallStep::componentGroupKey)
                 .containsOnly("storage_observability");

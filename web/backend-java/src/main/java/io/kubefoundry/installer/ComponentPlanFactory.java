@@ -63,6 +63,8 @@ public class ComponentPlanFactory {
             case "traefik" -> List.of(script(snapshot, "36-install-traefik", "安装 Traefik 网关",
                     "primary_control_plane", groupKey, "serial", 1, true));
             case "storage_observability" -> List.of(
+                    script(snapshot, "46-prepare-storage-workers", "准备存储 Worker 目录", "workers", groupKey,
+                            "parallel", 5, true),
                     script(snapshot, "47-install-openebs", "安装 OpenEBS", "primary_control_plane", groupKey,
                             "serial", 1, true),
                     script(snapshot, "49-install-minio", "安装 MinIO", "primary_control_plane", groupKey,

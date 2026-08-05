@@ -478,16 +478,16 @@
 
 ### 实施步骤
 
-- [ ] 独立步骤在目标 Worker 创建规范化数据目录。
-- [ ] OpenEBS 使用 `helm upgrade --install` 并等待 StorageClass 和控制面就绪。
-- [ ] MinIO 安装过程完全非交互，明确 Operator 和实际工作负载验收范围。
-- [ ] Secret 由安全路径创建，任何日志都不打印 Token 或 Secret 值。
-- [ ] Loki 仅在 OpenEBS、MinIO 验证成功后执行。
-- [ ] Alloy 仅在 Loki 健康后执行并验证采集链路。
+- [x] 独立步骤在目标 Worker 创建规范化数据目录。
+- [x] OpenEBS 使用 `helm upgrade --install` 并等待 StorageClass 和控制面就绪。
+- [x] MinIO 安装过程完全非交互，明确 Operator 和实际工作负载验收范围。
+- [x] Secret 由安全路径创建，任何日志都不打印 Token 和 Secret 值。
+- [x] Loki 仅在 OpenEBS、MinIO 验证成功后执行。
+- [x] Alloy 仅在 Loki 健康后执行并验证采集链路。
 - [ ] 所有 values 中的镜像、路径、StorageClass 和地址由受控渲染产生。
-- [ ] 任一步骤失败立即停止该组及后续组。
-- [ ] 重试完整组时已成功步骤幂等通过。
-- [ ] 验证原子组不能由 API 或前端拆分。
+- [x] 任一步骤失败立即停止该组及后续组。
+- [x] 重试完整组时已成功步骤幂等通过。
+- [x] 验证原子组不能由 API 或前端拆分。
 
 ### 验收
 
