@@ -21,8 +21,11 @@ chart_dir=$(phase3_resource_path .)
 phase3_helm_upgrade "nfs-subdir-external-provisioner" "kubemate-system" "${chart_dir}" \
     --set "nfs.server=${KF_NFS_SERVER}" \
     --set "nfs.path=${KF_NFS_SHARE_PATH}" \
+    --set image.repository=registry:5000/nfs/nfs-subdir-external-provisioner \
+    --set image.tag=v4.0.2 \
     --set "storageClass.name=${KF_NFS_STORAGE_CLASS}" \
     --set storageClass.defaultClass=true
 
+kubectl rollout restart deployment/nfs-subdir-external-provisioner --namespace kubemate-system
 phase3_wait_rollout deployment nfs-subdir-external-provisioner kubemate-system
 log_success "NFS Provisioner 已幂等安装"

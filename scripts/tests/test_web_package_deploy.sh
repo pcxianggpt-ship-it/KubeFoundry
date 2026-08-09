@@ -48,6 +48,7 @@ for arch in x86_64 aarch64; do
         "${prefix}/tools/helm-amd" \
         "${prefix}/tools/helm-arm" \
         "${prefix}/scripts/steps/" \
+        "${prefix}/scripts/lib/phase3.sh" \
         "${prefix}/scripts/verify/reset/verify-reset-kubernetes-node.sh" \
         "${prefix}/scripts/steps/reset/reset-kubemate-components.sh" \
         "${prefix}/deploy.sh" \

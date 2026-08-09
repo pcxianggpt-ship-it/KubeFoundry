@@ -81,6 +81,21 @@ class ComponentPlanFactoryTest {
                 .endsWith("/resources/kubemate/31-install-kubemate-ui");
     }
 
+    @Test
+    void importsTheOfflineNfsImageBeforeInstallingTheNfsChart() {
+        ComponentPlanFactory factory = new ComponentPlanFactory(temporaryDirectory);
+
+        InstallPlan plan = factory.create(snapshot(true, List.of(group("nfs", true))));
+
+        assertThat(plan.steps()).extracting(InstallStep::key).containsExactly(
+                "29-install-helm", "30-create-namespace", "32-configure-nfs-exports",
+                "32-import-nfs-image", "32-install-nfs", "32-mount-nfs-workers");
+        assertThat(plan.require("32-import-nfs-image").resources()).singleElement().satisfies(resource -> {
+            assertThat(resource.kind()).isEqualTo("file");
+            assertThat(resource.remotePath()).endsWith("/resources/nfs/32-import-nfs-image");
+        });
+    }
+
     private static InstallationSnapshotPayload snapshot(
             boolean enabled, List<InstallationSnapshotPayload.ComponentGroup> groups) {
         Cluster cluster = new Cluster("component-plan");

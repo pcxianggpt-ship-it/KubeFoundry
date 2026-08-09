@@ -14,7 +14,7 @@ if [ "$1" = get ] && [ "$2" = metadata ]; then
     if [ "${KF_RESET_UNMANAGED_RELEASE:-0}" = 1 ]; then
         printf '%s\n' '{"labels":{"app.kubernetes.io/managed-by":"other"}}'
     else
-        printf '%s\n' '{"labels":{"app.kubernetes.io/managed-by":"kubefoundry","kubefoundry.io/media-sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}'
+        printf '%s\n' '{"labels":{"app.kubernetes.io/managed-by":"kubefoundry","kubefoundry.io/media-sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}'
     fi
 fi
 exit 0

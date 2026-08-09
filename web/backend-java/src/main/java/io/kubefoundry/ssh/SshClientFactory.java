@@ -2,6 +2,7 @@ package io.kubefoundry.ssh;
 
 import java.io.IOException;
 import java.security.KeyPair;
+import java.time.Duration;
 import org.apache.sshd.client.SshClient;
 import org.apache.sshd.client.auth.password.PasswordIdentityProvider;
 import org.apache.sshd.client.config.hosts.HostConfigEntryResolver;
@@ -9,8 +10,11 @@ import org.apache.sshd.client.keyverifier.RejectAllServerKeyVerifier;
 import org.apache.sshd.client.keyverifier.ServerKeyVerifier;
 import org.apache.sshd.client.session.ClientSession;
 import org.apache.sshd.common.keyprovider.KeyIdentityProvider;
+import org.apache.sshd.core.CoreModuleProperties;
 
 public final class SshClientFactory implements AutoCloseable {
+
+    private static final Duration STOP_WAIT_TIMEOUT = Duration.ofSeconds(5);
 
     private final SshClient client;
 
@@ -21,6 +25,7 @@ public final class SshClientFactory implements AutoCloseable {
         client.setHostConfigEntryResolver(HostConfigEntryResolver.EMPTY);
         client.setKeyIdentityProvider(KeyIdentityProvider.EMPTY_KEYS_PROVIDER);
         client.setPasswordIdentityProvider(PasswordIdentityProvider.EMPTY_PASSWORDS_PROVIDER);
+        CoreModuleProperties.STOP_WAIT_TIME.set(client, STOP_WAIT_TIMEOUT);
         client.start();
     }
 

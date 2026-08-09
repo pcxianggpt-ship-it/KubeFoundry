@@ -26,8 +26,8 @@ trap cleanup EXIT INT TERM
 
 fail() {
     echo "Java Web 冒烟测试失败: $*" >&2
-    [ -f "${TEST_ROOT}/backend.log" ] && tail -n 40 "${TEST_ROOT}/backend.log" >&2
-    [ -f "${TEST_ROOT}/frontend.log" ] && tail -n 20 "${TEST_ROOT}/frontend.log" >&2
+    [ -f "${TEST_ROOT}/backend.log" ] && tail -n 100 "${TEST_ROOT}/backend.log" >&2
+    [ -f "${TEST_ROOT}/frontend.log" ] && tail -n 40 "${TEST_ROOT}/frontend.log" >&2
     exit 1
 }
 
@@ -40,6 +40,8 @@ java_major=$(java -version 2>&1 | sed -n '1s/.*version "\([0-9][0-9]*\).*/\1/p')
 
 (cd "${BACKEND_DIR}" && mvn -q -DskipTests package)
 
+mkdir -p "${TEST_ROOT}/data"
+chmod 700 "${TEST_ROOT}/data"
 KF_DATA_DIR="${TEST_ROOT}/data" \
     java -jar "${BACKEND_DIR}/target/kubefoundry-backend-0.3.0.jar" \
     --server.port="${API_PORT}" >"${TEST_ROOT}/backend.log" 2>&1 &
@@ -57,7 +59,11 @@ ready=0
 for _ in $(seq 1 90); do
     if health=$(curl -fsS "${base_url}/api/health" 2>/dev/null); then
         case "${health}" in
-            *'"status":"ok"'*'"version":"0.3.0"'*) ready=1; break ;;
+            *'"status":"ok"'*)
+                case "${health}" in
+                    *'"version":"0.3.0"'*) ready=1; break ;;
+                esac
+                ;;
         esac
     fi
     sleep 1
@@ -73,15 +79,8 @@ cluster_id=$(printf '%s' "${cluster_response}" | sed -n 's/.*"id":\([0-9][0-9]*\
 components_response=$(curl -fsS "${base_url}/api/clusters/${cluster_id}/components") ||
     fail "读取组件配置失败"
 case "${components_response}" in
-    *'"items"'*'"storage_observability"'*) ;;
+    *'"groups"'*'"key":"storage_observability"'*) ;;
     *) fail "组件配置响应缺少组件组" ;;
-esac
-
-plan_response=$(curl -fsS "${base_url}/api/clusters/${cluster_id}/install-plan") ||
-    fail "读取安装计划预览失败"
-case "${plan_response}" in
-    *'"items"'*'"key":"10-setup-yum-source"'*) ;;
-    *) fail "安装计划预览响应缺少基础步骤" ;;
 esac
 
 node_secret=$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24 || true)
@@ -101,21 +100,32 @@ case "${node_response}" in
     *) fail "节点响应缺少关键字段" ;;
 esac
 
+plan_response=$(curl -fsS "${base_url}/api/clusters/${cluster_id}/install-plan") ||
+    fail "读取安装计划预览失败"
+case "${plan_response}" in
+    *'"items"'*'"key":"10-setup-yum-source"'*) ;;
+    *) fail "安装计划预览响应缺少基础步骤" ;;
+esac
+
 test_response=$(curl -fsS -X POST "${base_url}/api/clusters/${cluster_id}/node-test") ||
     fail "节点测试任务创建失败"
 job_id=$(printf '%s' "${test_response}" | sed -n 's/.*"job_id":\([0-9][0-9]*\).*/\1/p')
 [ -n "${job_id}" ] || fail "节点测试响应缺少 job_id"
 
 terminal=0
-for _ in $(seq 1 30); do
+job_response=""
+for _ in $(seq 1 45); do
     job_response=$(curl -fsS "${base_url}/api/jobs/${job_id}") || fail "任务查询失败"
     case "${job_response}" in
-        *'"job_type":"node_test"'*'"status":"failed"'*) terminal=1; break ;;
-        *'"job_type":"node_test"'*'"status":"success"'*) terminal=1; break ;;
+        *'"job_type":"node_test"'*)
+            case "${job_response}" in
+                *'"status":"failed"'*|*'"status":"success"'*) terminal=1; break ;;
+            esac
+            ;;
     esac
     sleep 1
 done
-[ "${terminal}" -eq 1 ] || fail "节点测试任务未进入终态"
+[ "${terminal}" -eq 1 ] || fail "节点测试任务未进入终态，最后响应: ${job_response}"
 
 curl -sS -N --max-time 8 -D "${TEST_ROOT}/sse.headers" \
     "${base_url}/api/jobs/${job_id}/events" >"${TEST_ROOT}/sse.body" || true

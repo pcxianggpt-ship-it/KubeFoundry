@@ -41,6 +41,17 @@ fi
 log_info "使用容器运行时: ${CONTAINER_CMD}"
 log_info "镜像仓库IP: ${REGISTRY_IP}, 架构: ${ARCH}, 安装目录: ${K8S_HOME}"
 
+# 旧版本 reset 可能留下没有对应 CNI 配置的 nerdctl0 网桥。此时 nerdctl
+# 在创建默认网络时会因 10.4.0.0/24 已被占用而失败。仅在没有任何
+# nerdctl 容器且默认网络也不存在时清理该孤儿网桥，避免影响受管容器。
+if [[ "${CONTAINER_CMD}" == "nerdctl" ]] \
+    && ip link show nerdctl0 &> /dev/null \
+    && ! nerdctl network ls --format '{{.Name}}' | grep -qx 'default' \
+    && [[ -z "$(nerdctl ps -aq)" ]]; then
+    log_warn "检测到孤儿 nerdctl0 网桥，正在清理后重建默认网络"
+    ip link delete nerdctl0
+fi
+
 # 进入 registry 安装目录（由 2.9 步骤分发到此）
 REGISTRY_DIR="${K8S_HOME}/04.registry"
 if [ ! -d "$REGISTRY_DIR" ]; then

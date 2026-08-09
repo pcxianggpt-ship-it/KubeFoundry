@@ -71,7 +71,7 @@ class ResetPlanFactory {
         paths.put("alloy", "helmapp/alloy");
         paths.put("loki", "helmapp/loki");
         paths.put("openebs", "helmapp/openebs");
-        paths.put("nfs-subdir-external-provisioner", "helmapp/nfs");
+        paths.put("nfs-subdir-external-provisioner", "helmapp/nfs/nfs-subdir-external-provisioner");
         Set<String> enabled = componentGroups == null ? Set.of() : componentGroups;
         List<String> entries = new java.util.ArrayList<>();
         for (Map.Entry<String, String> entry : paths.entrySet()) {

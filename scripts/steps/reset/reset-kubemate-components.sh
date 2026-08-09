@@ -55,14 +55,15 @@ expected_release_checksum() {
 release_is_managed() {
     local release="$1"
     local namespace="$2"
-    local expected_checksum metadata
+    local expected_checksum expected_label metadata
 
     expected_checksum=$(expected_release_checksum "${release}") || return 1
+    expected_label="${expected_checksum:0:63}"
     metadata=$(helm get metadata "${release}" --namespace "${namespace}" -o json) || return 1
     printf '%s\n' "${metadata}" | grep -Eq \
         '"app.kubernetes.io/managed-by"[[:space:]]*:[[:space:]]*"kubefoundry"' \
         && printf '%s\n' "${metadata}" | grep -Eq \
-            '"kubefoundry.io/media-sha256"[[:space:]]*:[[:space:]]*"'"${expected_checksum}"'"'
+            '"kubefoundry.io/media-sha256"[[:space:]]*:[[:space:]]*"'"${expected_label}"'"'
 }
 
 uninstall_snapshot_release() {

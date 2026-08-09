@@ -26,6 +26,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 class SshServiceTest {
 
@@ -305,6 +306,22 @@ class SshServiceTest {
             assertThatThrownBy(() -> service.execute(session, "slow", Duration.ofMillis(50)))
                     .isInstanceOf(SshCommandTimeoutException.class);
         }
+    }
+
+    @Test
+    void closesClientPromptlyAfterRemoteDisconnect() throws Exception {
+        SshSession session = clients.connectWithPassword(spec(), "secret".toCharArray());
+        server.stop(true);
+        server = null;
+
+        assertTimeoutPreemptively(Duration.ofSeconds(7), () -> {
+            try (session) {
+                assertThatThrownBy(() -> service.execute(session, "success", Duration.ofSeconds(1)))
+                        .isInstanceOfAny(IOException.class, IllegalStateException.class);
+            }
+            clients.close();
+            clients = null;
+        });
     }
 
     private SshConnectionSpec spec() {

@@ -36,8 +36,6 @@ phase3_apply_configmap alloy kubemate-system "$(phase3_resource_path alloy.confi
 phase3_wait_rollout deployment traefik kubemate-system
 
 grep -Fq 'helm upgrade --install traefik ./chart.tgz --namespace kubemate-system --create-namespace --wait --timeout 10m --labels app.kubernetes.io/managed-by=kubefoundry --set image.tag=v1' "${TEST_ROOT}/calls" || fail "Helm 参数顺序错误"
-grep -Fq 'kubectl label --overwrite -f - app.kubernetes.io/managed-by=kubefoundry' "${TEST_ROOT}/calls" ||
-    fail "Helm 资源缺少受管标签"
 [ "$(phase3_resource_path alloy.config)" = "${KF_COMPONENT_RESOURCE_DIR}/alloy.config" ] || fail "资源路径解析错误"
 if phase3_resource_path ../outside >/dev/null 2>&1; then fail "资源目录越界未拒绝"; fi
 phase3_log_safe 'token=hidden-value' >/dev/null

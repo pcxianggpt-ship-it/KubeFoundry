@@ -75,7 +75,7 @@ check_environment() {
     for name in tar sha256sum; do
         command -v "${name}" >/dev/null 2>&1 || { log_error "缺少命令: ${name}"; return 1; }
     done
-    for path in web/backend-java/pom.xml web/frontend/package.json deploy.sh scripts/steps scripts/verify/reset/verify-reset-kubernetes-node.sh scripts/steps/reset/reset-kubemate-components.sh scripts/build/build-jre.sh tools/helm-amd tools/helm-arm; do
+    for path in web/backend-java/pom.xml web/frontend/package.json deploy.sh scripts/steps scripts/lib/phase3.sh scripts/verify/reset/verify-reset-kubernetes-node.sh scripts/steps/reset/reset-kubemate-components.sh scripts/build/build-jre.sh tools/helm-amd tools/helm-arm; do
         [ -e "${PROJECT_ROOT}/${path}" ] || { log_error "项目文件缺失: ${path}"; return 1; }
     done
 }
@@ -180,6 +180,8 @@ create_archive() {
     build_runtime "${release_dir}"
     copy_helm_media "${release_dir}"
     cp -a "${PROJECT_ROOT}/scripts/steps" "${release_dir}/scripts/steps"
+    mkdir -p "${release_dir}/scripts/lib"
+    cp "${PROJECT_ROOT}/scripts/lib/phase3.sh" "${release_dir}/scripts/lib/phase3.sh"
     cp -a "${PROJECT_ROOT}/scripts/verify" "${release_dir}/scripts/verify"
     cp "${PROJECT_ROOT}/deploy.sh" "${release_dir}/deploy.sh"
     chmod 0755 "${release_dir}/deploy.sh" "${release_dir}/runtime/bin/java"

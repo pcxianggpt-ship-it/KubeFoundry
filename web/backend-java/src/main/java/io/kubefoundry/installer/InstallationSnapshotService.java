@@ -9,9 +9,11 @@ import io.kubefoundry.cluster.ClusterComponentRepository;
 import io.kubefoundry.cluster.Node;
 import io.kubefoundry.job.Job;
 import io.kubefoundry.job.JobRepository;
+import java.util.LinkedHashMap;
 import java.util.List;
-import org.springframework.transaction.annotation.Transactional;
+import java.util.Map;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class InstallationSnapshotService {
@@ -86,6 +88,30 @@ public class InstallationSnapshotService {
         InstallationSnapshot snapshot = snapshots
                 .findTopByCluster_IdAndJob_TypeOrderByIdDesc(clusterId, "install")
                 .orElseThrow(() -> new IllegalArgumentException("集群没有可用于远程重置的安装快照"));
+        InstallationSnapshotPayload installPayload = readPayload(snapshot);
+        Map<String, String> mediaChecksums = new LinkedHashMap<>();
+        for (InstallationSnapshot componentSnapshot : snapshots
+                .findByCluster_IdAndJob_TypeAndJob_StatusOrderByIdDesc(
+                        clusterId, ComponentInstallationStateService.JOB_TYPE, "success")) {
+            readPayload(componentSnapshot).mediaChecksums()
+                    .forEach(mediaChecksums::putIfAbsent);
+        }
+        installPayload.mediaChecksums().forEach(mediaChecksums::putIfAbsent);
+        return new InstallationSnapshotPayload(
+                installPayload.clusterId(),
+                installPayload.clusterName(),
+                installPayload.kubernetesVersion(),
+                installPayload.kubernetesWorkDir(),
+                installPayload.imageRegistryType(),
+                installPayload.nodes(),
+                installPayload.kubemateEnabled(),
+                installPayload.componentConfigurationVersion(),
+                installPayload.componentGroups(),
+                installPayload.componentPlanVersion(),
+                mediaChecksums);
+    }
+
+    private InstallationSnapshotPayload readPayload(InstallationSnapshot snapshot) {
         try {
             return mapper.readValue(snapshot.getSnapshotJson(), InstallationSnapshotPayload.class);
         } catch (JsonProcessingException exception) {

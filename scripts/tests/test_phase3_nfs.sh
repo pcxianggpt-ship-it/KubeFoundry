@@ -32,6 +32,11 @@ cat > "${MOCK_BIN}/umount" <<'EOF'
 #!/bin/bash
 exit 0
 EOF
+cat > "${MOCK_BIN}/nerdctl" <<'EOF'
+#!/bin/bash
+printf '%s\n' "$*" >> "${KF_NERDCTL_LOG}"
+exit 0
+EOF
 export PATH="${MOCK_BIN}:${PATH}"
 chmod +x "${MOCK_BIN}"/*
 export PROJECT_ROOT="${ROOT}"
@@ -42,6 +47,7 @@ export KF_NFS_WORKER_MOUNT_PATH="${TMP}/mount"
 export KF_NFS_STORAGE_CLASS=nfs-storage
 export KF_NFS_EXPORTS_FILE="${TMP}/exports"
 export KF_NFS_FSTAB_FILE="${TMP}/fstab"
+export KF_NERDCTL_LOG="${TMP}/nerdctl.log"
 export KF_NODE_IP=10.0.0.10
 export KF_NODE_HOSTNAME=nfs-server
 export KF_HELM_TIMEOUT=1s
@@ -67,5 +73,16 @@ test "$(grep -cF '# >>>KubeFoundry NFS fstab>>>' "${TMP}/fstab")" -eq 1
 export KF_NFS_EXPORTS_MODE=external
 bash "${ROOT}/scripts/steps/phase3_ecosystem/32-configure-nfs-exports.sh"
 test "$(grep -cF '# >>>KubeFoundry NFS exports>>>' "${TMP}/exports")" -eq 1
+
+touch "${KF_COMPONENT_RESOURCE_DIR}/32-import-nfs-image"
+bash "${ROOT}/scripts/steps/phase3_ecosystem/32-import-nfs-image.sh"
+grep -Fxq -- '--namespace k8s.io load --input '"${KF_COMPONENT_RESOURCE_DIR}"'/32-import-nfs-image' \
+    "${KF_NERDCTL_LOG}"
+grep -Fxq -- '--namespace k8s.io tag harbor.amarsoft.com/k8s-deploy/nfs-subdir-external-provisioner:v4.0.2 registry:5000/nfs/nfs-subdir-external-provisioner:v4.0.2' \
+    "${KF_NERDCTL_LOG}"
+grep -Fxq -- '--namespace k8s.io push --insecure-registry registry:5000/nfs/nfs-subdir-external-provisioner:v4.0.2' \
+    "${KF_NERDCTL_LOG}"
+grep -Fq 'kubectl rollout restart deployment/nfs-subdir-external-provisioner' \
+    "${ROOT}/scripts/steps/phase3_ecosystem/32-install-nfs.sh"
 
 printf 'phase3 NFS tests passed\n'

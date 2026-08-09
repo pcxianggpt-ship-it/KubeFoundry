@@ -40,12 +40,10 @@ phase3_helm_upgrade() {
     shift 3
     local labels='app.kubernetes.io/managed-by=kubefoundry'
     if [[ "${KF_COMPONENT_MEDIA_SHA256:-}" =~ ^[0-9a-f]{64}$ ]]; then
-        labels+=",kubefoundry.io/media-sha256=${KF_COMPONENT_MEDIA_SHA256}"
+        labels+=",kubefoundry.io/media-sha256=${KF_COMPONENT_MEDIA_SHA256:0:63}"
     fi
     helm upgrade --install "${release}" "${chart}" --namespace "${namespace}" \
         --create-namespace --wait --timeout "${KF_HELM_TIMEOUT:-10m}" --labels "${labels}" "$@"
-    helm get manifest "${release}" --namespace "${namespace}" \
-        | kubectl label --overwrite -f - app.kubernetes.io/managed-by=kubefoundry
 }
 
 phase3_apply_managed() {

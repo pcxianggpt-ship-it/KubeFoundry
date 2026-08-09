@@ -6,7 +6,7 @@
 | --- | --- |
 | 版本 | v0.3.0 |
 | 状态 | 待执行 |
-| 日期 | 2026-08-02 |
+| 日期 | 2026-08-07 |
 | 设计依据 | [Kubemate组件安装设计.md](./Kubemate组件安装设计.md) |
 | 开发依据 | [Kubemate组件安装开发计划.md](./Kubemate组件安装开发计划.md) |
 
@@ -27,13 +27,13 @@
 - 六个组件组配置与 Redis 不可用状态。
 - V9 到 V10 升级和 V1 到 V10 新库迁移。
 - 服务端组件计划与不可变快照。
-- 主控制节点的 amd64/arm64 Helm 离线分发；其他控制节点无需安装 Helm。
+- 主控制节点的 amd64 Helm 离线分发；其他控制节点无需安装 Helm。
 - NFS、Kubemate、Traefik、存储与日志套件、Prometheus 五组。
 - 新集群全量安装。
 - v0.2.1 已安装集群组件补装。
 - 多组部分成功、失败重试和应用中断恢复。
 - 组件逆序清理与 Kubernetes 远程重置。
-- 双架构发布包、LF、凭据和介质完整性。
+- 双架构发布包结构与自动化校验、LF、凭据和介质完整性。
 
 ### 3.2 不验收为可用能力
 
@@ -60,36 +60,43 @@
 
 ### 4.2 x86_64 专用测试集群
 
-建议最小拓扑：
+完整验收拓扑共 5 台 x86_64 专用机器：
 
 ```text
-控制节点 1：control_plane + registry
-工作节点 1：worker + managed NFS
-工作节点 2：worker
+节点 1：KubeFoundry 管理端 + 主控制节点 + Registry
+节点 2：其他控制节点
+节点 3：其他控制节点
+节点 4：Worker + 内部固定 NFS
+节点 5：Worker
 ```
 
 要求：
 
 - 所有节点使用专用测试机器，不承载生产工作负载。
 - Kubernetes 初始状态由 v0.3.0 全量安装或明确的 v0.2.1 基线产生。
-- 管理节点具备完整 `kube-media`，测试期间禁止联网下载 Chart 或镜像。
+- 节点 1 具备完整 `kube-media`，测试期间禁止联网下载 Chart 或镜像。
+- 验证节点 1 作为本机 SSH/SCP 目标时，仍通过统一远程执行链路运行 kubectl 和 Helm。
+- 验证介质从管理目录复制到任务临时目录，安装过程不修改 `kube-media` 原文件。
+- 验证 reset 不误删管理端的 `app`、`data`、`logs`、`kube-media` 和 `tools` 目录。
 - 为 NFS、OpenEBS、Loki、MinIO 和 Prometheus 预留足够磁盘。
 - 测试前记录节点磁盘、挂载、`/etc/fstab`、`/etc/exports` 和已有 Helm 状态。
 
-### 4.3 ARM64 专用环境
+### 4.3 ARM64 延期验收
 
-至少准备一个 ARM64 主控制节点，完成：
+当前没有 ARM64 测试机器，v0.3.0 不执行 ARM64 真实环境验收。以下能力继续保留并由自动化测试覆盖：
 
 - 节点架构识别。
-- `helm-arm` 资源选择、校验、分发和执行。
-- Kubernetes API 访问和 `helm list -A`。
-- 已选组件介质的非破坏性预检查。
+- `helm-arm` 资源选择、校验和包内映射。
+- aarch64 发布包结构和运行时架构校验。
+- amd64 与 arm64 资源不会交叉选择。
 
-ARM64 全组件动态安装建议执行，但 v0.3.0 最低发布门禁为上述 Helm 和预检查闭环。若缺少 ARM64 机器，不得宣称双架构动态验收通过。
+ARM64 真实 Helm 分发、Kubernetes API 访问和组件动态安装作为延期项，获得 ARM64 环境后补验。该延期不阻塞本轮 x86_64 发布结论，但不得宣称 ARM64 动态验收通过。
 
-### 4.4 外部 NFS 环境
+### 4.4 内部固定 NFS 环境
 
-准备一台不受 KubeFoundry 管理的外部 NFS 服务，用于验证 external 模式不会修改外部 `/etc/exports` 或系统状态。
+NFS 服务固定部署在节点 4，不额外准备外部 NFS 机器。验收前在节点 4 的 `/etc/exports`、相关 Worker 的 `/etc/fstab` 和共享目录中预置非受管配置及测试数据，用于验证安装和 reset 只维护带 KubeFoundry 标记的受管块，不误删非受管配置和数据。
+
+external NFS 真实环境不纳入本轮验收范围，但已有实现和自动化测试继续保留。
 
 ## 5. 证据要求
 
@@ -210,7 +217,7 @@ git diff --check
 | 编号 | 场景 | 预期结果 |
 | --- | --- | --- |
 | HELM-01 | amd64 主控制节点 | 选择 `helm-amd`，校验后安装并可执行 |
-| HELM-02 | arm64 主控制节点 | 选择 `helm-arm`，不会发送 amd64 文件 |
+| HELM-02 | arm64 资源自动化校验 | 自动化测试确认选择 `helm-arm` 且不会混入 amd64 文件；真实环境延期 |
 | HELM-03 | 三控制节点 | 仅主控制节点完成 Helm 验证，其他控制节点不被修改 |
 | HELM-04 | 已有兼容受管 Helm | 幂等跳过或明确升级，任务成功 |
 | HELM-05 | 已有不兼容非受管 Helm | 预检查返回 `HELM_CONFLICT`，不覆盖文件 |
@@ -250,11 +257,12 @@ KUBECONFIG=/etc/kubernetes/admin.conf helm list -A
 
 步骤：
 
-1. 选择一个集群 Worker 作为 NFS 服务器。
-2. 配置共享目录、挂载目录和 StorageClass。
-3. 执行组件预检查和 NFS 单组安装。
-4. 创建测试 PVC 和 Pod，完成写入及读取。
-5. 再次执行相同安装计划。
+1. 使用节点 4 作为固定的集群内部 NFS 服务器。
+2. 预置非受管 exports/fstab 行和共享目录测试数据。
+3. 配置共享目录、挂载目录和 StorageClass。
+4. 执行组件预检查和 NFS 单组安装。
+5. 创建测试 PVC 和 Pod，完成写入及读取。
+6. 再次执行相同安装计划。
 
 预期：
 
@@ -262,16 +270,17 @@ KUBECONFIG=/etc/kubernetes/admin.conf helm list -A
 - Worker fstab 每台只增加一条受管记录。
 - Provisioner Pod Ready，StorageClass 存在，PVC 为 Bound。
 - 第二次执行成功，无重复行或重复 Helm release。
+- 预置的非受管 exports/fstab 行和测试数据保持不变。
 
-### NFS-02 external 模式
+### NFS-02 内部 NFS 非受管内容保护
 
-步骤：配置外部 NFS 地址并安装，安装前后比较外部服务器系统配置。
+步骤：安装前后比较节点 4 的 `/etc/exports`、各 Worker 的 `/etc/fstab` 和共享目录测试数据，并在 reset 后再次比较。
 
 预期：
 
-- KubeFoundry 只验证连通性和挂载。
-- 外部 `/etc/exports` 和服务状态无变化。
-- PVC 读写验证通过。
+- KubeFoundry 只增删带受管标记的 exports/fstab 块。
+- 非受管系统配置、共享目录测试数据和其他 NFS 共享保持不变。
+- 安装阶段 PVC 读写验证通过，reset 后无受管残留。
 
 ### NFS-03 失败与重试
 
@@ -416,7 +425,7 @@ KUBECONFIG=/etc/kubernetes/admin.conf helm list -A
 | --- | --- | --- |
 | RESET-01 | 全组件重置 | 按依赖逆序清理后执行 Kubernetes reset |
 | RESET-02 | 受管 NFS 配置 | 仅删除带标记 exports/fstab 行 |
-| RESET-03 | external NFS | 外部服务器没有任何配置变化 |
+| RESET-03 | 内部 NFS 非受管内容 | 节点 4 的非受管 exports/fstab 配置、共享和测试数据保持不变 |
 | RESET-04 | 非受管 Helm | 用户已有 Helm 保留 |
 | RESET-05 | 受管 Helm | 校验和和标记匹配时按设计清理 |
 | RESET-06 | Traefik 清理 | 只清理 KubeFoundry 管理的 Traefik 资源 |
@@ -439,7 +448,7 @@ KUBECONFIG=/etc/kubernetes/admin.conf helm list -A
 | --- | --- | --- |
 | PKG-01 | 版本一致性 | Maven、npm、健康接口、包名、VERSION、systemd 文案均为 0.3.0 |
 | PKG-02 | x86_64 包 | 构建、校验、部署和启动成功 |
-| PKG-03 | aarch64 包 | 构建、校验、部署和启动成功 |
+| PKG-03 | aarch64 包 | 自动化完成构建、结构和架构校验；真实机器部署与启动延期 |
 | PKG-04 | phase3 内容 | 所有纳入计划的脚本和 verify 文件存在 |
 | PKG-05 | Helm 介质 | 两种架构映射和校验和可解析 |
 | PKG-06 | 缺失资源 | 删除任一必需资源后预检查明确失败 |
@@ -456,6 +465,7 @@ KUBECONFIG=/etc/kubernetes/admin.conf helm list -A
 - [ ] SSH 主机指纹、凭据加密和日志脱敏无回归。
 - [ ] 集群配置、节点测试、安装确认、SSE 和日志查询无回归。
 - [ ] Registry 与控制节点或 Worker 同机场景无回归。
+- [ ] KubeFoundry 管理端、主控制节点和 Registry 同机场景无回归。
 - [ ] v0.2.1 数据库升级后历史集群和任务可正常查看。
 
 ## 23. 缺陷分级与发布门禁
@@ -473,7 +483,8 @@ KUBECONFIG=/etc/kubernetes/admin.conf helm list -A
 - P2 延期项必须有责任人、风险评估和目标版本。
 - 自动化验收不得有失败或跳过的必选项。
 - x86_64 动态全量安装、存量补装和远程重置必须通过。
-- ARM64 Helm 分发与非破坏性预检查必须通过，或明确标记未完成且不得宣称双架构动态通过。
+- ARM64 真实环境验收作为已登记延期项，不阻塞 x86_64 发布结论；不得宣称 ARM64 动态验收通过。
+- external NFS 真实环境不纳入本轮门禁，内部固定 NFS 的受管边界和非受管内容保护必须通过。
 - 安全复核未完成时不得执行或通过远程重置验收。
 
 ## 24. 最终验收清单
@@ -498,15 +509,16 @@ KUBECONFIG=/etc/kubernetes/admin.conf helm list -A
 ### 平台与安全
 
 - [ ] x86_64 Helm 和全量组件动态验收通过。
-- [ ] ARM64 Helm 和非破坏性预检查通过。
+- [ ] 管理端、主控制节点和 Registry 同机时的本机远程执行与目录保护通过。
+- [ ] 内部固定 NFS 的安装、PVC 读写、失败重试和非受管内容保护通过。
 - [ ] 组件逆序清理和远程重置通过专项安全复核。
-- [ ] 用户资源、外部 NFS 和非受管 Helm 保留。
+- [ ] 用户资源、内部 NFS 非受管配置和数据、非受管 Helm 保留。
 - [ ] 日志、事件、API 和快照无凭据泄露。
 
 ### 发布
 
 - [ ] 所有版本号统一为 0.3.0。
-- [ ] 双架构发布包构建、校验和部署通过。
+- [ ] 双架构发布包构建与自动化校验通过，x86_64 发布包真实部署通过。
 - [ ] 中文设计、开发、API、部署、使用和验收文档同步。
 - [ ] 最终验收结果、遗留项和发布结论已签署记录。
 
@@ -521,13 +533,14 @@ Git 提交：
 
 自动化结果：通过 / 不通过
 x86_64 动态结果：通过 / 不通过
-ARM64 动态结果：通过 / 未完成 / 不通过
+ARM64 动态结果：延期，未执行真实环境验收
+内部固定 NFS 结果：通过 / 不通过
 安全复核结果：通过 / 不通过
 
 P0 遗留：
 P1 遗留：
 P2 延期：
-已知限制：Redis 哨兵模式暂不可用
+已知限制：Redis 哨兵模式暂不可用；ARM64 真实环境验收待补充；external NFS 未纳入本轮真实环境验收
 
 最终结论：通过 / 有条件通过 / 不通过
 负责人：

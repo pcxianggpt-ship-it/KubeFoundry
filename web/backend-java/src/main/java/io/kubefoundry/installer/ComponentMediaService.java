@@ -62,7 +62,8 @@ public class ComponentMediaService {
         }
         MediaLocation location = switch (stepKey) {
             case "31-install-kubemate-ui" -> new MediaLocation("file", "kubemate.yml");
-            case "32-install-nfs" -> new MediaLocation("directory", "helmapp/nfs");
+            case "32-import-nfs-image" -> new MediaLocation("file", "helmapp/nfs/nfs.tar");
+            case "32-install-nfs" -> new MediaLocation("directory", "helmapp/nfs/nfs-subdir-external-provisioner");
             case "36-install-traefik" -> new MediaLocation("directory", "traefik/3.3");
             case "47-install-openebs" -> new MediaLocation("directory", "helmapp/openebs");
             case "49-install-minio" -> new MediaLocation("directory", "minio");
@@ -75,8 +76,9 @@ public class ComponentMediaService {
         Path source = projectRoot.resolve("kube-media").resolve("03.setup_file")
                 .resolve("v" + version).resolve(location.relativePath()).normalize();
         requireWithinProject(source);
-        return InstallStep.Resource.local(source, location.kind(), JOB_RESOURCE_ROOT + "/"
-                + groupKey + "/" + stepKey);
+        String remotePath = JOB_RESOURCE_ROOT + "/" + groupKey
+                + ("directory".equals(location.kind()) ? "" : "/" + stepKey);
+        return InstallStep.Resource.local(source, location.kind(), remotePath);
     }
 
     public InstallPlan verifyAndChecksum(InstallPlan plan) {
