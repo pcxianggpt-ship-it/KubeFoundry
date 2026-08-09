@@ -43,6 +43,19 @@ class ComponentPlanFactoryTest {
     }
 
     @Test
+    void usesTheActualMinioMediaDirectoryAndSkipsMetricsServerMediaValidation() {
+        ComponentPlanFactory factory = new ComponentPlanFactory(temporaryDirectory);
+
+        InstallPlan storagePlan = factory.create(snapshot(true, List.of(group("storage_observability", true))));
+        InstallPlan prometheusPlan = factory.create(snapshot(true, List.of(group("prometheus", true))));
+
+        assertThat(storagePlan.require("49-install-minio").resources()).singleElement().satisfies(resource ->
+                assertThat(resource.localPath().toString().replace('\\', '/'))
+                        .endsWith("kube-media/03.setup_file/vunknown/minio"));
+        assertThat(prometheusPlan.require("40-install-metrics-server").resources()).isEmpty();
+    }
+
+    @Test
     void disablesAllComponentStepsWhenTheGlobalSwitchIsOffAndAppendsToBasePlan() {
         ComponentPlanFactory componentPlans = new ComponentPlanFactory(temporaryDirectory);
         InstallationSnapshotPayload disabled = snapshot(false, List.of(group("traefik", true)));

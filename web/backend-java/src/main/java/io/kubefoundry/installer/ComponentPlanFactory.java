@@ -97,7 +97,7 @@ public class ComponentPlanFactory {
     private static boolean requiresComponentMedia(String key) {
         return List.of("31-install-kubemate-ui", "32-install-nfs", "36-install-traefik",
                 "47-install-openebs", "49-install-minio", "35-install-loki", "48-install-alloy",
-                "38-install-prometheus", "40-install-metrics-server").contains(key);
+                "38-install-prometheus").contains(key);
     }
 
     private static boolean isEnabled(InstallationSnapshotPayload snapshot, String groupKey) {

@@ -65,7 +65,7 @@ public class ComponentMediaService {
             case "32-install-nfs" -> new MediaLocation("directory", "helmapp/nfs");
             case "36-install-traefik" -> new MediaLocation("directory", "traefik/3.3");
             case "47-install-openebs" -> new MediaLocation("directory", "helmapp/openebs");
-            case "49-install-minio" -> new MediaLocation("directory", "helmapp/minio");
+            case "49-install-minio" -> new MediaLocation("directory", "minio");
             case "35-install-loki" -> new MediaLocation("directory", "helmapp/loki");
             case "48-install-alloy" -> new MediaLocation("directory", "helmapp/alloy");
             case "38-install-prometheus" -> new MediaLocation("directory", "prometheus");
