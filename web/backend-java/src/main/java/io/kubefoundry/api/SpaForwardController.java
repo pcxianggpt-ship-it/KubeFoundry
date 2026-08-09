@@ -7,6 +7,10 @@ import org.springframework.web.bind.annotation.GetMapping;
 public class SpaForwardController {
 
     @GetMapping({
+        "/cluster-config",
+        "/cluster-config/{clusterId}/{stage}",
+        "/cluster-install",
+        "/cluster-install/{clusterId}/{stage}",
         "/clusters/{clusterId}",
         "/clusters/{clusterId}/{stage}",
         "/clusters/{clusterId}/install/confirm",

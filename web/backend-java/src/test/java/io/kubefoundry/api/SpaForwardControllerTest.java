@@ -15,6 +15,11 @@ class SpaForwardControllerTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
+        "/cluster-config",
+        "/cluster-config/1/nodes",
+        "/cluster-install",
+        "/cluster-install/1/overview",
+        "/cluster-install/1/confirm",
         "/clusters/1",
         "/clusters/1/nodes",
         "/clusters/1/install",
