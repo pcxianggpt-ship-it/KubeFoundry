@@ -62,4 +62,5 @@ public class JobStep {
     public void markRunning() { status = "running"; }
     public void markSuccess() { status = "success"; }
     public void markFailed() { status = "failed"; }
+    public void markSkipped() { status = "skipped"; }
 }

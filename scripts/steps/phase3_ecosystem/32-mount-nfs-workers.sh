@@ -30,7 +30,15 @@ if ! grep -qF "${managed_marker_begin}" "${fstab_file}" 2>/dev/null; then
         printf '%s\n' "${managed_marker_end}"
     } >> "${fstab_file}"
 fi
-if ! mountpoint -q -- "${KF_NFS_WORKER_MOUNT_PATH}"; then
-    mount -t nfs "${KF_NFS_SERVER}:${KF_NFS_SHARE_PATH}" "${KF_NFS_WORKER_MOUNT_PATH}"
+expected_source="${KF_NFS_SERVER}:${KF_NFS_SHARE_PATH}"
+if mountpoint -q -- "${KF_NFS_WORKER_MOUNT_PATH}"; then
+    mounted_source=$(findmnt -n -o SOURCE --target "${KF_NFS_WORKER_MOUNT_PATH}" 2>/dev/null || true)
+    if [ "${mounted_source}" != "${expected_source}" ]; then
+        log_error "挂载目录已被其他文件系统占用: ${KF_NFS_WORKER_MOUNT_PATH} (${mounted_source:-未知来源})"
+        exit 1
+    fi
+    log_info "NFS 已挂载，跳过重复挂载: ${expected_source}"
+else
+    mount -t nfs "${expected_source}" "${KF_NFS_WORKER_MOUNT_PATH}"
 fi
 log_success "当前 Worker 的 NFS 挂载已幂等完成"

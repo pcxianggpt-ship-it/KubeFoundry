@@ -52,8 +52,7 @@ public class ClusterComponentService {
                     state == null ? ClusterComponentState.NOT_INSTALLED : state.getStatus(),
                     parseConfig(component == null ? "{}" : component.getConfigJson()));
         }).toList();
-        return new ComponentsResponse(cluster.isKubemateEnabled(), cluster.getComponentConfigVersion(),
-                cluster.getComponentPrecheckStatus(), groups);
+        return new ComponentsResponse(cluster.getComponentConfigVersion(), cluster.getComponentPrecheckStatus(), groups);
     }
 
     @Transactional
@@ -97,9 +96,8 @@ public class ClusterComponentService {
             group.setValidatedConfig(config);
             values.put(definition.key(), group);
         }
-        boolean configurationChanged = cluster.isKubemateEnabled() != request.enabled()
-                || configurationChanged(clusterId, values);
-        cluster.updateKubemateEnabled(request.enabled());
+        boolean configurationChanged = configurationChanged(clusterId, values);
+        cluster.updateKubemateEnabled(values.values().stream().anyMatch(GroupRequest::enabled));
         components.deleteByClusterId(clusterId);
         components.flush();
         for (KubemateComponentCatalog.Group definition : KubemateComponentCatalog.GROUPS) {
@@ -189,7 +187,7 @@ public class ClusterComponentService {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = false)
-    public record ComponentsRequest(boolean enabled, List<GroupRequest> groups) { }
+    public record ComponentsRequest(List<GroupRequest> groups) { }
     @JsonIgnoreProperties(ignoreUnknown = false)
     public static final class GroupRequest {
         private final String key;
@@ -204,7 +202,6 @@ public class ClusterComponentService {
         void setValidatedConfig(String value) { validatedConfig = value; }
     }
     public record ComponentsResponse(
-            boolean enabled,
             long configurationVersion,
             String precheckStatus,
             List<GroupResponse> groups) { }

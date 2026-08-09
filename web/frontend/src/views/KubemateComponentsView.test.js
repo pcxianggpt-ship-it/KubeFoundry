@@ -22,8 +22,8 @@ const groups = [
 describe('KubemateComponentsView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    listComponents.mockResolvedValue({ enabled: true, groups });
-    updateComponents.mockResolvedValue({ enabled: true, groups });
+    listComponents.mockResolvedValue({ groups });
+    updateComponents.mockResolvedValue({ groups });
   });
 
   it('显示六组中文信息、实际状态和不可用的 Redis 组', async () => {
@@ -42,7 +42,7 @@ describe('KubemateComponentsView', () => {
     expect(wrapper.get('[data-testid="group-switch-traefik"] input').attributes('disabled')).toBeDefined();
   });
 
-  it('按聚合契约保存总开关和组件组配置', async () => {
+  it('仅按组件组配置保存，不发送总开关', async () => {
     const wrapper = mount(KubemateComponentsView, {
       props: { clusterId: 42 },
       global: { plugins: [ElementPlus] }
@@ -53,16 +53,16 @@ describe('KubemateComponentsView', () => {
     await flushPromises();
 
     expect(updateComponents).toHaveBeenCalledWith(42, expect.objectContaining({
-      enabled: true,
       groups: expect.arrayContaining([
         expect.objectContaining({ key: 'storage_observability', enabled: true, config: {} })
       ])
     }));
+    expect(updateComponents.mock.calls[0][1]).not.toHaveProperty('enabled');
     expect(wrapper.emitted('next')).toHaveLength(1);
   });
 
   it('启用 NFS 后要求完整配置', async () => {
-    listComponents.mockResolvedValue({ enabled: true, groups: groups.map((group) => (
+    listComponents.mockResolvedValue({ groups: groups.map((group) => (
       group.key === 'nfs' ? { ...group, enabled: true } : group
     )) });
     const wrapper = mount(KubemateComponentsView, {

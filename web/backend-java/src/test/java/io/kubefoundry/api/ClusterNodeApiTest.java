@@ -105,6 +105,36 @@ class ClusterNodeApiTest {
     }
 
     @Test
+    void normalizesNodeIdentityAndRejectsDuplicatesInTheSameCluster() throws Exception {
+        long clusterId = createCluster("node-identity");
+        long nodeId = createNode(clusterId, "Worker-01.", "192.168.001.011", "Secret123");
+
+        assertThat(jdbc.queryForMap(
+                "select hostname_normalized, ip_normalized from nodes where id=?", nodeId))
+                .containsEntry("hostname_normalized", "worker-01")
+                .containsEntry("ip_normalized", "192.168.1.11");
+
+        mvc.perform(post("/api/clusters/{id}/nodes", clusterId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(nodeJson("worker-01", "192.168.1.12", "Secret123")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("NODE_HOSTNAME_DUPLICATE"));
+
+        mvc.perform(post("/api/clusters/{id}/nodes", clusterId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(nodeJson("worker-02", "192.168.1.11", "Secret123")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("NODE_IP_DUPLICATE"));
+
+        mvc.perform(put("/api/nodes/{id}", nodeId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"hostname\":\"worker-01\",\"ip\":\"192.168.1.11\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.hostname").value("worker-01"))
+                .andExpect(jsonPath("$.ip").value("192.168.1.11"));
+    }
+
+    @Test
     void emptyPasswordUpdateKeepsCredentialAndMarksTestStale() throws Exception {
         long clusterId = createCluster("update-node");
         long nodeId = createNode(clusterId, "node-1", "192.168.1.11", "Secret123");

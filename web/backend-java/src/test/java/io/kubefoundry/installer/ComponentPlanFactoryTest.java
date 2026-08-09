@@ -20,7 +20,7 @@ class ComponentPlanFactoryTest {
     void generatesOnlyEnabledGroupsAfterTheSharedPrerequisites() {
         ComponentPlanFactory factory = new ComponentPlanFactory(temporaryDirectory);
 
-        InstallPlan plan = factory.create(snapshot(true, List.of(
+        InstallPlan plan = factory.create(snapshot(List.of(
                 group("traefik", true), group("prometheus", false))));
 
         assertThat(plan.steps()).extracting(InstallStep::key).containsExactly(
@@ -33,7 +33,7 @@ class ComponentPlanFactoryTest {
     void keepsTheStorageObservabilitySuiteAtomicAndOrdered() {
         ComponentPlanFactory factory = new ComponentPlanFactory(temporaryDirectory);
 
-        InstallPlan plan = factory.create(snapshot(true, List.of(group("storage_observability", true))));
+        InstallPlan plan = factory.create(snapshot(List.of(group("storage_observability", true))));
 
         assertThat(plan.steps()).extracting(InstallStep::key).containsExactly(
                 "29-install-helm", "30-create-namespace", "46-prepare-storage-workers", "47-install-openebs",
@@ -46,8 +46,8 @@ class ComponentPlanFactoryTest {
     void usesTheActualMinioMediaDirectoryAndSkipsMetricsServerMediaValidation() {
         ComponentPlanFactory factory = new ComponentPlanFactory(temporaryDirectory);
 
-        InstallPlan storagePlan = factory.create(snapshot(true, List.of(group("storage_observability", true))));
-        InstallPlan prometheusPlan = factory.create(snapshot(true, List.of(group("prometheus", true))));
+        InstallPlan storagePlan = factory.create(snapshot(List.of(group("storage_observability", true))));
+        InstallPlan prometheusPlan = factory.create(snapshot(List.of(group("prometheus", true))));
 
         assertThat(storagePlan.require("49-install-minio").resources()).singleElement().satisfies(resource ->
                 assertThat(resource.localPath().toString().replace('\\', '/'))
@@ -56,24 +56,24 @@ class ComponentPlanFactoryTest {
     }
 
     @Test
-    void disablesAllComponentStepsWhenTheGlobalSwitchIsOffAndAppendsToBasePlan() {
+    void excludesAllComponentStepsWhenNoComponentGroupIsEnabledAndAppendsToBasePlan() {
         ComponentPlanFactory componentPlans = new ComponentPlanFactory(temporaryDirectory);
-        InstallationSnapshotPayload disabled = snapshot(false, List.of(group("traefik", true)));
+        InstallationSnapshotPayload disabled = snapshot(List.of(group("traefik", false)));
 
         assertThat(componentPlans.create(disabled).steps()).isEmpty();
         InstallPlan combined = new InstallPlanAssembler(
                 new BaseInstallPlanFactory(temporaryDirectory), componentPlans)
-                .forNewCluster(snapshot(true, List.of(group("traefik", true))));
-        assertThat(combined.steps()).hasSize(17);
-        assertThat(combined.steps().get(13).key()).isEqualTo("web-verify-cluster-health");
-        assertThat(combined.steps().get(14).key()).isEqualTo("29-install-helm");
+                .forNewCluster(snapshot(List.of(group("traefik", true))));
+        assertThat(combined.steps()).hasSize(18);
+        assertThat(combined.steps().get(14).key()).isEqualTo("web-verify-cluster-health");
+        assertThat(combined.steps().get(15).key()).isEqualTo("29-install-helm");
     }
 
     @Test
     void sendsKubemateManifestToTheJobResourceDirectory() {
         ComponentPlanFactory factory = new ComponentPlanFactory(temporaryDirectory);
 
-        InstallStep step = factory.create(snapshot(true, List.of(group("kubemate", true))))
+        InstallStep step = factory.create(snapshot(List.of(group("kubemate", true))))
                 .require("31-install-kubemate-ui");
 
         assertThat(step.resources()).hasSize(1);
@@ -85,7 +85,7 @@ class ComponentPlanFactoryTest {
     void importsTheOfflineNfsImageBeforeInstallingTheNfsChart() {
         ComponentPlanFactory factory = new ComponentPlanFactory(temporaryDirectory);
 
-        InstallPlan plan = factory.create(snapshot(true, List.of(group("nfs", true))));
+        InstallPlan plan = factory.create(snapshot(List.of(group("nfs", true))));
 
         assertThat(plan.steps()).extracting(InstallStep::key).containsExactly(
                 "29-install-helm", "30-create-namespace", "32-configure-nfs-exports",
@@ -96,12 +96,10 @@ class ComponentPlanFactoryTest {
         });
     }
 
-    private static InstallationSnapshotPayload snapshot(
-            boolean enabled, List<InstallationSnapshotPayload.ComponentGroup> groups) {
+    private static InstallationSnapshotPayload snapshot(List<InstallationSnapshotPayload.ComponentGroup> groups) {
         Cluster cluster = new Cluster("component-plan");
         ReflectionTestUtils.setField(cluster, "id", 1L);
         cluster.updateInstallationConfiguration("/data/kubernetes", "REGISTRY");
-        cluster.updateKubemateEnabled(enabled);
         Node node = new Node(cluster);
         ReflectionTestUtils.setField(node, "id", 2L);
         node.update("cp-1", "10.0.0.1", "", "control_plane", "root", 22);

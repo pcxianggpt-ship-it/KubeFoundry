@@ -71,6 +71,8 @@ public class ComponentInstallationStateService {
             List<JobStep> groupSteps = groupSteps(job.getId(), groupKey);
             if (groupSteps.stream().allMatch(step -> "success".equals(step.getStatus()))) {
                 state.markInstalled(null, job.getId());
+            } else if (groupSteps.stream().anyMatch(step -> "failed".equals(step.getStatus()))) {
+                state.markFailed("COMPONENT_INSTALL_FAILED", job.getId());
             } else if (success) {
                 state.markFailed("COMPONENT_STATE_INCOMPLETE", job.getId());
             } else if (groupSteps.stream().allMatch(step -> "pending".equals(step.getStatus()))) {

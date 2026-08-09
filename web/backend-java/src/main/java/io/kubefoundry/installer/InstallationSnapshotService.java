@@ -104,7 +104,6 @@ public class InstallationSnapshotService {
                 installPayload.kubernetesWorkDir(),
                 installPayload.imageRegistryType(),
                 installPayload.nodes(),
-                installPayload.kubemateEnabled(),
                 installPayload.componentConfigurationVersion(),
                 installPayload.componentGroups(),
                 installPayload.componentPlanVersion(),

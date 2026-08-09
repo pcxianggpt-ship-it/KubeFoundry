@@ -11,7 +11,7 @@
     <template v-else>
       <section class="execution-overview">
         <div class="progress-copy"><span>整体进度</span><strong>{{ completedStages }}/{{ stages.length }} 个阶段</strong></div>
-        <el-progress :percentage="progress" :status="job.status === 'failed' ? 'exception' : job.status === 'success' ? 'success' : undefined" />
+        <el-progress :percentage="progress" :status="job.status === 'failed' ? 'exception' : ['success', 'partial_success'].includes(job.status) ? 'success' : undefined" />
         <div class="execution-meta"><span>Kubernetes {{ cluster.k8s_version || '-' }}</span><span>{{ connected ? '实时连接中' : terminal ? '任务已结束' : '实时连接已中断' }}</span></div>
       </section>
       <el-alert v-if="job.status === 'failed'" :title="`${jobTypeLabel}任务失败，可定位首个失败节点查看诊断和日志。`" type="error" show-icon :closable="false">
@@ -53,8 +53,8 @@ let eventSource; let logId = 0;
 const terminal = computed(() => isTerminalJob(job.value.status));
 const completedStages = computed(() => stages.value.filter((stage) => ['success', 'skipped'].includes(stage.status)).length);
 const progress = computed(() => stages.value.length ? Math.round(completedStages.value / stages.value.length * 100) : 0);
-const statusTone = computed(() => job.value.status === 'success' ? 'success' : terminal.value ? 'error' : 'running');
-const statusIcon = computed(() => job.value.status === 'success' ? CircleCheckFilled : terminal.value ? WarningFilled : Clock);
+const statusTone = computed(() => ['success', 'partial_success'].includes(job.value.status) ? 'success' : terminal.value ? 'error' : 'running');
+const statusIcon = computed(() => ['success', 'partial_success'].includes(job.value.status) ? CircleCheckFilled : terminal.value ? WarningFilled : Clock);
 const clusterRoute = computed(() => ({ name: 'install-overview', params: { clusterId: String(job.value.cluster_id) } }));
 const jobTypeLabel = computed(() => ({ install: '安装', component_install: '组件补装', reset: '重置', precheck: '预检查' }[job.value.job_type] || '集群'));
 const selectedStage = computed(() => stages.value.find((stage) => stage.id === selectedStageId.value));

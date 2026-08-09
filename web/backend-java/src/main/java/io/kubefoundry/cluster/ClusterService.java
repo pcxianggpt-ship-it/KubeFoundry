@@ -83,17 +83,19 @@ public class ClusterService {
 
     @Transactional
     public NodeResponse createNode(long clusterId, NodeRequest request) {
-        Cluster cluster = requireCluster(clusterId);
+        Cluster cluster = requireClusterForUpdate(clusterId);
         requireConfigurationMutable(cluster);
-        validateNode(request, true);
+        NormalizedNode normalized = validateAndNormalizeNode(request, true);
+        requireUniqueNodeIdentity(clusterId, null, normalized);
         Node node = new Node(cluster);
-        node.update(request.hostname(), request.ip(), valueOrEmpty(request.ipv6()), null,
-                request.sshUser(), request.sshPort());
+        node.update(normalized.hostname(), normalized.ip(), valueOrEmpty(request.ipv6()), null,
+                normalized.sshUser(), normalized.sshPort());
+        node.updateNormalizedIdentity(normalized.hostnameNormalized(), normalized.ipNormalized());
         node.replaceRoles(request.roles());
         replacePasswordIfPresent(node, request.password());
         node.markDraft(false);
         node.markPendingAndClearDiscovery();
-        NodeResponse response = NodeResponse.from(nodes.save(node));
+        NodeResponse response = NodeResponse.from(nodes.saveAndFlush(node));
         clusters.markNodeConfigurationChanged(clusterId);
         return response;
     }
@@ -101,20 +103,23 @@ public class ClusterService {
     @Transactional
     public NodeResponse updateNode(long nodeId, NodeRequest request) {
         Node node = requireNode(nodeId);
-        requireConfigurationMutable(node.getCluster());
-        boolean hostIdentityChanged = changed(request.ip(), node.getIp())
+        Cluster cluster = requireClusterForUpdate(node.getCluster().getId());
+        requireConfigurationMutable(cluster);
+        NodeRequest merged = merge(node, request);
+        NormalizedNode normalized = validateAndNormalizeNode(merged, false);
+        requireUniqueNodeIdentity(node.getCluster().getId(), node.getId(), normalized);
+        boolean hostIdentityChanged = !normalized.ipNormalized().equals(node.getIpNormalized())
                 || (request.sshPort() != null && request.sshPort() != node.getSshPort());
-        boolean criticalChanged = changed(request.hostname(), node.getHostname())
-                || changed(request.ip(), node.getIp())
+        boolean criticalChanged = !normalized.hostnameNormalized().equals(node.getHostnameNormalized())
+                || !normalized.ipNormalized().equals(node.getIpNormalized())
                 || changed(request.ipv6(), node.getIpv6())
                 || (request.roles() != null && !Set.copyOf(request.roles()).equals(node.getRoles()))
                 || changed(request.sshUser(), node.getSshUser())
                 || (request.sshPort() != null && request.sshPort() != node.getSshPort())
                 || (request.password() != null && !request.password().isBlank());
-        NodeRequest merged = merge(node, request);
-        validateNode(merged, false);
-        node.update(request.hostname(), request.ip(), request.ipv6(), null,
-                request.sshUser(), request.sshPort());
+        node.update(normalized.hostname(), normalized.ip(), request.ipv6(), null,
+                normalized.sshUser(), normalized.sshPort());
+        node.updateNormalizedIdentity(normalized.hostnameNormalized(), normalized.ipNormalized());
         node.replaceRoles(merged.roles());
         replacePasswordIfPresent(node, request.password());
         if (node.isDraft()) node.markDraft(false);
@@ -122,7 +127,7 @@ public class ClusterService {
             node.markTestStale(hostIdentityChanged);
             clusters.markNodeConfigurationChanged(node.getCluster().getId());
         }
-        return NodeResponse.from(nodes.save(node));
+        return NodeResponse.from(nodes.saveAndFlush(node));
     }
 
     @Transactional
@@ -173,10 +178,11 @@ public class ClusterService {
         }
     }
 
-    private void validateNode(NodeRequest request, boolean passwordRequired) {
-        required(request.hostname(), "节点主机名不能为空");
+    private NormalizedNode validateAndNormalizeNode(NodeRequest request, boolean passwordRequired) {
+        String hostname = required(request.hostname(), "节点主机名不能为空");
         String ip = required(request.ip(), "节点 IPv4 不能为空");
-        if (!isIpv4(ip)) {
+        String normalizedIp = normalizeIpv4(ip);
+        if (normalizedIp == null) {
             throw new IllegalArgumentException("节点 IPv4 格式无效");
         }
         if (request.roles() == null || request.roles().isEmpty()
@@ -186,17 +192,35 @@ public class ClusterService {
         if (request.roles().contains("control_plane") && request.roles().contains("worker")) {
             throw new IllegalArgumentException("同一台服务器不能同时配置控制节点和工作节点角色");
         }
-        required(request.sshUser(), "SSH 用户不能为空");
+        String sshUser = required(request.sshUser(), "SSH 用户不能为空");
         if (request.sshPort() == null || request.sshPort() < 1 || request.sshPort() > 65535) {
             throw new IllegalArgumentException("SSH 端口必须在 1 到 65535 之间");
         }
         if (passwordRequired && (request.password() == null || request.password().isBlank())) {
             throw new IllegalArgumentException("节点登录密码不能为空");
         }
+        return new NormalizedNode(hostname, normalizeHostname(hostname), normalizedIp, normalizedIp,
+                sshUser, request.sshPort());
+    }
+
+    private void requireUniqueNodeIdentity(long clusterId, Long excludedNodeId, NormalizedNode identity) {
+        Node hostnameConflict = nodes.findByClusterIdAndHostnameNormalized(
+                clusterId, identity.hostnameNormalized()).filter(node -> !node.getId().equals(excludedNodeId))
+                .orElse(null);
+        Node ipConflict = nodes.findByClusterIdAndIpNormalized(
+                clusterId, identity.ipNormalized()).filter(node -> !node.getId().equals(excludedNodeId))
+                .orElse(null);
+        if (hostnameConflict != null || ipConflict != null) {
+            throw new NodeIdentityConflictException(hostnameConflict, ipConflict);
+        }
     }
 
     private Cluster requireCluster(long id) {
         return clusters.findById(id).orElseThrow(() -> ResourceNotFoundException.cluster(id));
+    }
+
+    private Cluster requireClusterForUpdate(long id) {
+        return clusters.findByIdForUpdate(id).orElseThrow(() -> ResourceNotFoundException.cluster(id));
     }
 
     private Node requireNode(long id) {
@@ -235,17 +259,26 @@ public class ClusterService {
     }
 
     private static String valueOrEmpty(String value) { return value == null ? "" : value; }
-    private static boolean isIpv4(String value) {
+    private static String normalizeHostname(String value) {
+        String normalized = value.trim().toLowerCase(java.util.Locale.ROOT);
+        return normalized.endsWith(".") ? normalized.substring(0, normalized.length() - 1) : normalized;
+    }
+
+    private static String normalizeIpv4(String value) {
         String[] parts = value.split("\\.", -1);
-        if (parts.length != 4) return false;
+        if (parts.length != 4) return null;
+        String[] normalized = new String[4];
         for (String part : parts) {
             if (part.isEmpty() || part.length() > 3 || !part.chars().allMatch(Character::isDigit)) {
-                return false;
+                return null;
             }
             int octet = Integer.parseInt(part);
-            if (octet > 255) return false;
+            if (octet > 255) return null;
         }
-        return true;
+        for (int index = 0; index < parts.length; index++) {
+            normalized[index] = Integer.toString(Integer.parseInt(parts[index]));
+        }
+        return String.join(".", normalized);
     }
     private static boolean changed(String incoming, String current) {
         return incoming != null && !incoming.trim().equals(current == null ? "" : current);
@@ -298,6 +331,14 @@ public class ClusterService {
             @JsonProperty("ssh_port") Integer sshPort,
             String password) {}
 
+    private record NormalizedNode(
+            String hostname,
+            String hostnameNormalized,
+            String ip,
+            String ipNormalized,
+            String sshUser,
+            int sshPort) {}
+
     public record NodeResponse(
             long id,
             @JsonProperty("cluster_id") long clusterId,
@@ -328,6 +369,29 @@ public class ClusterService {
 
     public static final class ClusterConfigurationLockedException extends RuntimeException {
         public ClusterConfigurationLockedException(String message) { super(message); }
+    }
+
+    public static final class NodeIdentityConflictException extends RuntimeException {
+        private final Node hostnameConflict;
+        private final Node ipConflict;
+
+        NodeIdentityConflictException(Node hostnameConflict, Node ipConflict) {
+            super(message(hostnameConflict, ipConflict));
+            this.hostnameConflict = hostnameConflict;
+            this.ipConflict = ipConflict;
+        }
+
+        public Node hostnameConflict() { return hostnameConflict; }
+        public Node ipConflict() { return ipConflict; }
+        public String code() {
+            if (hostnameConflict != null && ipConflict != null) return "NODE_IDENTITY_DUPLICATE";
+            return hostnameConflict != null ? "NODE_HOSTNAME_DUPLICATE" : "NODE_IP_DUPLICATE";
+        }
+
+        private static String message(Node hostnameConflict, Node ipConflict) {
+            if (hostnameConflict != null && ipConflict != null) return "主机名和 IP 地址已被当前集群的其他节点使用";
+            return hostnameConflict != null ? "主机名已被当前集群的其他节点使用" : "IP 地址已被当前集群的其他节点使用";
+        }
     }
 
     public static final class ResourceNotFoundException extends RuntimeException {

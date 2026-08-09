@@ -35,6 +35,12 @@ public class Node {
     @Column(name = "host", length = 255)
     private String ip = "";
 
+    @Column(name = "hostname_normalized", length = 128)
+    private String hostnameNormalized;
+
+    @Column(name = "ip_normalized", length = 15)
+    private String ipNormalized;
+
     @Column(nullable = false, length = 128)
     private String ipv6 = "";
 
@@ -95,6 +101,8 @@ public class Node {
     public Cluster getCluster() { return cluster; }
     public String getHostname() { return hostname; }
     public String getIp() { return ip; }
+    public String getHostnameNormalized() { return hostnameNormalized; }
+    public String getIpNormalized() { return ipNormalized; }
     public String getIpv6() { return ipv6; }
     public String getRole() { return role; }
     public Set<String> getRoles() {
@@ -132,6 +140,11 @@ public class Node {
         if (sshPort != null) this.sshPort = sshPort;
     }
 
+    public void updateNormalizedIdentity(String normalizedHostname, String normalizedIp) {
+        hostnameNormalized = normalizedHostname;
+        ipNormalized = normalizedIp;
+    }
+
     public void replaceRoles(Collection<String> values) {
         Set<String> desired = values == null ? Set.of() : values.stream()
                 .filter(value -> value != null && !value.isBlank()).map(String::trim)
@@ -150,7 +163,10 @@ public class Node {
         passwordVersion = credential.version();
     }
 
-    public void markDraft(boolean value) { draft = value; }
+    public void markDraft(boolean value) {
+        draft = value;
+        if (value) updateNormalizedIdentity(null, null);
+    }
 
     public void markTestStale(boolean resetHostFingerprint) {
         nodeTestStatus = "stale";

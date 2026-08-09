@@ -94,6 +94,12 @@ public class BaseInstallPlanFactory {
                         List.of(pathResource("flannel_config", "file", "/tmp/k8s/kube-flannel.yml")),
                         List.of(), List.of(),
                         "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -A | grep -q flannel"),
+                script("23-configure-coredns-affinity", "配置 CoreDNS 副本反亲和", "primary_control_plane",
+                        "23-configure-coredns-affinity.sh", "serial", 1, true,
+                        List.of(), List.of(), List.of(),
+                        "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get deployment coredns -n kube-system "
+                                + "-o jsonpath='{.metadata.annotations.kubefoundry\\.io/coredns-anti-affinity}' "
+                                + "| grep -qx v1"),
                 InstallStep.builtin("web-verify-cluster-health", "验证 Kubernetes 集群健康",
                         "verify", "primary_control_plane", "cluster_health",
                         "serial", 1, true, "")));

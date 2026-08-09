@@ -113,9 +113,10 @@ class InstallerControllerTest {
     void exposesPlanSettingsPrecheckResultsAndAcceptedInstallContracts() throws Exception {
         mvc.perform(get("/api/clusters/{id}/install-plan", cluster.getId()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items.length()").value(14))
-                .andExpect(jsonPath("$.items[13].key").value("web-verify-cluster-health"))
-                .andExpect(jsonPath("$.items[13].target_scope").value("primary_control_plane"));
+                .andExpect(jsonPath("$.items.length()").value(15))
+                .andExpect(jsonPath("$.items[13].key").value("23-configure-coredns-affinity"))
+                .andExpect(jsonPath("$.items[14].key").value("web-verify-cluster-health"))
+                .andExpect(jsonPath("$.items[14].target_scope").value("primary_control_plane"));
 
         mvc.perform(get("/api/settings"))
                 .andExpect(status().isOk())

@@ -66,6 +66,12 @@ public class JobStepNode {
         if (exitCode == null) exitCode = 1;
         if (message == null || message.isBlank()) message = failureMessage;
     }
+    public void markSkipped(String skipMessage) {
+        status = "skipped";
+        exitCode = null;
+        message = skipMessage == null || skipMessage.isBlank()
+                ? "组件组前置步骤失败，已跳过" : skipMessage;
+    }
     public void complete(JobService.NodeOutcome outcome) {
         status = outcome.success() ? "success" : "failed";
         exitCode = outcome.exitCode();

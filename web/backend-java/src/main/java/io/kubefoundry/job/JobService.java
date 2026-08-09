@@ -156,11 +156,18 @@ public class JobService {
         events.publish(jobId, "job.status", Map.of("status", "running"));
 
         try {
+            boolean componentJob = ComponentInstallationStateService.JOB_TYPE.equals(job.getType());
+            Set<String> failedComponentGroups = new HashSet<>();
             Map<Integer, JobStep> persistedSteps = listSteps(jobId).stream()
                     .collect(java.util.stream.Collectors.toMap(JobStep::getOrder, value -> value));
             for (StepDefinition stepDefinition : definition.steps().stream()
                     .sorted(Comparator.comparingInt(StepDefinition::order)).toList()) {
                 JobStep step = persistedSteps.get(stepDefinition.order());
+                String componentGroupKey = step.getComponentGroupKey();
+                if (componentJob && componentGroupKey != null && failedComponentGroups.contains(componentGroupKey)) {
+                    skipStep(jobId, step, "COMPONENT_GROUP_PREVIOUS_STEP_FAILED");
+                    continue;
+                }
                 step.markRunning();
                 steps.saveAndFlush(step);
                 events.publish(jobId, "step.status", Map.of(
@@ -206,6 +213,15 @@ public class JobService {
                 JobExecutor.ExecutionSummary summary = executor.executeNodes(
                         work, stepDefinition.maxWorkers(), stepDefinition.failFast());
                 if ("failed".equals(summary.status())) {
+                    if (componentJob && componentGroupKey != null) {
+                        failNodes(step, "组件组步骤执行失败");
+                        step.markFailed();
+                        steps.saveAndFlush(step);
+                        events.publish(jobId, "step.status", Map.of(
+                                "step_id", step.getId(), "status", "failed"));
+                        failedComponentGroups.add(componentGroupKey);
+                        continue;
+                    }
                     failStepAndJob(jobId, job, step, "节点任务失败");
                     return;
                 }
@@ -215,11 +231,13 @@ public class JobService {
                 events.publish(jobId, "step.status", Map.of(
                         "step_id", step.getId(), "status", "success"));
             }
-            job.markSuccess();
+            if (failedComponentGroups.isEmpty()) job.markSuccess();
+            else job.markPartialSuccess();
             jobs.saveAndFlush(job);
             componentStates.complete(job, true);
             updateInstallStatus(job, true);
-            events.publish(jobId, "job.status", Map.of("status", "success"));
+            events.publish(jobId, "job.status", Map.of(
+                    "status", failedComponentGroups.isEmpty() ? "success" : "partial_success"));
         } catch (RuntimeException exception) {
             failRunningStepsAndNodes(jobId, stableMessage(exception));
             job.markFailed();
@@ -289,6 +307,26 @@ public class JobService {
                     "status", "failed",
                     "message", message));
         }
+    }
+
+    private void skipStep(long jobId, JobStep step, String reason) {
+        for (JobStepNode node : listStepNodes(step.getId())) {
+            if ("success".equals(node.getStatus()) || "failed".equals(node.getStatus())
+                    || "skipped".equals(node.getStatus())) {
+                continue;
+            }
+            node.markSkipped(reason);
+            stepNodes.saveAndFlush(node);
+            events.publish(jobId, "node.status", Map.of(
+                    "node_id", node.getNode().getId(),
+                    "hostname", node.getNode().getHostname(),
+                    "status", "skipped",
+                    "message", reason));
+        }
+        step.markSkipped();
+        steps.saveAndFlush(step);
+        events.publish(jobId, "step.status", Map.of(
+                "step_id", step.getId(), "status", "skipped", "reason", reason));
     }
 
     private static void validate(JobDefinition definition) {

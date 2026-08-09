@@ -113,9 +113,6 @@ public class ComponentInstallService {
     }
 
     private void validateSubmission(Cluster cluster, Set<String> groupKeys) {
-        if (!cluster.isKubemateEnabled()) {
-            throw new IllegalStateException("Kubemate 组件安装总开关未启用");
-        }
         for (String groupKey : groupKeys) {
             KubemateComponentCatalog.Group definition = KubemateComponentCatalog.find(groupKey);
             if (definition == null || !definition.available()) {

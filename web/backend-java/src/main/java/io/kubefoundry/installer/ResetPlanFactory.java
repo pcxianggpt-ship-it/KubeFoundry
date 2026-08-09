@@ -90,11 +90,9 @@ class ResetPlanFactory {
             InstallationSnapshotPayload payload, List<ClusterComponentState> states) {
         if (payload == null) throw new IllegalArgumentException("重置缺少安装快照");
         Set<String> result = new LinkedHashSet<>();
-        if (payload.kubemateEnabled()) {
-            payload.componentGroups().stream().filter(InstallationSnapshotPayload.ComponentGroup::enabled)
-                    .map(InstallationSnapshotPayload.ComponentGroup::key)
-                    .filter(ResetPlanFactory::isCleanupGroup).forEach(result::add);
-        }
+        payload.componentGroups().stream().filter(InstallationSnapshotPayload.ComponentGroup::enabled)
+                .map(InstallationSnapshotPayload.ComponentGroup::key)
+                .filter(ResetPlanFactory::isCleanupGroup).forEach(result::add);
         for (ClusterComponentState state : states == null ? List.<ClusterComponentState>of() : states) {
             if (state != null && isCleanupGroup(state.getComponentKey())
                     && !ClusterComponentState.NOT_INSTALLED.equals(state.getStatus())) {

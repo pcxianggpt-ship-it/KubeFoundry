@@ -11,6 +11,8 @@ import org.springframework.transaction.annotation.Transactional;
 public interface NodeRepository extends JpaRepository<Node, Long> {
     List<Node> findByClusterIdOrderById(long clusterId);
     Optional<Node> findByIdAndClusterId(long id, long clusterId);
+    Optional<Node> findByClusterIdAndHostnameNormalized(long clusterId, String hostnameNormalized);
+    Optional<Node> findByClusterIdAndIpNormalized(long clusterId, String ipNormalized);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional

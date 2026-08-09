@@ -2,6 +2,7 @@ package io.kubefoundry.api;
 
 import io.kubefoundry.cluster.ClusterService.ResourceNotFoundException;
 import io.kubefoundry.cluster.ClusterService.ClusterConfigurationLockedException;
+import io.kubefoundry.cluster.ClusterService.NodeIdentityConflictException;
 import io.kubefoundry.job.JobQueueFullException;
 import io.kubefoundry.job.JobNotFoundException;
 import io.kubefoundry.installer.ActiveInstallerJobException;
@@ -10,6 +11,7 @@ import io.kubefoundry.installer.ResetConfirmationMismatchException;
 import io.kubefoundry.ssh.NodeTestService.ActiveNodeTestException;
 import io.kubefoundry.cluster.ClusterComponentService.ComponentConfigurationException;
 import java.util.Map;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -90,5 +92,42 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
                 "code", "CLUSTER_CONFIGURATION_LOCKED",
                 "message", exception.getMessage()));
+    }
+
+    @ExceptionHandler(NodeIdentityConflictException.class)
+    public ResponseEntity<Map<String, Object>> nodeIdentityConflict(NodeIdentityConflictException exception) {
+        Map<String, Object> details = new java.util.LinkedHashMap<>();
+        if (exception.hostnameConflict() != null) {
+            details.put("hostname_conflict_node_id", exception.hostnameConflict().getId());
+            details.put("hostname_conflict_hostname", exception.hostnameConflict().getHostname());
+        }
+        if (exception.ipConflict() != null) {
+            details.put("ip_conflict_node_id", exception.ipConflict().getId());
+            details.put("ip_conflict_hostname", exception.ipConflict().getHostname());
+        }
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                "code", exception.code(), "message", exception.getMessage(), "details", details));
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, String>> nodeIdentityConstraint(DataIntegrityViolationException exception) {
+        String message = deepestMessage(exception).toUpperCase(java.util.Locale.ROOT);
+        if (message.contains("UK_NODES_CLUSTER_HOSTNAME_NORMALIZED")) {
+            return nodeIdentityConstraintResponse("NODE_HOSTNAME_DUPLICATE", "主机名已被当前集群的其他节点使用");
+        }
+        if (message.contains("UK_NODES_CLUSTER_IP_NORMALIZED")) {
+            return nodeIdentityConstraintResponse("NODE_IP_DUPLICATE", "IP 地址已被当前集群的其他节点使用");
+        }
+        throw exception;
+    }
+
+    private static ResponseEntity<Map<String, String>> nodeIdentityConstraintResponse(String code, String message) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("code", code, "message", message));
+    }
+
+    private static String deepestMessage(Throwable exception) {
+        Throwable current = exception;
+        while (current.getCause() != null) current = current.getCause();
+        return current.getMessage() == null ? "" : current.getMessage();
     }
 }

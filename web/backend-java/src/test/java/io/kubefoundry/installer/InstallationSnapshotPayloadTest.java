@@ -38,7 +38,6 @@ class InstallationSnapshotPayloadTest {
         Cluster cluster = new Cluster("component-snapshot");
         ReflectionTestUtils.setField(cluster, "id", 8L);
         cluster.updateInstallationConfiguration("/data/kubernetes", "REGISTRY");
-        cluster.updateKubemateEnabled(true);
         cluster.markComponentConfigurationChanged();
         Node node = new Node(cluster);
         ReflectionTestUtils.setField(node, "id", 10L);
@@ -49,7 +48,6 @@ class InstallationSnapshotPayloadTest {
                         "storage_class", "nfs-storage", "server_address", "10.0.0.20"))),
                 Map.of("kubemate/helm", "A".repeat(64)));
 
-        assertThat(payload.kubemateEnabled()).isTrue();
         assertThat(payload.componentConfigurationVersion()).isEqualTo(1);
         assertThat(payload.componentGroups()).singleElement().satisfies(group -> {
             assertThat(group.key()).isEqualTo("nfs");

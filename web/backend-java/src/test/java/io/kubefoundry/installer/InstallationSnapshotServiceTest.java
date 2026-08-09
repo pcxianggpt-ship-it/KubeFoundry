@@ -56,7 +56,7 @@ class InstallationSnapshotServiceTest {
         Job job = new Job(cluster, jobType);
         job.markSuccess();
         InstallationSnapshotPayload payload = new InstallationSnapshotPayload(
-                1L, "cluster", "1", "/data/k8s", "REGISTRY", List.of(), true, 1L,
+                1L, "cluster", "1", "/data/k8s", "REGISTRY", List.of(), 1L,
                 List.of(), "v0.3.0", checksums);
         return new InstallationSnapshot(job, cluster, mapper.writeValueAsString(payload));
     }

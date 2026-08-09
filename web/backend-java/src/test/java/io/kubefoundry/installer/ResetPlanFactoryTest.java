@@ -54,7 +54,7 @@ class ResetPlanFactoryTest {
     @Test
     void buildsCleanupGroupsFromSnapshotAndNonTerminalComponentStates() {
         InstallationSnapshotPayload payload = new InstallationSnapshotPayload(1L, "cluster", "v1", "/data/k8s",
-                "local", List.of(), true, 1L, List.of(
+                "local", List.of(), 1L, List.of(
                         new InstallationSnapshotPayload.ComponentGroup("nfs", true, java.util.Map.of()),
                         new InstallationSnapshotPayload.ComponentGroup("traefik", false, java.util.Map.of())),
                 "v0.3.0", java.util.Map.of());
@@ -70,7 +70,7 @@ class ResetPlanFactoryTest {
     @Test
     void exposesOnlySnapshotCheckedHelmMediaForReset() {
         InstallationSnapshotPayload payload = new InstallationSnapshotPayload(1L, "cluster", "v1", "/data/k8s",
-                "local", List.of(), true, 1L, List.of(), "v0.3.0", java.util.Map.of(
+                "local", List.of(), 1L, List.of(), "v0.3.0", java.util.Map.of(
                         "kube-media/03.setup_file/v1/helmapp/alloy", "a".repeat(64),
                         "kube-media/03.setup_file/v1/helmapp/loki", "b".repeat(64)));
 

@@ -89,7 +89,7 @@ function items(payload) { return Array.isArray(payload) ? payload : payload?.ite
 function latest(type) { return jobs.value.filter((job) => job.job_type === type).sort((a, b) => b.id - a.id)[0] || null; }
 function jobLabel(job) { return job ? `${jobTypeLabel(job.job_type)}${statusLabel(job.status)}` : '暂无任务'; }
 function jobTypeLabel(type) { return { precheck: '预检查', install: '安装', component_install: '组件补装', reset: '重置' }[type] || '任务'; }
-function statusLabel(status) { return { pending: '等待中', running: '执行中', success: '成功', failed: '失败', interrupted: '已中断' }[status] || '未完成'; }
+function statusLabel(status) { return { pending: '等待中', running: '执行中', success: '成功', partial_success: '部分成功', failed: '失败', interrupted: '已中断' }[status] || '未完成'; }
 function jobRoute(job) { return { name: 'job-execution', params: { jobId: String(job.id) } }; }
 function goToPrecheck() { if (installAvailable.value) router.push(precheckRoute.value); }
 function goToReset() { if (resetAvailable.value) router.push(resetRoute.value); }

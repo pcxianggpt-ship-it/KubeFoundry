@@ -45,17 +45,17 @@ class ClusterComponentApiTest {
 
         mvc.perform(put("/api/clusters/{id}/components", clusterId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"enabled\":true,\"groups\":[{\"key\":\"traefik\",\"enabled\":true,\"config\":{}}]}"))
+                        .content("{\"groups\":[{\"key\":\"traefik\",\"enabled\":true,\"config\":{}}]}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("INSTALLER_JOB_ACTIVE"));
     }
 
     @Test
-    void listsFixedGroupsAndKubemateSwitch() throws Exception {
+    void listsFixedComponentGroupsWithoutKubemateSwitch() throws Exception {
         long clusterId = createCluster("components-default");
         mvc.perform(get("/api/clusters/{id}/components", clusterId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.enabled").value(false))
+                .andExpect(jsonPath("$.enabled").doesNotExist())
                 .andExpect(jsonPath("$.groups.length()").value(6))
                 .andExpect(jsonPath("$.groups[0].key").value("nfs"))
                 .andExpect(jsonPath("$.groups[3].components[0]").value("openebs"))
@@ -66,16 +66,16 @@ class ClusterComponentApiTest {
     void rejectsUnavailableUnknownDuplicateAndInvalidNfsGroups() throws Exception {
         long clusterId = createCluster("components-validation");
         mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"enabled\":true,\"groups\":[{\"key\":\"redis_sentinel\",\"enabled\":true,\"config\":{}}]}"))
+                        .content("{\"groups\":[{\"key\":\"redis_sentinel\",\"enabled\":true,\"config\":{}}]}"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMPONENT_GROUP_UNAVAILABLE"));
         mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"enabled\":true,\"groups\":[{\"key\":\"unknown\",\"enabled\":true,\"config\":{}}]}"))
+                        .content("{\"groups\":[{\"key\":\"unknown\",\"enabled\":true,\"config\":{}}]}"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMPONENT_GROUP_UNKNOWN"));
         mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"enabled\":true,\"groups\":[{\"key\":\"traefik\",\"enabled\":false,\"config\":{}},{\"key\":\"traefik\",\"enabled\":false,\"config\":{}}]}"))
+                        .content("{\"groups\":[{\"key\":\"traefik\",\"enabled\":false,\"config\":{}},{\"key\":\"traefik\",\"enabled\":false,\"config\":{}}]}"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMPONENT_CONFIG_INVALID"));
         mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"enabled\":true,\"groups\":[{\"key\":\"nfs\",\"enabled\":true,\"config\":{\"server_address\":\"not-ip\"}}]}"))
+                        .content("{\"groups\":[{\"key\":\"nfs\",\"enabled\":true,\"config\":{\"server_address\":\"not-ip\"}}]}"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMPONENT_CONFIG_INVALID"));
     }
 
@@ -84,8 +84,8 @@ class ClusterComponentApiTest {
         long clusterId = createCluster("components-save");
         String nfs = "{\"server_address\":\"10.0.0.10\",\"share_path\":\"/exports/k8s\",\"worker_mount_path\":\"/data/k8s/nfs\",\"storage_class\":\"nfs-storage\",\"exports_mode\":\"external\"}";
         mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"enabled\":true,\"groups\":[{\"key\":\"nfs\",\"enabled\":true,\"config\":" + nfs + "},{\"key\":\"traefik\",\"enabled\":true,\"config\":{}}]}"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(true))
+                        .content("{\"groups\":[{\"key\":\"nfs\",\"enabled\":true,\"config\":" + nfs + "},{\"key\":\"traefik\",\"enabled\":true,\"config\":{}}]}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.enabled").doesNotExist())
                 .andExpect(jsonPath("$.configurationVersion").value(1))
                 .andExpect(jsonPath("$.precheckStatus").value("stale"))
                 .andExpect(jsonPath("$.groups[0].enabled").value(true))
@@ -96,7 +96,7 @@ class ClusterComponentApiTest {
     @Test
     void onlyInvalidatesComponentPrechecksWhenTheSavedConfigurationChanges() throws Exception {
         long clusterId = createCluster("components-version");
-        String body = "{\"enabled\":true,\"groups\":[{\"key\":\"traefik\",\"enabled\":true,\"config\":{}}]}";
+        String body = "{\"groups\":[{\"key\":\"traefik\",\"enabled\":true,\"config\":{}}]}";
 
         mvc.perform(put("/api/clusters/{id}/components", clusterId)
                         .contentType(MediaType.APPLICATION_JSON).content(body))
@@ -121,19 +121,19 @@ class ClusterComponentApiTest {
         jdbc.update("update clusters set installation_locked = true, status = 'installed' where id = ?", clusterId);
 
         mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"enabled\":true,\"groups\":[{\"key\":\"traefik\",\"enabled\":true,\"config\":{}}]}"))
+                        .content("{\"groups\":[{\"key\":\"traefik\",\"enabled\":true,\"config\":{}}]}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.groups[2].enabled").value(true));
 
         jdbc.update("update cluster_component_states set status = 'installed' where cluster_id = ? and component_key = 'traefik'", clusterId);
         mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"enabled\":true,\"groups\":[{\"key\":\"traefik\",\"enabled\":false,\"config\":{}}]}"))
+                        .content("{\"groups\":[{\"key\":\"traefik\",\"enabled\":false,\"config\":{}}]}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("COMPONENT_GROUP_READ_ONLY"));
 
         jdbc.update("update cluster_component_states set status = 'installing' where cluster_id = ? and component_key = 'traefik'", clusterId);
         mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"enabled\":true,\"groups\":[{\"key\":\"traefik\",\"enabled\":false,\"config\":{}}]}"))
+                        .content("{\"groups\":[{\"key\":\"traefik\",\"enabled\":false,\"config\":{}}]}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("COMPONENT_GROUP_READ_ONLY"));
     }

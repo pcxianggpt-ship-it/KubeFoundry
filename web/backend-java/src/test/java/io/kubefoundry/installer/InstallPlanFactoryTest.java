@@ -26,7 +26,7 @@ class InstallPlanFactoryTest {
     }
 
     @Test
-    void mapsAllFourteenPythonStepsInOrder() {
+    void mapsAllBaseInstallationStepsInOrder() {
         InstallPlan plan = factory.create();
 
         assertThat(plan.steps()).extracting(InstallStep::key).containsExactly(
@@ -43,8 +43,9 @@ class InstallPlanFactoryTest {
                 "20-add-control-nodes",
                 "21-add-worker-nodes",
                 "22-install-cni-flannel",
+                "23-configure-coredns-affinity",
                 "web-verify-cluster-health");
-        assertThat(plan.steps()).hasSize(14);
+        assertThat(plan.steps()).hasSize(15);
         assertThat(plan.require("web-verify-cluster-health").builtin())
                 .isEqualTo("cluster_health");
 
@@ -83,6 +84,8 @@ class InstallPlanFactoryTest {
         assertThat(plan.require("11b-setup-hostname").builtin()).isEqualTo("setup_hostname");
         assertThat(plan.require("22-install-cni-flannel").verifyCommand())
                 .contains("kubectl get pods -A");
+        assertThat(plan.require("23-configure-coredns-affinity").verifyCommand())
+                .contains("coredns-anti-affinity");
     }
 
     @Test

@@ -121,7 +121,7 @@ class ApiContractTest {
                 .andExpect(jsonPath("$.env.containerd_root").isString());
         mvc.perform(get("/api/clusters/{id}/install-plan", cluster.getId()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items.length()").value(14));
+                .andExpect(jsonPath("$.items.length()").value(15));
         mvc.perform(get("/api/jobs").param("cluster_id", cluster.getId().toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].job_type").value("install"));

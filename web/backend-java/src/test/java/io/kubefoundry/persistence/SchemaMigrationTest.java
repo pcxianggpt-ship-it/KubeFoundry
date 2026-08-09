@@ -193,6 +193,16 @@ class SchemaMigrationTest {
     }
 
     @Test
+    void createsNormalizedNodeIdentityColumnsAndUniqueIndexesInV13() throws SQLException {
+        try (Connection connection = openConnection()) {
+            DatabaseMetaData metadata = connection.getMetaData();
+            assertThat(successfulMigration(connection, "13")).isTrue();
+            assertThat(columnExists(metadata, "NODES", "HOSTNAME_NORMALIZED")).isTrue();
+            assertThat(columnExists(metadata, "NODES", "IP_NORMALIZED")).isTrue();
+        }
+    }
+
+    @Test
     void migratesExistingComponentSelectionsIntoNotInstalledStates() throws SQLException {
         String databaseUrl = "jdbc:h2:mem:schema-v8-components;MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
         Flyway.configure()

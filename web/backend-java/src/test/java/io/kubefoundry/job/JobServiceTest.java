@@ -179,7 +179,8 @@ class JobServiceTest {
                     assertThat(state.getLastErrorCode()).isEqualTo("COMPONENT_INSTALL_FAILED");
                 });
         assertThat(componentStates.findById(kubemate.getId()).orElseThrow().getStatus())
-                .isEqualTo(ClusterComponentState.NOT_INSTALLED);
+                .isEqualTo(ClusterComponentState.INSTALLED);
+        assertThat(jobs.findById(jobId).orElseThrow().getStatus()).isEqualTo("partial_success");
     }
 
     @Test

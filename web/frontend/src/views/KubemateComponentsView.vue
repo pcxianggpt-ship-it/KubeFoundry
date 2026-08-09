@@ -33,28 +33,6 @@
         :closable="false"
       >安装任务进行中或集群已安装，组件配置当前只读。</el-alert>
 
-      <section class="component-master-switch" aria-labelledby="component-master-title">
-        <div>
-          <h3 id="component-master-title">启用 Kubemate 组件安装</h3>
-          <p>关闭后保留各组件组选择，但本次安装计划不会包含组件步骤。</p>
-        </div>
-        <el-switch
-          v-model="enabled"
-          data-testid="kubemate-enabled"
-          aria-label="启用 Kubemate 组件安装"
-          :disabled="locked"
-        />
-      </section>
-
-      <el-alert
-        v-if="!enabled"
-        class="component-plan-alert"
-        title="组件安装已关闭"
-        type="info"
-        show-icon
-        :closable="false"
-      >已保存的组件选择会保留，重新开启后可继续使用。</el-alert>
-
       <ul class="component-group-list" aria-label="Kubemate 组件组">
         <li v-for="group in groups" :key="group.key" class="component-group" :class="{ 'is-unavailable': !group.available }">
           <div class="component-group__header">
@@ -116,7 +94,6 @@ import { safeErrorMessage } from '../utils/redaction';
 
 const props = defineProps({ clusterId: { type: [String, Number], required: true }, locked: Boolean });
 const emit = defineEmits(['next']);
-const enabled = ref(false);
 const groups = ref([]);
 const loading = ref(true);
 const saving = ref(false);
@@ -142,7 +119,6 @@ async function load() {
   errorMessage.value = '';
   try {
     const payload = await listComponents(props.clusterId);
-    enabled.value = Boolean(payload?.enabled);
     groups.value = (payload?.groups || []).map(normalizeGroup);
   } catch (error) {
     errorMessage.value = safeErrorMessage(error, '组件配置加载失败，请重新加载。');
@@ -157,14 +133,12 @@ async function save() {
   errorMessage.value = '';
   try {
     const saved = await updateComponents(props.clusterId, {
-      enabled: enabled.value,
       groups: groups.value.map((group) => ({
         key: group.key,
         enabled: group.enabled,
         config: group.config
       }))
     });
-    enabled.value = Boolean(saved?.enabled);
     groups.value = (saved?.groups || groups.value).map(normalizeGroup);
     emit('next');
   } catch (error) {

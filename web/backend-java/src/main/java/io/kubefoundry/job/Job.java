@@ -59,6 +59,7 @@ public class Job {
 
     public void markRunning() { status = "running"; }
     public void markSuccess() { status = "success"; }
+    public void markPartialSuccess() { status = "partial_success"; }
     public void markFailed() { status = "failed"; }
     public void markInterrupted() { status = "interrupted"; }
 }

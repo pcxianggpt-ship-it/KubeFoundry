@@ -103,7 +103,6 @@ public class ComponentPlanFactory {
     }
 
     private static boolean isEnabled(InstallationSnapshotPayload snapshot, String groupKey) {
-        if (!snapshot.kubemateEnabled()) return false;
         return snapshot.componentGroups().stream()
                 .anyMatch(group -> group.key().equals(groupKey) && group.enabled());
     }
