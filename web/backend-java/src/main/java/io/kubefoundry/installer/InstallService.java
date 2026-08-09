@@ -24,6 +24,7 @@ public class InstallService {
     private final InstallerAdmission admission;
     private final InstallationSnapshotService snapshots;
     private final ComponentMediaService media;
+    private final InstallationReadinessValidator readiness;
 
     @Autowired
     public InstallService(
@@ -36,7 +37,8 @@ public class InstallService {
             ClusterSettingsService settings,
             InstallerAdmission admission,
             InstallationSnapshotService snapshots,
-            ComponentMediaService media) {
+            ComponentMediaService media,
+            InstallationReadinessValidator readiness) {
         this.clusters = clusters;
         this.nodes = nodes;
         this.jobService = jobService;
@@ -47,6 +49,7 @@ public class InstallService {
         this.admission = admission;
         this.snapshots = snapshots;
         this.media = media;
+        this.readiness = readiness;
     }
 
     public InstallService(
@@ -58,7 +61,7 @@ public class InstallService {
             ClusterSettingsService settings,
             InstallerAdmission admission,
             InstallationSnapshotService snapshots) {
-        this(clusters, nodes, jobService, plans, null, runner, settings, admission, snapshots, null);
+        this(clusters, nodes, jobService, plans, null, runner, settings, admission, snapshots, null, null);
     }
 
     public long start(long clusterId) {
@@ -74,17 +77,22 @@ public class InstallService {
                 .orElseThrow(() -> ResourceNotFoundException.cluster(clusterId));
         List<Node> configuredNodes = InstallationNodes.normalize(
                 nodes.findByClusterIdOrderById(clusterId));
-        ClusterTopologyValidator.requireValid(configuredNodes, cluster.getImageRegistryType());
-        InstallationGate.requireSuccessfulNodeTests(cluster, configuredNodes);
-        InstallPlan generatedPlan = assembler == null
-                ? plans.create()
-                : assembler.forNewCluster(snapshots.previewPayload(cluster, configuredNodes));
-        InstallPlan plan = media == null ? generatedPlan : media.verifyAndChecksum(generatedPlan);
+        InstallPlan plan;
+        if (readiness != null) {
+            plan = readiness.validate(cluster, configuredNodes);
+        } else {
+            ClusterTopologyValidator.requireValid(configuredNodes, cluster.getImageRegistryType());
+            InstallationGate.requireSuccessfulNodeTests(cluster, configuredNodes);
+            InstallPlan generatedPlan = assembler == null
+                    ? plans.create()
+                    : assembler.forNewCluster(snapshots.previewPayload(cluster, configuredNodes));
+            plan = media == null ? generatedPlan : media.verifyAndChecksum(generatedPlan);
+        }
         List<JobService.StepDefinition> definitions = new ArrayList<>();
         for (int index = 0; index < plan.steps().size(); index++) {
             InstallStep step = plan.steps().get(index);
             List<Node> targets = plans.resolveTargets(step, cluster, configuredNodes);
-            if (targets.isEmpty() && List.of("primary_control_plane", "registry", "nfs_server")
+            if (readiness == null && targets.isEmpty() && List.of("primary_control_plane", "registry", "nfs_server")
                     .contains(step.targetScope())) {
                 throw new IllegalArgumentException("安装步骤缺少目标节点: " + step.key());
             }

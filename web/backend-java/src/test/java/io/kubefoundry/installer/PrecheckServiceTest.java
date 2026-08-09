@@ -1,6 +1,8 @@
 package io.kubefoundry.installer;
 
 import io.kubefoundry.cluster.Cluster;
+import io.kubefoundry.cluster.ClusterComponent;
+import io.kubefoundry.cluster.ClusterComponentRepository;
 import io.kubefoundry.cluster.ClusterRepository;
 import io.kubefoundry.cluster.Node;
 import io.kubefoundry.cluster.NodeRepository;
@@ -38,6 +40,9 @@ class PrecheckServiceTest {
 
     @Autowired
     NodeRepository nodes;
+
+    @Autowired
+    ClusterComponentRepository components;
 
     @Autowired
     JobRepository jobs;
@@ -182,6 +187,22 @@ class PrecheckServiceTest {
                 .filteredOn(result -> "offline_media".equals(result.getCheckKey()))
                 .extracting(PrecheckResult::getStatus)
                 .containsOnly("fail");
+    }
+
+    @Test
+    void rejectsNfsServerAddressThatDoesNotMatchAnyTestedNodeBeforeRemotePrecheckStarts() {
+        cluster.updateKubemateEnabled(true);
+        clusters.saveAndFlush(cluster);
+        components.saveAndFlush(new ClusterComponent(cluster, "nfs", true,
+                "{\"server_address\":\"192.160.0.160\",\"share_path\":\"/data/nfs\","
+                        + "\"worker_mount_path\":\"/data/nfs\",\"storage_class\":\"nfs-storage\","
+                        + "\"exports_mode\":\"managed\"}"));
+
+        assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> service.start(cluster.getId())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("NFS 服务端地址“192.160.0.160”未匹配任何通过节点测试的集群节点")
+                .hasMessageContaining("worker-a（10.0.0.2）")
+                .hasMessageContaining("导出模式改为“外部”");
     }
 
     private void stubHealthyPrecheck() {

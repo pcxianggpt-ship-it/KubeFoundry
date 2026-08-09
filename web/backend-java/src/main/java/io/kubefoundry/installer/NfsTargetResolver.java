@@ -48,6 +48,20 @@ public class NfsTargetResolver {
         return Map.copyOf(values);
     }
 
+    public String missingTargetMessage(Cluster cluster, List<Node> nodes) {
+        Map<String, String> config = cluster == null ? Map.of() : configuration(cluster.getId());
+        String address = config.getOrDefault("server_address", "");
+        String candidates = InstallationNodes.normalize(nodes).stream()
+                .filter(node -> "success".equalsIgnoreCase(node.getNodeTestStatus()))
+                .map(node -> node.getHostname() + "（" + node.getIp() + "）")
+                .sorted()
+                .collect(java.util.stream.Collectors.joining("、"));
+        if (candidates.isBlank()) candidates = "无";
+        return "NFS 服务端地址“" + address + "”未匹配任何通过节点测试的集群节点。"
+                + "请将 NFS 服务端地址改为以下节点 IP 之一：" + candidates
+                + "；如果使用集群外部 NFS，请将导出模式改为“外部”。";
+    }
+
     private Map<String, String> configuration(long clusterId) {
         return components.findByClusterIdAndComponentKey(clusterId, "nfs")
                 .map(component -> parse(component.getConfigJson()))

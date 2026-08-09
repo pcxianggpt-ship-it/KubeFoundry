@@ -55,6 +55,7 @@ public class PrecheckService {
     private final EventService events;
     private final InstallerAdmission admission;
     private final ClusterSettingsService settings;
+    private final InstallationReadinessValidator readiness;
 
     @Autowired
     public PrecheckService(
@@ -66,7 +67,8 @@ public class PrecheckService {
             PrecheckResultRepository results,
             EventService events,
             InstallerAdmission admission,
-            ClusterSettingsService settings) {
+            ClusterSettingsService settings,
+            InstallationReadinessValidator readiness) {
         this.clusters = clusters;
         this.nodes = nodes;
         this.jobs = jobs;
@@ -76,6 +78,20 @@ public class PrecheckService {
         this.events = events;
         this.admission = admission;
         this.settings = settings;
+        this.readiness = readiness;
+    }
+
+    PrecheckService(
+            ClusterRepository clusters,
+            NodeRepository nodes,
+            JobRepository jobs,
+            JobService jobService,
+            RemoteStepRunner runner,
+            PrecheckResultRepository results,
+            EventService events,
+            InstallerAdmission admission,
+            ClusterSettingsService settings) {
+        this(clusters, nodes, jobs, jobService, runner, results, events, admission, settings, null);
     }
 
     public long start(long clusterId) {
@@ -83,10 +99,14 @@ public class PrecheckService {
                 .orElseThrow(() -> ResourceNotFoundException.cluster(clusterId));
         List<Node> configuredNodes = InstallationNodes.normalize(
                 nodes.findByClusterIdOrderById(clusterId));
-        if (configuredNodes.stream().anyMatch(node -> !node.getRoles().isEmpty())) {
-            ClusterTopologyValidator.requireValid(configuredNodes, cluster.getImageRegistryType());
+        if (readiness != null) {
+            readiness.validate(cluster, configuredNodes);
+        } else {
+            if (configuredNodes.stream().anyMatch(node -> !node.getRoles().isEmpty())) {
+                ClusterTopologyValidator.requireValid(configuredNodes, cluster.getImageRegistryType());
+            }
+            InstallationGate.requireSuccessfulNodeTests(cluster, configuredNodes);
         }
-        InstallationGate.requireSuccessfulNodeTests(cluster, configuredNodes);
         List<JobService.NodeOperation> operations = configuredNodes.stream()
                 .map(node -> JobService.NodeOperation.withOutcome(node.getId(), jobId ->
                         runPrecheck(jobId, cluster, node)))

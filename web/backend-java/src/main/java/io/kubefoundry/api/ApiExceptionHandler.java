@@ -5,6 +5,7 @@ import io.kubefoundry.cluster.ClusterService.ClusterConfigurationLockedException
 import io.kubefoundry.job.JobQueueFullException;
 import io.kubefoundry.job.JobNotFoundException;
 import io.kubefoundry.installer.ActiveInstallerJobException;
+import io.kubefoundry.installer.InstallationReadinessException;
 import io.kubefoundry.installer.ResetConfirmationMismatchException;
 import io.kubefoundry.ssh.NodeTestService.ActiveNodeTestException;
 import io.kubefoundry.cluster.ClusterComponentService.ComponentConfigurationException;
@@ -32,6 +33,10 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler({IllegalArgumentException.class, HttpMessageNotReadableException.class})
     public ResponseEntity<Map<String, String>> validation(Exception exception) {
+        if (exception instanceof InstallationReadinessException readiness) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "code", "INSTALLATION_READINESS_FAILED", "message", readiness.getMessage()));
+        }
         if (exception instanceof ComponentConfigurationException component) {
             if ("COMPONENT_GROUP_READ_ONLY".equals(component.code())) {
                 return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(

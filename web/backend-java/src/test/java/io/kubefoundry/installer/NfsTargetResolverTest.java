@@ -51,6 +51,22 @@ class NfsTargetResolverTest {
                 .containsEntry("KF_NFS_SERVER", "10.0.0.99");
     }
 
+    @Test
+    void explainsHowToFixAnNfsServerAddressThatDoesNotMatchAnyNode() {
+        ClusterComponentRepository repository = mock(ClusterComponentRepository.class);
+        Cluster cluster = cluster(3L);
+        ClusterComponent component = new ClusterComponent(cluster, "nfs", true,
+                "{\"server_address\":\"192.160.0.160\",\"exports_mode\":\"managed\"}");
+        when(repository.findByClusterIdAndComponentKey(3L, "nfs")).thenReturn(Optional.of(component));
+        NfsTargetResolver resolver = new NfsTargetResolver(repository, new ObjectMapper());
+        Node candidate = node(cluster, 1L, "k8sw1", "192.168.0.160", "worker", true);
+
+        assertThat(resolver.missingTargetMessage(cluster, List.of(candidate)))
+                .isEqualTo("NFS 服务端地址“192.160.0.160”未匹配任何通过节点测试的集群节点。"
+                        + "请将 NFS 服务端地址改为以下节点 IP 之一：k8sw1（192.168.0.160）"
+                        + "；如果使用集群外部 NFS，请将导出模式改为“外部”。");
+    }
+
     private static InstallStep step() {
         return InstallStep.componentScript("32-configure-nfs-exports", "NFS", "nfs_server",
                 null, "nfs", "serial", 1, true, "");
