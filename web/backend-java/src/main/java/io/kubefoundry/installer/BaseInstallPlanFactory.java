@@ -130,7 +130,12 @@ public class BaseInstallPlanFactory {
             case "all_k8s_nodes" -> filter(nodes,
                     node -> hasRole(node, "control_plane") || hasRole(node, "worker"));
             case "control_plane" -> controls;
-            case "workers" -> filter(nodes, node -> hasRole(node, "worker"));
+            case "workers" -> {
+                List<Node> workers = filter(nodes, node -> hasRole(node, "worker"));
+                yield nfsTargets != null && "nfs".equals(step.componentGroupKey())
+                        && "32-mount-nfs-workers".equals(step.key())
+                        ? nfsTargets.mountTargets(cluster, workers) : workers;
+            }
             case "non_primary_k8s_nodes" -> filter(nodes,
                     node -> (hasRole(node, "control_plane") || hasRole(node, "worker"))
                             && (primary == null || !node.getId().equals(primary.getId())));

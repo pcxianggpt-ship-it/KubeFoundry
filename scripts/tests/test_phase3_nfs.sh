@@ -66,6 +66,9 @@ test "$(grep -cF '# >>>KubeFoundry NFS exports>>>' "${TMP}/exports")" -eq 1
 ! grep -En 'ssh_exec|config_get|get_all_' "${ROOT}/scripts/steps/phase3_ecosystem/32-configure-nfs-exports.sh"
 
 bash "${ROOT}/scripts/steps/phase3_ecosystem/32-mount-nfs-workers.sh"
+test ! -e "${TMP}/fstab"
+
+export KF_NODE_IP=10.0.0.11
 bash "${ROOT}/scripts/steps/phase3_ecosystem/32-mount-nfs-workers.sh"
 test "$(grep -cF '# >>>KubeFoundry NFS fstab>>>' "${TMP}/fstab")" -eq 1
 ! grep -En 'ssh_exec|config_get|get_all_' "${ROOT}/scripts/steps/phase3_ecosystem/32-mount-nfs-workers.sh"

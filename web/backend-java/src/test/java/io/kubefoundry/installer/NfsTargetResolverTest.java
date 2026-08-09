@@ -67,6 +67,20 @@ class NfsTargetResolverTest {
                         + "；如果使用集群外部 NFS，请将导出模式改为“外部”。");
     }
 
+    @Test
+    void excludesTheManagedNfsServerFromWorkerMountTargets() {
+        ClusterComponentRepository repository = mock(ClusterComponentRepository.class);
+        Cluster cluster = cluster(4L);
+        ClusterComponent component = new ClusterComponent(cluster, "nfs", true,
+                "{\"server_address\":\"10.0.0.10\",\"exports_mode\":\"managed\"}");
+        when(repository.findByClusterIdAndComponentKey(4L, "nfs")).thenReturn(Optional.of(component));
+        NfsTargetResolver resolver = new NfsTargetResolver(repository, new ObjectMapper());
+        Node nfsServer = node(cluster, 1L, "nfs-server", "10.0.0.10", "worker", true);
+        Node worker = node(cluster, 2L, "worker-a", "10.0.0.11", "worker", true);
+
+        assertThat(resolver.mountTargets(cluster, List.of(nfsServer, worker))).containsExactly(worker);
+    }
+
     private static InstallStep step() {
         return InstallStep.componentScript("32-configure-nfs-exports", "NFS", "nfs_server",
                 null, "nfs", "serial", 1, true, "");

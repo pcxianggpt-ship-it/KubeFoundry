@@ -12,6 +12,11 @@ phase3_init
 : "${KF_NFS_SHARE_PATH:?缺少 NFS 共享目录}"
 : "${KF_NFS_WORKER_MOUNT_PATH:?缺少 Worker 挂载目录}"
 
+if [ "${KF_NFS_EXPORTS_MODE:-}" = "managed" ] && [ "${KF_NODE_IP:-}" = "${KF_NFS_SERVER}" ]; then
+    log_info "当前节点是受管 NFS 服务端，跳过自身 NFS 挂载以避免自挂载"
+    exit 0
+fi
+
 managed_marker_begin="# >>>KubeFoundry NFS fstab>>>"
 managed_marker_end="# <<<KubeFoundry NFS fstab<<<"
 fstab_entry="${KF_NFS_SERVER}:${KF_NFS_SHARE_PATH} ${KF_NFS_WORKER_MOUNT_PATH} nfs defaults,_netdev 0 0"

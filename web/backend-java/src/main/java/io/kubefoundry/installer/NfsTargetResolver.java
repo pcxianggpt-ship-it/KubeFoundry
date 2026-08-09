@@ -62,6 +62,15 @@ public class NfsTargetResolver {
                 + "；如果使用集群外部 NFS，请将导出模式改为“外部”。";
     }
 
+    public List<Node> mountTargets(Cluster cluster, List<Node> workers) {
+        Map<String, String> config = cluster == null ? Map.of() : configuration(cluster.getId());
+        if (!"managed".equals(config.get("exports_mode"))) return workers;
+        String address = config.getOrDefault("server_address", "");
+        return workers.stream()
+                .filter(node -> !address.equals(node.getIp()) && !address.equals(node.getHostname()))
+                .toList();
+    }
+
     private Map<String, String> configuration(long clusterId) {
         return components.findByClusterIdAndComponentKey(clusterId, "nfs")
                 .map(component -> parse(component.getConfigJson()))
