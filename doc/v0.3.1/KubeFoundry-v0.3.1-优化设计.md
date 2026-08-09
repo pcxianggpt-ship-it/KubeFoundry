@@ -457,17 +457,7 @@ GET /api/jobs/{jobId}/events
 
 当前最新迁移为 V12。建议按以下顺序新增：
 
-### V13：任务执行状态扩展
-
-```text
-jobs.started_at
-jobs.finished_at
-job_steps.status_reason
-```
-
-现有任务无需推断开始时间；历史终态任务可将 `finished_at` 保持为空。应用层必须兼容空值。
-
-### V14：节点唯一身份
+### V13：节点唯一身份
 
 ```text
 nodes.hostname_normalized
@@ -477,6 +467,16 @@ uk_nodes_cluster_ip_normalized
 ```
 
 迁移前执行只读重复检查。正式节点存在冲突时必须停止升级并给出处理清单；草稿节点规范化列保持 `NULL`，不参与唯一约束。
+
+### V14：任务执行状态扩展
+
+```text
+jobs.started_at
+jobs.finished_at
+job_steps.status_reason
+```
+
+现有任务无需推断开始时间；历史终态任务可将 `finished_at` 保持为空。应用层必须兼容空值。
 
 不得修改 V1 至 V12，不得通过迁移自动删除重复节点。
 
