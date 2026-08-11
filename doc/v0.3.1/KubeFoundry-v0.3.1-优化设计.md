@@ -382,6 +382,9 @@ CONTINUE        # 仅供未来无状态验证步骤使用，v0.3.1 不开放给�
 - 对包含 CRD 的通用组件文件或目录，先拆分并应用 `CustomResourceDefinition` 文档，逐个等待 `Established`，再应用完整组件清单，避免自定义资源首次安装时抢跑。
 - KubeFoundry 管理的通用组件资源使用 `--server-side --field-manager=kubefoundry --force-conflicts` 收敛字段所有权；Kubemate 管理组件不使用该通用应用函数，而是执行专用三步流程。
 - Kubemate 管理组件介质按 `kubemate/` 目录分发到任务资源目录：先通过 `/etc/kubernetes/admin.conf` 直接创建 `kubemate-etc` ConfigMap，再将任务副本 `kubemate-resources.yml` 中 `kubemate-appx` Deployment 的 `hostAliases` IP 替换为主控制节点 IP，最后执行 `kubectl apply -f <任务 Kubemate 资源目录>`。不得使用 `--dry-run=client`、服务端应用或字段管理器生成 `kubemate-etc`。
+- phase3 组件脚本不使用 `dry-run` 生成资源；命名空间先查询、缺失时直接创建，组件专用 ConfigMap 按对应安装脚本直接创建。
+- OpenEBS、Loki、Alloy 使用离线目录内已经打包的 `.tgz` Chart，在主控制节点执行 Helm，不要求介质目录根部存在 `Chart.yaml`；其中 OpenEBS 按 `helm install openebs --namespace kubemate-system <openebs-4.2.0.tgz> -f <openebs-values.yaml>` 安装。NFS 介质本身是已解压 Chart 目录，继续使用目录安装。
+- Prometheus 在应用其他资源前先清理 `additional-scrape-configs.Secret.yaml` 中旧集群生成的 `managedFields/resourceVersion/uid/creationTimestamp`，再优先创建该 Secret；部署和验证命名空间统一为 `kubemate-system`。
 - 其他组件组失败不改变本组状态。
 
 `job_steps.status` 支持 `pending/running/success/failed/skipped/interrupted`，并增加 `status_reason` 保存稳定原因码。任务执行页将 `partial_success` 显示为“部分成功”，将 `skipped` 显示为“已跳过”，不能显示成成功或失败。
@@ -394,6 +397,7 @@ CONTINUE        # 仅供未来无状态验证步骤使用，v0.3.1 不开放给�
 
 - 服务启动时将遗留的 `pending/running` 初次安装任务收敛为 `interrupted`，并将集群状态收敛为 `install_failed`，避免旧任务永久阻塞重置准入。
 - 初次安装失败后继续保持 `installation_locked=true`，防止用户在远端 Kubernetes 资源尚未清理时修改节点身份；只要不存在活动安装任务，页面即允许进入远程重置。
+- 重置成功只恢复草稿状态并解除配置锁定，不主动把未修改节点的最近一次成功测试置为 `stale`；重置后编辑任一节点配置时，仍按节点配置版本机制自动失效节点测试，要求重新测试。
 - 重置成功后设置 `status=draft`、`installation_locked=false`，节点测试状态变为 `stale`，基础配置、节点和组件配置恢复可编辑。
 
 ## 12. 集群安装详情按任务 ID 展示

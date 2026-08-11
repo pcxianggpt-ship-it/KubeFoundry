@@ -10,24 +10,23 @@ if [ -f "./phase3.sh" ]; then source "./phase3.sh"; else source "${PROJECT_ROOT}
 phase3_init
 resource_dir=$(phase3_resource_path .)
 config_file="${resource_dir}/alloy.config"
-chart_dir="${resource_dir}"
+chart_file="${resource_dir}/alloy-1.4.0.tgz"
 [ -f "${config_file}" ] || {
     log_error "Alloy 配置不存在: ${config_file}"
     exit 1
 }
-[ -f "${chart_dir}/Chart.yaml" ] || {
-    log_error "Alloy Helm Chart 不存在: ${chart_dir}"
+[ -f "${chart_file}" ] || {
+    log_error "Alloy Helm Chart 压缩包不存在: ${chart_file}"
     exit 1
 }
-kubectl create configmap alloy --namespace kubemate-system --from-file=config.alloy="${config_file}" \
-    --dry-run=client -o yaml | kubectl apply --server-side --field-manager=kubefoundry -f -
+kubectl create configmap alloy --namespace kubemate-system --from-file=config.alloy="${config_file}"
 kubectl label configmap alloy --namespace kubemate-system --overwrite \
     app.kubernetes.io/managed-by=kubefoundry
-values_file="${chart_dir}/alloy-values.yaml"
+values_file="${resource_dir}/alloy-values.yaml"
 if [ -f "${values_file}" ]; then
-    phase3_helm_upgrade alloy kubemate-system "${chart_dir}" -f "${values_file}"
+    phase3_helm_upgrade alloy kubemate-system "${chart_file}" -f "${values_file}"
 else
-    phase3_helm_upgrade alloy kubemate-system "${chart_dir}"
+    phase3_helm_upgrade alloy kubemate-system "${chart_file}"
 fi
 deployments=$(kubectl get deployment --namespace kubemate-system --no-headers 2>/dev/null \
     | awk '$1 ~ /alloy/ { print $1 }')

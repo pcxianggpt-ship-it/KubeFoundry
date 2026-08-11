@@ -8,16 +8,17 @@
 
 if [ -f "./phase3.sh" ]; then source "./phase3.sh"; else source "${PROJECT_ROOT}/scripts/lib/phase3.sh"; fi
 phase3_init
-chart_dir=$(phase3_resource_path .)
-[ -f "${chart_dir}/Chart.yaml" ] || {
-    log_error "Loki Helm Chart 不存在: ${chart_dir}"
+resource_dir=$(phase3_resource_path .)
+chart_file="${resource_dir}/loki-5.45.0.tgz"
+[ -f "${chart_file}" ] || {
+    log_error "Loki Helm Chart 压缩包不存在: ${chart_file}"
     exit 1
 }
-values_file="${chart_dir}/values.yaml"
+values_file="${resource_dir}/values.yaml"
 if [ -f "${values_file}" ]; then
-    phase3_helm_upgrade loki kubemate-system "${chart_dir}" -f "${values_file}"
+    phase3_helm_upgrade loki kubemate-system "${chart_file}" -f "${values_file}"
 else
-    phase3_helm_upgrade loki kubemate-system "${chart_dir}"
+    phase3_helm_upgrade loki kubemate-system "${chart_file}"
 fi
 deployments=$(kubectl get deployment --namespace kubemate-system --no-headers 2>/dev/null \
     | awk '$1 ~ /loki/ { print $1 }')

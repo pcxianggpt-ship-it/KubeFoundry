@@ -8,7 +8,7 @@
 
 if [ -f "./phase3.sh" ]; then source "./phase3.sh"; else source "${PROJECT_ROOT}/scripts/lib/phase3.sh"; fi
 phase3_init
-namespace="${KF_PROMETHEUS_NAMESPACE:-kubemate-monitoring-system}"
+namespace="${KF_PROMETHEUS_NAMESPACE:-kubemate-system}"
 kubectl get pods --namespace "${namespace}" --no-headers | grep -Eq 'prometheus|node-exporter|kube-state-metrics'
 kubectl get servicemonitor --all-namespaces >/dev/null
 kubectl get prometheus --all-namespaces >/dev/null

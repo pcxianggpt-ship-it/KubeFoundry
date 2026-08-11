@@ -47,5 +47,6 @@ grep -Fq '[REDACTED]' "${LOG_FILE}" || fail "敏感字段未脱敏"
 if grep -Fq 'hidden-value' "${LOG_FILE}"; then fail "敏感值进入日志"; fi
 if grep -Eq '(^|[^[:alpha:]])ssh[[:space:]]' "${PROJECT_ROOT}/scripts/lib/phase3.sh"; then fail "公共库不应执行 SSH"; fi
 grep -Fq 'kubectl get namespace kubemate-system' "${TEST_ROOT}/calls" || fail "命名空间步骤未执行就绪检查"
+if grep -Fq -- '--dry-run' "${TEST_ROOT}/calls"; then fail "phase3 不应执行 dry-run"; fi
 
 printf 'phase3 common tests passed\n'

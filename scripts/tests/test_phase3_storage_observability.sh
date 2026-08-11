@@ -43,10 +43,10 @@ run_group() {
     mkdir -p "${KF_COMPONENT_RESOURCE_DIR}"
     export KF_STORAGE_MOCK_GROUP="${group}"
     case "${group}" in
-        openebs) printf 'apiVersion: v2\nname: openebs\n' > "${KF_COMPONENT_RESOURCE_DIR}/Chart.yaml"; printf '{}' > "${KF_COMPONENT_RESOURCE_DIR}/openebs-values.yaml"; printf '{}' > "${KF_COMPONENT_RESOURCE_DIR}/openebssc.yaml" ;;
+        openebs) printf 'chart' > "${KF_COMPONENT_RESOURCE_DIR}/openebs-4.2.0.tgz"; printf '{}' > "${KF_COMPONENT_RESOURCE_DIR}/openebs-values.yaml"; printf '{}' > "${KF_COMPONENT_RESOURCE_DIR}/openebssc.yaml" ;;
         minio) printf '{}' > "${KF_COMPONENT_RESOURCE_DIR}/minio-operator.yaml" ;;
-        loki) printf 'apiVersion: v2\nname: loki\n' > "${KF_COMPONENT_RESOURCE_DIR}/Chart.yaml"; printf '{}' > "${KF_COMPONENT_RESOURCE_DIR}/values.yaml" ;;
-        alloy) printf 'apiVersion: v2\nname: alloy\n' > "${KF_COMPONENT_RESOURCE_DIR}/Chart.yaml"; printf '{}' > "${KF_COMPONENT_RESOURCE_DIR}/alloy.config"; printf '{}' > "${KF_COMPONENT_RESOURCE_DIR}/alloy-values.yaml" ;;
+        loki) printf 'chart' > "${KF_COMPONENT_RESOURCE_DIR}/loki-5.45.0.tgz"; printf '{}' > "${KF_COMPONENT_RESOURCE_DIR}/values.yaml" ;;
+        alloy) printf 'chart' > "${KF_COMPONENT_RESOURCE_DIR}/alloy-1.4.0.tgz"; printf '{}' > "${KF_COMPONENT_RESOURCE_DIR}/alloy.config"; printf '{}' > "${KF_COMPONENT_RESOURCE_DIR}/alloy-values.yaml" ;;
     esac
     bash "${ROOT}/scripts/steps/phase3_ecosystem/${script}"
 }
@@ -55,5 +55,9 @@ run_group openebs 47-install-openebs.sh
 run_group minio 49-install-minio.sh
 run_group loki 35-install-loki.sh
 run_group alloy 48-install-alloy.sh
+grep -q -- '^install openebs --namespace kubemate-system .*openebs-4.2.0.tgz -f .*openebs-values.yaml$' "${KF_STORAGE_HELM_LOG}"
+grep -q -- 'loki-5.45.0.tgz.*-f .*values.yaml' "${KF_STORAGE_HELM_LOG}"
+grep -q -- 'alloy-1.4.0.tgz.*-f .*alloy-values.yaml' "${KF_STORAGE_HELM_LOG}"
 ! grep -Eq 'ssh_exec|config_get|get_all_' "${ROOT}/scripts/steps/phase3_ecosystem/47-install-openebs.sh" "${ROOT}/scripts/steps/phase3_ecosystem/49-install-minio.sh" "${ROOT}/scripts/steps/phase3_ecosystem/35-install-loki.sh" "${ROOT}/scripts/steps/phase3_ecosystem/48-install-alloy.sh"
+! grep -Eq -- '--dry-run' "${ROOT}/scripts/steps/phase3_ecosystem/47-install-openebs.sh" "${ROOT}/scripts/steps/phase3_ecosystem/35-install-loki.sh" "${ROOT}/scripts/steps/phase3_ecosystem/48-install-alloy.sh"
 printf 'phase3 storage observability tests passed\n'

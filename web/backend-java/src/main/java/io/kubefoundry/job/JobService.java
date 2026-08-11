@@ -287,10 +287,6 @@ public class JobService {
         clusters.findById(job.getCluster().getId()).ifPresent(cluster -> {
             if ("reset".equals(job.getType())) {
                 if (success) {
-                    for (Node node : nodes.findByClusterIdOrderById(cluster.getId())) {
-                        node.markTestStale(false);
-                        nodes.save(node);
-                    }
                     componentStates.resetCluster(cluster.getId());
                     cluster.resetInstallation();
                 } else {

@@ -118,7 +118,11 @@ phase3_apply_crds_first() {
 
 phase3_ensure_namespace() {
     local namespace="$1"
-    kubectl create namespace "${namespace}" --dry-run=client -o yaml | kubectl apply -f -
+    if kubectl get namespace "${namespace}" >/dev/null 2>&1; then
+        log_info "命名空间已存在，跳过创建: ${namespace}"
+    else
+        kubectl create namespace "${namespace}"
+    fi
 }
 
 phase3_apply_configmap() {
@@ -126,8 +130,7 @@ phase3_apply_configmap() {
     local namespace="$2"
     local file="$3"
     [ -f "${file}" ] || { log_error "ConfigMap 源文件不存在: ${file}"; return 1; }
-    kubectl create configmap "${name}" --namespace "${namespace}" --from-file="${file}" \
-        --dry-run=client -o yaml | kubectl apply -f -
+    kubectl create configmap "${name}" --namespace "${namespace}" --from-file="${file}"
 }
 
 phase3_wait_rollout() {

@@ -110,7 +110,7 @@ if group_enabled storage_observability; then
 fi
 
 if group_enabled prometheus; then
-    delete_managed_resources "${KF_PROMETHEUS_NAMESPACE:-kubemate-monitoring-system}"
+    delete_managed_resources "${KF_PROMETHEUS_NAMESPACE:-kubemate-system}"
     delete_managed_resources kube-system
 fi
 

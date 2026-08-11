@@ -10,6 +10,10 @@ cat > "${BIN}/kubectl" <<'EOF'
 #!/bin/bash
 printf '%s\n' "$*" >> "${KF_PROM_KUBECTL_LOG}"
 for argument in "$@"; do
+  if [ -f "${argument}" ] && [ "$(basename "${argument}")" = 'additional-scrape-configs.Secret.yaml' ] \
+      && grep -Eq 'managedFields|resourceVersion|uid:|creationTimestamp' "${argument}"; then
+    exit 1
+  fi
   if [ -f "${argument}" ] && grep -q '/data/prom_data' "${argument}"; then
     : > "${KF_PROM_RENDERED_OK}"
   fi
@@ -40,11 +44,28 @@ log_error() { printf '%s\n' "$*" >&2; }
 export -f log_info log_success log_warn log_error
 
 printf 'apiVersion: v1\nkind: PersistentVolume\nspec:\n  hostPath:\n    path: /data/prom_data\n' > "${KF_COMPONENT_RESOURCE_DIR}/prometheus.yaml"
+cat > "${KF_COMPONENT_RESOURCE_DIR}/additional-scrape-configs.Secret.yaml" <<'EOF'
+apiVersion: v1
+kind: Secret
+metadata:
+  creationTimestamp: '2025-05-07T02:00:50Z'
+  managedFields:
+  - apiVersion: v1
+    manager: kubectl-create
+  name: additional-scrape-configs
+  namespace: kubemate-system
+  resourceVersion: '197458704'
+  uid: b0718516-6033-4234-906d-acf2f619fe1a
+type: Opaque
+data: {}
+EOF
 bash "${ROOT}/scripts/steps/phase3_ecosystem/38-install-prometheus.sh"
 grep -q -- 'apply --server-side' "${KF_PROM_KUBECTL_LOG}"
 test -f "${KF_PROM_RENDERED_OK}"
+grep -q -- 'additional-scrape-configs.Secret.yaml' "${KF_PROM_KUBECTL_LOG}"
 
 rm -f "${KF_COMPONENT_RESOURCE_DIR}/prometheus.yaml"
+rm -f "${KF_COMPONENT_RESOURCE_DIR}/additional-scrape-configs.Secret.yaml"
 printf 'apiVersion: v1\nkind: Deployment\nmetadata:\n  name: metrics-server\n' > "${KF_COMPONENT_RESOURCE_DIR}/metrics.yaml"
 bash "${ROOT}/scripts/steps/phase3_ecosystem/40-install-metrics-server.sh"
 grep -q -- 'top nodes' "${KF_PROM_KUBECTL_LOG}"

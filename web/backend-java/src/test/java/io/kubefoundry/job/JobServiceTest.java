@@ -270,9 +270,9 @@ class JobServiceTest {
                 .satisfies(value -> {
                     assertThat(value.getStatus()).isEqualTo("draft");
                     assertThat(value.isInstallationLocked()).isFalse();
-                    assertThat(value.getNodeTestStatus()).isEqualTo("stale");
+                    assertThat(value.getNodeTestStatus()).isEqualTo("success");
                 });
-        assertThat(nodes.findById(node.getId()).orElseThrow().getNodeTestStatus()).isEqualTo("stale");
+        assertThat(nodes.findById(node.getId()).orElseThrow().getNodeTestStatus()).isEqualTo("success");
 
         ClusterService.ClusterResponse updatedCluster = clusterService.updateCluster(cluster.getId(),
                 new ClusterService.ClusterRequest(null, "重置后可编辑", null, null, null, null));
