@@ -13,6 +13,7 @@ phase3_init
 
 kubemate_namespace="${KF_KUBEMATE_NAMESPACE:-kubemate-system}"
 resource_dir=$(phase3_resource_path .)
+crd_manifest="${resource_dir}/kubemate-crds.yml"
 resource_manifest="${resource_dir}/kubemate-resources.yml"
 
 [ -f "${KUBECONFIG}" ] || {
@@ -21,6 +22,10 @@ resource_manifest="${resource_dir}/kubemate-resources.yml"
 }
 [ -f "${resource_manifest}" ] || {
     log_error "Kubemate 资源清单不存在: ${resource_manifest}"
+    exit 1
+}
+[ -f "${crd_manifest}" ] || {
+    log_error "Kubemate CRD 清单不存在: ${crd_manifest}"
     exit 1
 }
 
@@ -54,7 +59,17 @@ if ! awk -v control_ip="${KF_PRIMARY_CONTROL_IP}" '
 fi
 mv -- "${rendered}" "${resource_manifest}"
 
-# 3. 部署任务目录中的全部 Kubemate 资源。
-kubectl apply -f "${resource_dir}"
+# 3. 先安装并等待 CRD 可用，再部署依赖这些 CRD 的 Kubemate 资源。
+kubectl apply -f "${crd_manifest}"
+crd_resources=$(kubectl get -f "${crd_manifest}" -o name)
+[ -n "${crd_resources}" ] || {
+    log_error "Kubemate CRD 清单未生成可等待资源"
+    exit 1
+}
+while IFS= read -r crd_resource; do
+    [ -z "${crd_resource}" ] || kubectl wait --for=condition=Established "${crd_resource}" \
+        --timeout "${KF_CRD_TIMEOUT:-180s}"
+done <<< "${crd_resources}"
+kubectl apply -f "${resource_manifest}"
 
 log_success "Kubemate 管理组件安装命令执行完成"

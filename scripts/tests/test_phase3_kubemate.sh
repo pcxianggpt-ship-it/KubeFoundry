@@ -6,7 +6,7 @@ TMP=$(mktemp -d)
 trap 'rm -rf -- "${TMP}"' EXIT
 BIN="${TMP}/bin"
 mkdir -p "${BIN}" "${TMP}/resources" "${TMP}/kube"
-printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: kubemate-base\n' > "${TMP}/resources/kubemate-crds.yml"
+printf 'apiVersion: apiextensions.k8s.io/v1\nkind: CustomResourceDefinition\nmetadata:\n  name: users.example.io\n' > "${TMP}/resources/kubemate-crds.yml"
 cat > "${TMP}/resources/kubemate-resources.yml" <<'EOF'
 kind: Deployment
 apiVersion: apps/v1
@@ -25,6 +25,10 @@ printf 'apiVersion: v1\n' > "${TMP}/kube/admin.conf"
 cat > "${BIN}/kubectl" <<'EOF'
 #!/bin/bash
 printf '%s\n' "$*" >> "${KF_KUBEMATE_KUBECTL_LOG}"
+case "$*" in
+  *"get -f "*"kubemate-crds.yml -o name"*) printf 'customresourcedefinition.apiextensions.k8s.io/users.example.io\n' ;;
+  *) : ;;
+esac
 exit 0
 EOF
 cat > "${BIN}/helm" <<'EOF'
@@ -52,7 +56,13 @@ bash "${ROOT}/scripts/steps/phase3_ecosystem/31-install-kubemate-ui.sh"
 
 grep -Fxq -- 'create configmap kubemate-etc --namespace kubemate-system --from-file=k8s_config.yml='"${KUBECONFIG}" \
     "${KF_KUBEMATE_KUBECTL_LOG}"
-grep -Fxq -- 'apply -f '"${KF_COMPONENT_RESOURCE_DIR}" "${KF_KUBEMATE_KUBECTL_LOG}"
+grep -Fxq -- 'apply -f '"${KF_COMPONENT_RESOURCE_DIR}"'/kubemate-crds.yml' "${KF_KUBEMATE_KUBECTL_LOG}"
+grep -Fxq -- 'wait --for=condition=Established customresourcedefinition.apiextensions.k8s.io/users.example.io --timeout 180s' \
+    "${KF_KUBEMATE_KUBECTL_LOG}"
+grep -Fxq -- 'apply -f '"${KF_COMPONENT_RESOURCE_DIR}"'/kubemate-resources.yml' "${KF_KUBEMATE_KUBECTL_LOG}"
+crd_apply_line=$(grep -nF -- 'apply -f '"${KF_COMPONENT_RESOURCE_DIR}"'/kubemate-crds.yml' "${KF_KUBEMATE_KUBECTL_LOG}" | cut -d: -f1)
+resource_apply_line=$(grep -nF -- 'apply -f '"${KF_COMPONENT_RESOURCE_DIR}"'/kubemate-resources.yml' "${KF_KUBEMATE_KUBECTL_LOG}" | cut -d: -f1)
+[ "${crd_apply_line}" -lt "${resource_apply_line}" ]
 ! grep -Eq -- '--dry-run|apply --server-side|field-manager|force-conflicts' "${KF_KUBEMATE_KUBECTL_LOG}"
 grep -Eq '^[[:space:]]*- ip: 10\.0\.0\.10[[:space:]]*$' \
     "${KF_COMPONENT_RESOURCE_DIR}/kubemate-resources.yml"

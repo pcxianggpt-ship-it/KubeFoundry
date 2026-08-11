@@ -382,8 +382,11 @@ CONTINUE        # 仅供未来无状态验证步骤使用，v0.3.1 不开放给�
 - 对包含 CRD 的通用组件文件或目录，先拆分并应用 `CustomResourceDefinition` 文档，逐个等待 `Established`，再应用完整组件清单，避免自定义资源首次安装时抢跑。
 - KubeFoundry 管理的通用组件资源使用 `--server-side --field-manager=kubefoundry --force-conflicts` 收敛字段所有权；Kubemate 管理组件不使用该通用应用函数，而是执行专用三步流程。
 - Kubemate 管理组件介质按 `kubemate/` 目录分发到任务资源目录：先通过 `/etc/kubernetes/admin.conf` 直接创建 `kubemate-etc` ConfigMap，再将任务副本 `kubemate-resources.yml` 中 `kubemate-appx` Deployment 的 `hostAliases` IP 替换为主控制节点 IP，最后执行 `kubectl apply -f <任务 Kubemate 资源目录>`。不得使用 `--dry-run=client`、服务端应用或字段管理器生成 `kubemate-etc`。
+- Kubemate 目录部署必须先单独应用 `kubemate-crds.yml` 并逐个等待 CRD `Established`，然后才能应用 `kubemate-resources.yml`，避免首次安装时 KMUser/KMRole 抢在 API discovery 刷新前创建。
 - phase3 组件脚本不使用 `dry-run` 生成资源；命名空间先查询、缺失时直接创建，组件专用 ConfigMap 按对应安装脚本直接创建。
 - OpenEBS、Loki、Alloy 使用离线目录内已经打包的 `.tgz` Chart，在主控制节点执行 Helm，不要求介质目录根部存在 `Chart.yaml`；其中 OpenEBS 按 `helm install openebs --namespace kubemate-system <openebs-4.2.0.tgz> -f <openebs-values.yaml>` 安装。NFS 介质本身是已解压 Chart 目录，继续使用目录安装。
+- MinIO 安装必须同时部署 Operator 和 `minio-dev.yaml` 对象存储工作负载，将介质中的固定节点名、数据目录和镜像版本渲染为现场 Worker、`/data/minio-root` 和已验收版本，并等待 `kubemate-minio-hl` Service 就绪；不能只凭 Operator Pod 误报 MinIO 安装成功。
+- Loki 在调用 Helm 前检查 `kubemate-minio-hl` 及全部私有仓库镜像，缺失时立即列出镜像并失败，不进入十分钟 Helm 等待；read/write/backend 副本数按 Ready Worker 数量收敛到 1～3，并同步调整复制因子和 MinIO endpoint。
 - Prometheus 在应用其他资源前先清理 `additional-scrape-configs.Secret.yaml` 中旧集群生成的 `managedFields/resourceVersion/uid/creationTimestamp`，再优先创建该 Secret；部署和验证命名空间统一为 `kubemate-system`。
 - 其他组件组失败不改变本组状态。
 
