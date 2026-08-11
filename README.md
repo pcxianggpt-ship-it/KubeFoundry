@@ -2,7 +2,7 @@
 
 K8S 集群一键安装工具，支持通过网页流水线完成高可用集群部署。
 
-Web Wizard v0.3.0 使用 Java 17、Spring Boot、H2 和 Vue 3，提供独立的“集群配置”和“集群安装”模块，复用 Bash step 脚本完成节点免密、预检查、Kubernetes 基础安装、Kubemate 组件安装、远程重置、实时日志与失败定位。目标服务器使用包内 Java 运行时，不要求安装 Java、Python、Node.js 或 `sshpass`。
+Web Wizard v0.3.1 使用 Java 17、Spring Boot、H2 和 Vue 3，提供独立的“集群配置”和“集群安装”模块，复用 Bash step 脚本完成节点免密、预检查、Kubernetes 基础安装、Kubemate 组件安装、远程重置、实时日志与失败定位。目标服务器使用包内 Java 运行时，不要求安装 Java、Python、Node.js 或 `sshpass`。
 
 ## 功能特性
 
@@ -45,16 +45,16 @@ KF_TARGET_ARCH=aarch64 KF_JAVA_HOME=/opt/jdk-17-x86_64 \
 脚本会运行 Java 与前端测试、构建 JAR，并通过 `jlink` 生成当前架构的精简 Java 17 运行时：
 
 ```text
-dist/kubefoundry-web-v0.3.0-x86_64.tar.gz
-dist/kubefoundry-web-v0.3.0-aarch64.tar.gz
+dist/kubefoundry-web-v0.3.1-x86_64.tar.gz
+dist/kubefoundry-web-v0.3.1-aarch64.tar.gz
 ```
 
 将匹配服务器架构的压缩包复制到目标 Linux 服务器，在计划安装目录中执行：
 
 ```bash
-tar -xzf kubefoundry-web-v0.3.0-x86_64.tar.gz
-cp kubefoundry-web-v0.3.0-x86_64/deploy.sh .
-sudo bash deploy.sh kubefoundry-web-v0.3.0-x86_64.tar.gz
+tar -xzf kubefoundry-web-v0.3.1-x86_64.tar.gz
+cp kubefoundry-web-v0.3.1-x86_64/deploy.sh .
+sudo bash deploy.sh kubefoundry-web-v0.3.1-x86_64.tar.gz
 ```
 
 也可以把发布包内的 `deploy.sh` 与压缩包放到独立部署目录后执行。服务默认监听 `10001`，程序位于当前目录的 `app`，双架构 Helm 位于 `tools/helm-amd` 与 `tools/helm-arm`，H2 数据、主密钥和任务数据位于 `data`，日志位于 `logs`。组件 Chart、YAML 和 Kubernetes 离线介质位于独立维护的 `kube-media`；发布包不会携带或覆盖该目录，重复部署会保留 `kube-media`、`data` 和 `logs`。完整说明见 [v0.3.0 部署手册](doc/v0.3.0/部署手册.md)。
@@ -76,7 +76,7 @@ npm ci
 npm run dev
 ```
 
-v0.3.0 节点配置页录入密码并加密保存；节点可同时承担 Registry 与控制节点或工作节点角色。“测试全部节点”由 Java SSH 实现首次连接、分发 Ed25519 公钥并验证免密。后续预检查、安装和重置使用集群私钥，不依赖系统 `sshpass`。安装介质必须位于管理端的 `${APP_DIR}/kube-media`；Helm 由运行时按目标节点架构从 `${APP_DIR}/tools` 分发至主控制节点后执行。
+v0.3.1 节点配置页录入密码并加密保存；节点可同时承担 Registry 与控制节点或工作节点角色。“测试全部节点”由 Java SSH 实现首次连接、分发 Ed25519 公钥并验证免密。后续预检查、安装和重置使用集群私钥，不依赖系统 `sshpass`。安装介质必须位于管理端的 `${APP_DIR}/kube-media`；Helm 由运行时按目标节点架构从 `${APP_DIR}/tools` 分发至主控制节点后执行。
 
 ### 1. 克隆项目
 
@@ -306,7 +306,7 @@ KubeFoundry/
 **A:** 修改配置文件中的 `k8s_version`：
 ```yaml
 cluster:
-  k8s_version: "1.30.14"  # Web Wizard v0.3.0 当前固定版本
+  k8s_version: "1.30.14"  # Web Wizard v0.3.1 当前固定版本
 ```
 
 ### Q4: 节点状态一直 NotReady 怎么办？

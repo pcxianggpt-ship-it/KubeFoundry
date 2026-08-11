@@ -8,7 +8,7 @@ unset KF_DEPLOY_BASH_REEXEC
 
 #===============================================================================
 # 脚本名称：deploy.sh
-# 功能：部署 KubeFoundry v0.3.0 Java Web 服务
+# 功能：部署 KubeFoundry v0.3.1 Java Web 服务
 # 作者：KubeFoundry Team
 # 版本：2.0.0
 #===============================================================================
@@ -32,10 +32,10 @@ log_error() { printf '[ERROR] %s\n' "$*" | tee -a "${LOG_DIR}/deploy.log" >&2; }
 
 show_usage() {
     cat <<'EOF'
-KubeFoundry v0.3.0 Java Web 一键部署脚本
+KubeFoundry v0.3.1 Java Web 一键部署脚本
 
 用法:
-  sudo bash deploy.sh [--port PORT] kubefoundry-web-v0.3.0-<架构>.tar.gz
+  sudo bash deploy.sh [--port PORT] kubefoundry-web-v0.3.1-<架构>.tar.gz
   sudo bash deploy.sh --status|--restart|--stop|--uninstall
 
 选项:
@@ -171,7 +171,7 @@ write_service_file() {
     [ "${TEST_MODE}" = "1" ] && service_file="${LOG_DIR}/${SERVICE_NAME}.service.test"
     cat > "${service_file}" <<EOF
 [Unit]
-Description=KubeFoundry v0.3.0 Web Wizard
+Description=KubeFoundry v0.3.1 Web Wizard
 After=network-online.target
 Wants=network-online.target
 

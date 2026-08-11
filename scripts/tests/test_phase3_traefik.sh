@@ -7,10 +7,12 @@ trap 'rm -rf -- "${TMP}"' EXIT
 BIN="${TMP}/bin"
 mkdir -p "${BIN}" "${TMP}/resources"
 printf 'apiVersion: v1\nkind: Service\nmetadata:\n  name: traefik\nspec:\n  ports:\n  - port: 80\n    nodePort: 30080\n' > "${TMP}/resources/traefik.yaml"
+printf 'apiVersion: apiextensions.k8s.io/v1\nkind: CustomResourceDefinition\nmetadata:\n  name: gatewayclasses.gateway.networking.k8s.io\nspec:\n  group: gateway.networking.k8s.io\n' > "${TMP}/resources/gateway-crd.yaml"
 cat > "${BIN}/kubectl" <<'EOF'
 #!/bin/bash
 printf '%s\n' "$*" >> "${KF_TRAEFIK_KUBECTL_LOG}"
 case "$*" in
+  *"get -f "*" -o name"*) printf 'customresourcedefinition.apiextensions.k8s.io/gatewayclasses.gateway.networking.k8s.io\n' ;;
   *"get service --all-namespaces --no-headers"*) printf 'kube-system traefik ClusterIP 10.0.0.1 80:30080/TCP 1m\n' ;;
   *"get deployment --all-namespaces --no-headers"*) printf 'kube-system traefik 1 1 1 1m\n' ;;
   *"get service --all-namespaces"*) printf 'kube-system traefik ClusterIP 10.0.0.1 80:30080/TCP 1m\n' ;;
@@ -39,6 +41,7 @@ bash "${ROOT}/scripts/steps/phase3_ecosystem/36-install-traefik.sh" || {
     exit "${status}"
 }
 grep -q -- 'apply --server-side' "${KF_TRAEFIK_KUBECTL_LOG}"
+grep -q -- 'wait --for=condition=Established customresourcedefinition.apiextensions.k8s.io/gatewayclasses.gateway.networking.k8s.io' "${KF_TRAEFIK_KUBECTL_LOG}"
 grep -q -- 'rollout status deployment/traefik' "${KF_TRAEFIK_KUBECTL_LOG}"
 ! grep -Eq 'ssh_exec|config_get|get_all_|sleep 10' "${ROOT}/scripts/steps/phase3_ecosystem/36-install-traefik.sh"
 

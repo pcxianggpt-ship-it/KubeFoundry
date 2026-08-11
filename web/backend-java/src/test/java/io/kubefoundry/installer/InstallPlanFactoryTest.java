@@ -85,7 +85,8 @@ class InstallPlanFactoryTest {
         assertThat(plan.require("22-install-cni-flannel").verifyCommand())
                 .contains("kubectl get pods -A");
         assertThat(plan.require("23-configure-coredns-affinity").verifyCommand())
-                .contains("coredns-anti-affinity");
+                .contains("coredns-anti-affinity")
+                .endsWith("grep -qx v2");
     }
 
     @Test

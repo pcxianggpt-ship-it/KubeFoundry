@@ -77,7 +77,7 @@ v0.3.0 已建立 Kubemate 组件目录、组件配置与实际状态分离、组
 
 ### 6.1 计划位置
 
-新增 Kubernetes 基础步骤 `19-configure-coredns-affinity`，由主控制节点执行，放在集群初始化和核心组件就绪之后、添加其他控制节点和 Worker 之前或基础安装最终健康检查之前。
+新增 Kubernetes 基础步骤 `23-configure-coredns-affinity`，由主控制节点执行，放在集群初始化、节点加入和核心组件就绪之后、基础安装最终健康检查之前。
 
 该步骤归属 `BaseInstallPlanFactory`，不进入 `ComponentPlanFactory`。组件补装任务不执行该步骤。
 
@@ -109,9 +109,10 @@ affinity:
 1. 验证 `kube-system/coredns` Deployment 存在。
 2. 读取现有 `spec.template.spec.affinity`。
 3. 判断是否已存在相同标签选择器和 `kubernetes.io/hostname` 拓扑键的规则。
-4. 已存在则记录日志并跳过修改。
+4. 已存在一条目标规则则保留；存在多条目标规则时按索引倒序删除重复项，不改动其他亲和性规则。
 5. 不存在时生成 JSON Patch：缺少父级字段时创建父级，已有规则数组时只追加新规则，不覆盖用户已有亲和性配置。
-6. 执行 `kubectl rollout status deployment/coredns -n kube-system --timeout=180s`。
+6. 使用 `kubefoundry.io/coredns-anti-affinity=v2` 标记修复后的规则版本；规则或版本发生变化时触发一次 CoreDNS 滚动重启。
+7. 执行 `kubectl rollout status deployment/coredns -n kube-system --timeout=180s`。
 
 脚本不得执行 `kubectl edit`、固定 `sleep` 或重启 Traefik Mesh。
 
@@ -328,7 +329,7 @@ findmnt --noheadings --raw --mountpoint "${target}" --output SOURCE,FSTYPE
 | 组件公共前置 | 空，`phase=component_common` | 终止组件阶段，所有未开始组件组标记跳过 |
 | 组件组步骤 | 具体组键 | 终止本组剩余步骤，继续下一无依赖组 |
 
-v0.3.1 的 NFS、Kubemate、Traefik、存储与日志、Prometheus 五组之间没有依赖关系。组内步骤保持严格顺序，组内前一步失败时，后续步骤标记为 `skipped`，原因码为 `COMPONENT_GROUP_PREVIOUS_STEP_FAILED`。
+该失败域同时用于首次安装 `install` 和组件补装 `component_install`。v0.3.1 的 NFS、Kubemate、Traefik、存储与日志、Prometheus 五组之间没有依赖关系。组内步骤保持严格顺序，组内前一步失败时，后续步骤标记为 `skipped`，原因码为 `COMPONENT_GROUP_PREVIOUS_STEP_FAILED`。
 
 组件组仍按固定顺序串行：
 
@@ -354,7 +355,7 @@ CONTINUE        # 仅供未来无状态验证步骤使用，v0.3.1 不开放给�
 2. 当前组件组已失败时，将该组后续步骤标记为 `skipped`。
 3. 执行步骤；节点级并发行为保持现状。
 4. 步骤失败且策略为 `ABORT_GROUP` 时，记录该组失败并继续寻找下一组件组。
-5. 策略为 `ABORT_JOB` 时，终止任务并处理所有未开始步骤。
+5. 策略为 `ABORT_JOB` 时，终止任务并将所有未开始步骤标记为 `skipped`，原因码为 `JOB_ABORTED`，不得保留永久 `pending` 状态。
 6. 全部可执行步骤结束后，根据组结果计算任务最终状态。
 
 ### 11.3 状态模型
@@ -374,13 +375,26 @@ CONTINUE        # 仅供未来无状态验证步骤使用，v0.3.1 不开放给�
 - 组内全部步骤成功：`installed`。
 - 任一步骤失败：`failed`，记录 `last_job_id` 和错误码。
 - 因公共前置失败未开始：恢复为 `not_installed`，任务步骤显示 `skipped`。
+
+### 11.4 组件清单首次应用与重试
+
+- 公共命名空间步骤只使用随任务分发的 `phase3.sh`，不依赖远端仓库中的 `PROJECT_ROOT`，并通过声明式命令重复创建。
+- 对包含 CRD 的文件或目录，先拆分并应用 `CustomResourceDefinition` 文档，逐个等待 `Established`，再应用完整组件清单，避免 Kubemate、Traefik 等自定义资源首次安装时抢跑。
+- KubeFoundry 管理的资源统一使用 `--server-side --field-manager=kubefoundry --force-conflicts` 收敛字段所有权；只对安装介质内由 KubeFoundry 管理并标记的资源执行该策略。
+- Kubemate 的 `kubemate-etc` ConfigMap 使用同一字段管理器生成，避免历史客户端应用记录与组件清单在 `data.k8s_config.yml` 上冲突。
 - 其他组件组失败不改变本组状态。
 
 `job_steps.status` 支持 `pending/running/success/failed/skipped/interrupted`，并增加 `status_reason` 保存稳定原因码。任务执行页将 `partial_success` 显示为“部分成功”，将 `skipped` 显示为“已跳过”，不能显示成成功或失败。
 
-### 11.4 重试
+### 11.5 重试
 
 组件补装重试只选择状态为 `not_installed` 或 `failed` 且当前仍启用的组件组。已安装组不重复执行。一次重试仍生成新的任务 ID 和不可变快照，不修改原失败任务。
+
+### 11.6 失败恢复与配置解锁
+
+- 服务启动时将遗留的 `pending/running` 初次安装任务收敛为 `interrupted`，并将集群状态收敛为 `install_failed`，避免旧任务永久阻塞重置准入。
+- 初次安装失败后继续保持 `installation_locked=true`，防止用户在远端 Kubernetes 资源尚未清理时修改节点身份；只要不存在活动安装任务，页面即允许进入远程重置。
+- 重置成功后设置 `status=draft`、`installation_locked=false`，节点测试状态变为 `stale`，基础配置、节点和组件配置恢复可编辑。
 
 ## 12. 集群安装详情按任务 ID 展示
 

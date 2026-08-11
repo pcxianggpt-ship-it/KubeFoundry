@@ -3,7 +3,7 @@
 #===============================================================================
 # 脚本名称：31-install-kubemate-ui.sh
 # 功能：在主控节点声明式安装 Kubemate UI
-# 版本：0.3.0
+# 版本：0.3.1
 #===============================================================================
 
 if [ -f "./phase3.sh" ]; then source "./phase3.sh"; else source "${PROJECT_ROOT}/scripts/lib/phase3.sh"; fi
@@ -24,7 +24,8 @@ manifest=$(phase3_resource_path "31-install-kubemate-ui")
 
 phase3_ensure_namespace "${kubemate_namespace}"
 kubectl create configmap kubemate-etc --namespace "${kubemate_namespace}" \
-    --from-file=k8s_config.yml="${KUBECONFIG}" --dry-run=client -o yaml | kubectl apply -f -
+    --from-file=k8s_config.yml="${KUBECONFIG}" --dry-run=client -o yaml \
+    | kubectl apply --server-side --field-manager=kubefoundry --force-conflicts -f -
 kubectl label configmap kubemate-etc --namespace "${kubemate_namespace}" --overwrite \
     app.kubernetes.io/managed-by=kubefoundry
 

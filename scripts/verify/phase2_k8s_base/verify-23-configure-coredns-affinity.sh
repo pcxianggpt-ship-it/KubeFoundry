@@ -18,8 +18,15 @@ run_kubectl() {
 
 marker=$(run_kubectl get deployment coredns -n kube-system \
     -o jsonpath='{.metadata.annotations.kubefoundry\.io/coredns-anti-affinity}')
-if [ "${marker}" != "v1" ]; then
+if [ "${marker}" != "v2" ]; then
     log_error "CoreDNS 未发现 KubeFoundry 反亲和规则标记"
+    exit 1
+fi
+
+rule_count=$(run_kubectl get deployment coredns -n kube-system -o go-template='{{range $rule := .spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution}}{{$rule.podAffinityTerm.topologyKey}}{{"|"}}{{range $rule.podAffinityTerm.labelSelector.matchExpressions}}{{.key}}{{"="}}{{.operator}}{{"="}}{{range .values}}{{.}}{{","}}{{end}}{{end}}{{"\n"}}{{end}}' \
+    | grep -Fxc 'kubernetes.io/hostname|k8s-app=In=kube-dns,' || true)
+if [ "${rule_count}" -ne 1 ]; then
+    log_error "CoreDNS 目标软反亲和规则数量异常: ${rule_count}"
     exit 1
 fi
 

@@ -24,7 +24,7 @@ public record InstallationSnapshotPayload(
         String componentPlanVersion,
         Map<String, String> mediaChecksums) {
 
-    public static final String COMPONENT_PLAN_VERSION = "v0.3.0";
+    public static final String COMPONENT_PLAN_VERSION = "v0.3.1";
 
     public InstallationSnapshotPayload {
         clusterName = nonBlank(clusterName, "集群名称");

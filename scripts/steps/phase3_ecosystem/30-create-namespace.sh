@@ -5,22 +5,17 @@
 # 功能：创建命名空间
 # 执行机器：k8sc1控制节点执行
 # 作者：KubeFoundry Team
-# 版本：1.0.0
+# 版本：0.3.1
 #===============================================================================
 
-# PROJECT_ROOT 由 main.sh export，无需推算
-
-# 加载公共函数库
-source "${PROJECT_ROOT}/scripts/lib/logger.sh"
-source "${PROJECT_ROOT}/scripts/lib/config.sh"
+if [ -f "./phase3.sh" ]; then source "./phase3.sh"; else source "${PROJECT_ROOT}/scripts/lib/phase3.sh"; fi
+phase3_init
 
 log_info "创建kubemate-system命名空间..."
 
-kubectl create ns kubemate-system
+phase3_ensure_namespace kubemate-system
 
 log_info "命名空间创建完成"
 
-# 验证安装结果
-# 在k8sc1控制节点上执行
-kubectl get namespace
-# 应该看到 kubemate-system 命名空间
+kubectl get namespace kubemate-system >/dev/null
+log_success "kubemate-system 命名空间已就绪"

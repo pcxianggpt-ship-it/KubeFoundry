@@ -70,8 +70,10 @@ public class JobService {
                     stepNodes.save(new JobStepNode(step, node));
                 }
             }
-            if (ComponentInstallationStateService.JOB_TYPE.equals(job.getType())) {
-                componentStates.markAccepted(job, definition.componentGroupKeys());
+            Set<String> componentGroupKeys = definition.componentGroupKeys();
+            if (ComponentInstallationStateService.supportsJobType(job.getType())
+                    && !componentGroupKeys.isEmpty()) {
+                componentStates.markAccepted(job, componentGroupKeys);
             }
             submitAfterCommit(job.getId(), definition);
         } catch (RuntimeException exception) {
@@ -112,6 +114,16 @@ public class JobService {
             jobs.save(job);
             componentStates.recoverInterrupted(job);
         }
+        List<Job> installJobs = jobs.findByTypeAndStatusIn("install", List.of("pending", "running"));
+        for (Job job : installJobs) {
+            job.markInterrupted();
+            jobs.save(job);
+            componentStates.recoverInterrupted(job);
+            clusters.findById(job.getCluster().getId()).ifPresent(cluster -> {
+                cluster.markInstallationFinished(false);
+                clusters.save(cluster);
+            });
+        }
         List<Job> resetJobs = jobs.findByTypeAndStatusIn("reset", List.of("pending", "running"));
         for (Job job : resetJobs) {
             job.markInterrupted();
@@ -121,7 +133,7 @@ public class JobService {
                 clusters.save(cluster);
             });
         }
-        return componentJobs.size() + resetJobs.size() + jobs.replaceStatus("running");
+        return componentJobs.size() + installJobs.size() + resetJobs.size() + jobs.replaceStatus("running");
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -156,7 +168,7 @@ public class JobService {
         events.publish(jobId, "job.status", Map.of("status", "running"));
 
         try {
-            boolean componentJob = ComponentInstallationStateService.JOB_TYPE.equals(job.getType());
+            boolean componentAwareJob = ComponentInstallationStateService.supportsJobType(job.getType());
             Set<String> failedComponentGroups = new HashSet<>();
             Map<Integer, JobStep> persistedSteps = listSteps(jobId).stream()
                     .collect(java.util.stream.Collectors.toMap(JobStep::getOrder, value -> value));
@@ -164,7 +176,8 @@ public class JobService {
                     .sorted(Comparator.comparingInt(StepDefinition::order)).toList()) {
                 JobStep step = persistedSteps.get(stepDefinition.order());
                 String componentGroupKey = step.getComponentGroupKey();
-                if (componentJob && componentGroupKey != null && failedComponentGroups.contains(componentGroupKey)) {
+                if (componentAwareJob && componentGroupKey != null
+                        && failedComponentGroups.contains(componentGroupKey)) {
                     skipStep(jobId, step, "COMPONENT_GROUP_PREVIOUS_STEP_FAILED");
                     continue;
                 }
@@ -213,7 +226,7 @@ public class JobService {
                 JobExecutor.ExecutionSummary summary = executor.executeNodes(
                         work, stepDefinition.maxWorkers(), stepDefinition.failFast());
                 if ("failed".equals(summary.status())) {
-                    if (componentJob && componentGroupKey != null) {
+                    if (componentAwareJob && componentGroupKey != null) {
                         failNodes(step, "组件组步骤执行失败");
                         step.markFailed();
                         steps.saveAndFlush(step);
@@ -231,15 +244,22 @@ public class JobService {
                 events.publish(jobId, "step.status", Map.of(
                         "step_id", step.getId(), "status", "success"));
             }
+            Set<String> componentGroupKeys = definition.componentGroupKeys();
+            boolean allComponentGroupsFailed = componentAwareJob && !componentGroupKeys.isEmpty()
+                    && failedComponentGroups.containsAll(componentGroupKeys);
             if (failedComponentGroups.isEmpty()) job.markSuccess();
+            else if (allComponentGroupsFailed) job.markFailed();
             else job.markPartialSuccess();
             jobs.saveAndFlush(job);
-            componentStates.complete(job, true);
-            updateInstallStatus(job, true);
+            componentStates.complete(job, !allComponentGroupsFailed);
+            updateInstallStatus(job, !allComponentGroupsFailed);
+            String terminalStatus = failedComponentGroups.isEmpty() ? "success"
+                    : allComponentGroupsFailed ? "failed" : "partial_success";
             events.publish(jobId, "job.status", Map.of(
-                    "status", failedComponentGroups.isEmpty() ? "success" : "partial_success"));
+                    "status", terminalStatus));
         } catch (RuntimeException exception) {
             failRunningStepsAndNodes(jobId, stableMessage(exception));
+            skipPendingSteps(jobId, "JOB_ABORTED");
             job.markFailed();
             jobs.saveAndFlush(job);
             componentStates.complete(job, false);
@@ -254,6 +274,7 @@ public class JobService {
         steps.saveAndFlush(step);
         events.publish(jobId, "step.status", Map.of(
                 "step_id", step.getId(), "status", "failed"));
+        skipPendingSteps(jobId, "JOB_ABORTED");
         job.markFailed();
         jobs.saveAndFlush(job);
         componentStates.complete(job, false);
@@ -327,6 +348,12 @@ public class JobService {
         steps.saveAndFlush(step);
         events.publish(jobId, "step.status", Map.of(
                 "step_id", step.getId(), "status", "skipped", "reason", reason));
+    }
+
+    private void skipPendingSteps(long jobId, String reason) {
+        for (JobStep pending : listSteps(jobId)) {
+            if ("pending".equals(pending.getStatus())) skipStep(jobId, pending, reason);
+        }
     }
 
     private static void validate(JobDefinition definition) {

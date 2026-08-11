@@ -140,6 +140,10 @@ public class ComponentInstallationStateService {
     }
 
     private static boolean isComponentJob(Job job) {
-        return job != null && JOB_TYPE.equals(job.getType());
+        return job != null && supportsJobType(job.getType());
+    }
+
+    public static boolean supportsJobType(String jobType) {
+        return JOB_TYPE.equals(jobType) || "install".equals(jobType);
     }
 }

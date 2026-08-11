@@ -40,7 +40,7 @@
         </div>
         <div>
           <h2>远程重置</h2>
-          <p>{{ resetAvailable ? '清理受管 Kubernetes 数据。此操作不可恢复。' : '安装成功、重置失败后可用；运行中的任务结束前不可执行。' }}</p>
+          <p>{{ resetAvailable ? '清理受管 Kubernetes 数据。此操作不可恢复。' : '集群配置锁定且无运行中的安装任务时可用。' }}</p>
           <el-button data-testid="reset-cluster-from-overview" type="danger" plain :disabled="!resetAvailable" @click="goToReset">重置集群</el-button>
         </div>
       </section>
@@ -72,8 +72,7 @@ const latestPrecheck = computed(() => latest('precheck'));
 const latestInstall = computed(() => latest('install'));
 const latestComponentInstall = computed(() => latest('component_install'));
 const latestReset = computed(() => latest('reset'));
-const resetAvailable = computed(() => Boolean(cluster.value?.configuration_locked)
-  && !activeJob.value && ['installed', 'reset_failed'].includes(cluster.value?.status));
+const resetAvailable = computed(() => Boolean(cluster.value?.configuration_locked) && !activeJob.value);
 const activeJob = computed(() => jobs.value.find((job) => ['precheck', 'install', 'component_install', 'reset'].includes(job.job_type)
   && ['pending', 'running'].includes(job.status)) || null);
 const installAvailable = computed(() => !activeJob.value && !cluster.value?.configuration_locked);

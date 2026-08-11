@@ -99,7 +99,7 @@ public class BaseInstallPlanFactory {
                         List.of(), List.of(), List.of(),
                         "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get deployment coredns -n kube-system "
                                 + "-o jsonpath='{.metadata.annotations.kubefoundry\\.io/coredns-anti-affinity}' "
-                                + "| grep -qx v1"),
+                                + "| grep -qx v2"),
                 InstallStep.builtin("web-verify-cluster-health", "验证 Kubernetes 集群健康",
                         "verify", "primary_control_plane", "cluster_health",
                         "serial", 1, true, "")));

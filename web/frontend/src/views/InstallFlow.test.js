@@ -110,6 +110,18 @@ describe('安装流程', () => {
     expect(router.currentRoute.value.fullPath).toBe('/cluster-install/42/reset');
   });
 
+  it('初次安装失败但配置仍锁定时提供重置入口', async () => {
+    getCluster.mockResolvedValue({ id: 42, name: '生产集群', status: 'install_failed', configuration_locked: true });
+    listJobs.mockResolvedValue({ items: [{ id: 88, cluster_id: 42, job_type: 'install', status: 'failed' }] });
+    const { router, wrapper } = await mountAt(InstallOverviewView, '/cluster-install/42/overview');
+
+    expect(wrapper.get('[data-testid="reset-cluster-from-overview"]').attributes('disabled')).toBeUndefined();
+    await wrapper.get('[data-testid="reset-cluster-from-overview"]').trigger('click');
+    await flushPromises();
+
+    expect(router.currentRoute.value.fullPath).toBe('/cluster-install/42/reset');
+  });
+
   it('存量集群可从安装概览启动组件补装任务', async () => {
     getCluster.mockResolvedValue({ id: 42, name: '生产集群', status: 'installed', configuration_locked: true });
     listJobs.mockResolvedValue({ items: [] });

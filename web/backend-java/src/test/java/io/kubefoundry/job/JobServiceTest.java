@@ -4,6 +4,7 @@ import io.kubefoundry.cluster.Cluster;
 import io.kubefoundry.cluster.ClusterComponentState;
 import io.kubefoundry.cluster.ClusterComponentStateRepository;
 import io.kubefoundry.cluster.ClusterRepository;
+import io.kubefoundry.cluster.ClusterService;
 import io.kubefoundry.cluster.Node;
 import io.kubefoundry.cluster.NodeRepository;
 import java.util.List;
@@ -23,6 +24,9 @@ class JobServiceTest {
 
     @Autowired
     ClusterRepository clusters;
+
+    @Autowired
+    ClusterService clusterService;
 
     @Autowired
     JobRepository jobs;
@@ -54,7 +58,7 @@ class JobServiceTest {
     }
 
     @Test
-    void marksOnlyRunningJobsInterruptedAtStartupRecovery() {
+    void recoversPendingInstallAndRunningJobsAtStartup() {
         Cluster cluster = clusters.save(new Cluster("recovery-test"));
         Job pending = jobs.save(new Job(cluster, "install"));
         Job running = new Job(cluster, "precheck");
@@ -64,11 +68,12 @@ class JobServiceTest {
         finished.markSuccess();
         finished = jobs.save(finished);
 
-        assertThat(service.recoverInterruptedJobs()).isEqualTo(1);
+        assertThat(service.recoverInterruptedJobs()).isEqualTo(2);
 
-        assertThat(jobs.findById(pending.getId()).orElseThrow().getStatus()).isEqualTo("pending");
+        assertThat(jobs.findById(pending.getId()).orElseThrow().getStatus()).isEqualTo("interrupted");
         assertThat(jobs.findById(running.getId()).orElseThrow().getStatus()).isEqualTo("interrupted");
         assertThat(jobs.findById(finished.getId()).orElseThrow().getStatus()).isEqualTo("success");
+        assertThat(clusters.findById(cluster.getId()).orElseThrow().getStatus()).isEqualTo("install_failed");
     }
 
     @Test
@@ -134,6 +139,29 @@ class JobServiceTest {
     }
 
     @Test
+    void skipsPendingStepsAfterNonComponentInstallStepFails() throws Exception {
+        Cluster cluster = clusters.save(new Cluster("install-abort-skips-pending"));
+        Node node = node(cluster, "node-1", "10.0.0.1");
+
+        long jobId = service.submit(new JobService.JobDefinition(cluster.getId(), "install", List.of(
+                new JobService.StepDefinition("基础安装失败", 1, 1, true, List.of(
+                        new JobService.NodeOperation(node.getId(), () -> {
+                            throw new IllegalStateException("基础安装失败");
+                        }))),
+                new JobService.StepDefinition("不应继续执行", 2, 1, true, List.of(
+                        new JobService.NodeOperation(node.getId(), () -> { }))))));
+        assertThat(executor.awaitIdle(5, TimeUnit.SECONDS)).isTrue();
+
+        assertThat(steps.findByJobIdOrderByOrder(jobId))
+                .extracting(JobStep::getStatus)
+                .containsExactly("failed", "skipped");
+        JobStep skipped = steps.findByJobIdOrderByOrder(jobId).get(1);
+        assertThat(stepNodes.findByStepIdOrderById(skipped.getId()))
+                .extracting(JobStepNode::getStatus)
+                .containsExactly("skipped");
+    }
+
+    @Test
     void publishesNodeRunningAndTerminalStatusForOutcomeOperations() throws Exception {
         Cluster cluster = clusters.save(new Cluster("node-running-event-test"));
         Node node = node(cluster, "node-1", "10.0.0.1");
@@ -181,6 +209,109 @@ class JobServiceTest {
         assertThat(componentStates.findById(kubemate.getId()).orElseThrow().getStatus())
                 .isEqualTo(ClusterComponentState.INSTALLED);
         assertThat(jobs.findById(jobId).orElseThrow().getStatus()).isEqualTo("partial_success");
+    }
+
+    @Test
+    void initialInstallContinuesWithNextComponentGroupAfterKubemateFails() throws Exception {
+        Cluster cluster = new Cluster("initial-install-component-isolation");
+        cluster.markInstallationStarted();
+        cluster = clusters.save(cluster);
+        Node node = node(cluster, "node-1", "10.0.0.1");
+        ClusterComponentState kubemate = componentStates.save(new ClusterComponentState(cluster, "kubemate"));
+        ClusterComponentState traefik = componentStates.save(new ClusterComponentState(cluster, "traefik"));
+        java.util.concurrent.atomic.AtomicInteger traefikExecutions = new java.util.concurrent.atomic.AtomicInteger();
+
+        long jobId = service.submit(new JobService.JobDefinition(cluster.getId(), "install", List.of(
+                new JobService.StepDefinition("Kubernetes 基础安装", 1, 1, true, List.of(
+                        new JobService.NodeOperation(node.getId(), () -> { }))),
+                new JobService.StepDefinition("安装 Kubemate", 2, 1, true, List.of(
+                        new JobService.NodeOperation(node.getId(), () -> {
+                            throw new IllegalStateException("Kubemate 安装失败");
+                        })), "kubemate"),
+                new JobService.StepDefinition("安装 Traefik", 3, 1, true, List.of(
+                        new JobService.NodeOperation(node.getId(), traefikExecutions::incrementAndGet)),
+                        "traefik"))));
+        assertThat(executor.awaitIdle(5, TimeUnit.SECONDS)).isTrue();
+
+        assertThat(traefikExecutions).hasValue(1);
+        assertThat(steps.findByJobIdOrderByOrder(jobId))
+                .extracting(JobStep::getStatus)
+                .containsExactly("success", "failed", "success");
+        assertThat(jobs.findById(jobId).orElseThrow().getStatus()).isEqualTo("partial_success");
+        assertThat(componentStates.findById(kubemate.getId()).orElseThrow().getStatus())
+                .isEqualTo(ClusterComponentState.FAILED);
+        assertThat(componentStates.findById(traefik.getId()).orElseThrow().getStatus())
+                .isEqualTo(ClusterComponentState.INSTALLED);
+        assertThat(clusters.findById(cluster.getId()).orElseThrow())
+                .satisfies(value -> {
+                    assertThat(value.getStatus()).isEqualTo("installed");
+                    assertThat(value.isInstallationLocked()).isTrue();
+                });
+    }
+
+    @Test
+    void successfulResetUnlocksClusterConfiguration() throws Exception {
+        Cluster cluster = new Cluster("reset-unlocks-configuration");
+        cluster.markInstallationStarted();
+        cluster.markInstallationFinished(true);
+        cluster.markNodeTestStatus("success");
+        cluster = clusters.save(cluster);
+        Node node = node(cluster, "node-1", "10.0.0.1");
+        node.completeNodeTest("kylin", "V10", "amd64");
+        nodes.save(node);
+
+        long jobId = service.submit(new JobService.JobDefinition(cluster.getId(), "reset", List.of(
+                new JobService.StepDefinition("重置节点", 1, 1, true, List.of(
+                        new JobService.NodeOperation(node.getId(), () -> { }))))));
+        assertThat(executor.awaitIdle(5, TimeUnit.SECONDS)).isTrue();
+
+        assertThat(jobs.findById(jobId).orElseThrow().getStatus()).isEqualTo("success");
+        assertThat(clusters.findById(cluster.getId()).orElseThrow())
+                .satisfies(value -> {
+                    assertThat(value.getStatus()).isEqualTo("draft");
+                    assertThat(value.isInstallationLocked()).isFalse();
+                    assertThat(value.getNodeTestStatus()).isEqualTo("stale");
+                });
+        assertThat(nodes.findById(node.getId()).orElseThrow().getNodeTestStatus()).isEqualTo("stale");
+
+        ClusterService.ClusterResponse updatedCluster = clusterService.updateCluster(cluster.getId(),
+                new ClusterService.ClusterRequest(null, "重置后可编辑", null, null, null, null));
+        assertThat(updatedCluster.description()).isEqualTo("重置后可编辑");
+        ClusterService.NodeResponse updatedNode = clusterService.updateNode(node.getId(),
+                new ClusterService.NodeRequest(
+                        "node-1-reset", null, null, List.of("worker"), null, null, null));
+        assertThat(updatedNode.hostname()).isEqualTo("node-1-reset");
+    }
+
+    @Test
+    void marksComponentJobFailedWhenEveryComponentGroupFails() throws Exception {
+        Cluster cluster = clusters.save(new Cluster("all-component-groups-failed"));
+        Node node = node(cluster, "node-1", "10.0.0.1");
+        ClusterComponentState kubemate = componentStates.save(new ClusterComponentState(cluster, "kubemate"));
+        ClusterComponentState traefik = componentStates.save(new ClusterComponentState(cluster, "traefik"));
+
+        long jobId = service.submit(new JobService.JobDefinition(cluster.getId(), "component_install", List.of(
+                new JobService.StepDefinition("公共准备", 1, 1, true, List.of(
+                        new JobService.NodeOperation(node.getId(), () -> { })), null),
+                new JobService.StepDefinition("安装 Kubemate", 2, 1, true, List.of(
+                        new JobService.NodeOperation(node.getId(), () -> {
+                            throw new IllegalStateException("Kubemate 安装失败");
+                        })), "kubemate"),
+                new JobService.StepDefinition("安装 Traefik", 3, 1, true, List.of(
+                        new JobService.NodeOperation(node.getId(), () -> {
+                            throw new IllegalStateException("Traefik 安装失败");
+                        })), "traefik"))));
+        assertThat(executor.awaitIdle(5, TimeUnit.SECONDS)).isTrue();
+
+        assertThat(jobs.findById(jobId).orElseThrow().getStatus()).isEqualTo("failed");
+        assertThat(componentStates.findById(kubemate.getId()).orElseThrow().getStatus())
+                .isEqualTo(ClusterComponentState.FAILED);
+        assertThat(componentStates.findById(traefik.getId()).orElseThrow().getStatus())
+                .isEqualTo(ClusterComponentState.FAILED);
+        assertThat(events.findTop100ByJobIdAndIdGreaterThanOrderById(jobId, 0).stream()
+                .filter(event -> "job.status".equals(event.getType()))
+                .map(event -> (String) event.getPayload().get("status")))
+                .endsWith("failed");
     }
 
     @Test
