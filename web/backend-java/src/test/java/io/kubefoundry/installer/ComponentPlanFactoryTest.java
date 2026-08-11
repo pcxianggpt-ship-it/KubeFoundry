@@ -70,15 +70,18 @@ class ComponentPlanFactoryTest {
     }
 
     @Test
-    void sendsKubemateManifestToTheJobResourceDirectory() {
+    void sendsKubemateMediaDirectoryToTheJobResourceDirectory() {
         ComponentPlanFactory factory = new ComponentPlanFactory(temporaryDirectory);
 
         InstallStep step = factory.create(snapshot(List.of(group("kubemate", true))))
                 .require("31-install-kubemate-ui");
 
         assertThat(step.resources()).hasSize(1);
+        assertThat(step.resources().get(0).kind()).isEqualTo("directory");
+        assertThat(step.resources().get(0).localPath().toString().replace('\\', '/'))
+                .endsWith("kube-media/03.setup_file/vunknown/kubemate");
         assertThat(step.resources().get(0).remotePath())
-                .endsWith("/resources/kubemate/31-install-kubemate-ui");
+                .endsWith("/resources/kubemate");
     }
 
     @Test

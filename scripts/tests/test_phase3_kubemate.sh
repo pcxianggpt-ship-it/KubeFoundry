@@ -6,21 +6,25 @@ TMP=$(mktemp -d)
 trap 'rm -rf -- "${TMP}"' EXIT
 BIN="${TMP}/bin"
 mkdir -p "${BIN}" "${TMP}/resources" "${TMP}/kube"
-printf 'apiVersion: apiextensions.k8s.io/v1\nkind: CustomResourceDefinition\nmetadata:\n  name: kmusers.example.io\nspec:\n  group: example.io\n---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: kubemate-ui\n  annotations:\n    control-ip: __KF_PRIMARY_CONTROL_IP__\n' > "${TMP}/resources/31-install-kubemate-ui"
+printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: kubemate-base\n' > "${TMP}/resources/kubemate-crds.yml"
+cat > "${TMP}/resources/kubemate-resources.yml" <<'EOF'
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: kubemate-appx
+  namespace: kubemate-system
+spec:
+  template:
+    spec:
+      hostAliases:
+        - ip: 192.168.0.1
+          hostnames:
+            - "k8sc1"
+EOF
 printf 'apiVersion: v1\n' > "${TMP}/kube/admin.conf"
 cat > "${BIN}/kubectl" <<'EOF'
 #!/bin/bash
 printf '%s\n' "$*" >> "${KF_KUBEMATE_KUBECTL_LOG}"
-case "$*" in
-  *"get -f "*" -o name"*) printf 'customresourcedefinition.apiextensions.k8s.io/kmusers.example.io\n' ;;
-  *"apply --server-side"*) [ "${!#}" = "-" ] || cp "${!#}" "${KF_KUBEMATE_RENDERED}" ;;
-  *"get service --all-namespaces"*) printf 'kubemate-system kubemate-ui 30088\n' ;;
-  *"get deployment --namespace"*) printf 'deployment/kubemate-ui\n' ;;
-  *"get service --namespace"*) printf 'service/kubemate-ui\n' ;;
-  *"get service"*) printf 'apiVersion: v1\n' ;;
-  *"create namespace"*) printf 'apiVersion: v1\n' ;;
-  *) : ;;
-esac
 exit 0
 EOF
 cat > "${BIN}/helm" <<'EOF'
@@ -34,8 +38,6 @@ export KF_COMPONENT_RESOURCE_DIR="${TMP}/resources"
 export KF_PRIMARY_CONTROL_IP=10.0.0.10
 export KUBECONFIG="${TMP}/kube/admin.conf"
 export KF_KUBEMATE_KUBECTL_LOG="${TMP}/kubectl.log"
-export KF_KUBEMATE_RENDERED="${TMP}/rendered.yaml"
-export KF_ROLLOUT_TIMEOUT=1s
 export KF_NODE_HOSTNAME=cp-a
 export KF_NODE_IP=10.0.0.10
 export KF_NODE_ROLE=control_plane
@@ -47,12 +49,14 @@ log_error() { printf '%s\n' "$*" >&2; }
 export -f log_info log_success log_warn log_error
 
 bash "${ROOT}/scripts/steps/phase3_ecosystem/31-install-kubemate-ui.sh"
-grep -q -- '--from-file=k8s_config.yml=' "${KF_KUBEMATE_KUBECTL_LOG}"
-grep -q -- 'apply --server-side' "${KF_KUBEMATE_KUBECTL_LOG}"
-grep -q -- 'apply --server-side --field-manager=kubefoundry --force-conflicts -f -' "${KF_KUBEMATE_KUBECTL_LOG}"
-grep -q -- 'wait --for=condition=Established customresourcedefinition.apiextensions.k8s.io/kmusers.example.io' "${KF_KUBEMATE_KUBECTL_LOG}"
-grep -q -- '10.0.0.10' "${KF_KUBEMATE_RENDERED}"
-grep -q -- '__KF_PRIMARY_CONTROL_IP__' "${TMP}/resources/31-install-kubemate-ui"
+
+grep -Fxq -- 'create configmap kubemate-etc --namespace kubemate-system --from-file=k8s_config.yml='"${KUBECONFIG}" \
+    "${KF_KUBEMATE_KUBECTL_LOG}"
+grep -Fxq -- 'apply -f '"${KF_COMPONENT_RESOURCE_DIR}" "${KF_KUBEMATE_KUBECTL_LOG}"
+! grep -Eq -- '--dry-run|apply --server-side|field-manager|force-conflicts' "${KF_KUBEMATE_KUBECTL_LOG}"
+grep -Eq '^[[:space:]]*- ip: 10\.0\.0\.10[[:space:]]*$' \
+    "${KF_COMPONENT_RESOURCE_DIR}/kubemate-resources.yml"
+! grep -q -- '192.168.0.1' "${KF_COMPONENT_RESOURCE_DIR}/kubemate-resources.yml"
 ! grep -Eq 'ssh_exec|config_get|get_all_' "${ROOT}/scripts/steps/phase3_ecosystem/31-install-kubemate-ui.sh"
 
 printf 'phase3 Kubemate tests passed\n'

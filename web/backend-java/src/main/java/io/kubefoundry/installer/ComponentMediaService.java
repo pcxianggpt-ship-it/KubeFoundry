@@ -61,7 +61,7 @@ public class ComponentMediaService {
             throw new IllegalArgumentException("Invalid Kubernetes media version");
         }
         MediaLocation location = switch (stepKey) {
-            case "31-install-kubemate-ui" -> new MediaLocation("file", "kubemate.yml");
+            case "31-install-kubemate-ui" -> new MediaLocation("directory", "kubemate");
             case "32-import-nfs-image" -> new MediaLocation("file", "helmapp/nfs/nfs.tar");
             case "32-install-nfs" -> new MediaLocation("directory", "helmapp/nfs/nfs-subdir-external-provisioner");
             case "36-install-traefik" -> new MediaLocation("directory", "traefik/3.3");

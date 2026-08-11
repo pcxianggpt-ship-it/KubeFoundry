@@ -2,7 +2,8 @@
 
 #===============================================================================
 # 脚本名称：31-install-kubemate-ui.sh
-# 功能：在主控节点声明式安装 Kubemate UI
+# 功能：在主控节点安装 Kubemate 管理组件
+# 作者：KubeFoundry Team
 # 版本：0.3.1
 #===============================================================================
 
@@ -11,49 +12,49 @@ phase3_init
 : "${KF_PRIMARY_CONTROL_IP:?缺少主控制节点地址}"
 
 kubemate_namespace="${KF_KUBEMATE_NAMESPACE:-kubemate-system}"
-kubemate_nodeport="${KF_KUBEMATE_NODEPORT:-30088}"
-manifest=$(phase3_resource_path "31-install-kubemate-ui")
-[ -f "${manifest}" ] || {
-    log_error "Kubemate YAML 不存在: ${manifest}"
-    exit 1
-}
+resource_dir=$(phase3_resource_path .)
+resource_manifest="${resource_dir}/kubemate-resources.yml"
+
 [ -f "${KUBECONFIG}" ] || {
     log_error "Kubernetes 管理配置不存在: ${KUBECONFIG}"
     exit 1
 }
-
-phase3_ensure_namespace "${kubemate_namespace}"
-kubectl create configmap kubemate-etc --namespace "${kubemate_namespace}" \
-    --from-file=k8s_config.yml="${KUBECONFIG}" --dry-run=client -o yaml \
-    | kubectl apply --server-side --field-manager=kubefoundry --force-conflicts -f -
-kubectl label configmap kubemate-etc --namespace "${kubemate_namespace}" --overwrite \
-    app.kubernetes.io/managed-by=kubefoundry
-
-# 只在任务目录生成副本，保留原始离线介质不变。
-rendered=$(mktemp)
-trap 'rm -f -- "${rendered}"' EXIT
-escaped_ip=$(printf '%s' "${KF_PRIMARY_CONTROL_IP}" | sed 's/[&|\\]/\\&/g')
-sed -e "s|__KF_PRIMARY_CONTROL_IP__|${escaped_ip}|g" \
-    -e "s|\${KF_PRIMARY_CONTROL_IP}|${escaped_ip}|g" "${manifest}" > "${rendered}"
-
-nodeports=$(kubectl get service --all-namespaces -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{" "}{.spec.ports[*].nodePort}{"\n"}{end}')
-if printf '%s\n' "${nodeports}" | awk -v port="${kubemate_nodeport}" \
-    '$3 == port && !($1 == "kubemate-system" && $2 == "kubemate-ui") { found = 1 } END { exit found }'; then
-    :
-else
-    log_error "NodePort 已被其他 Service 占用: ${kubemate_nodeport}"
-    exit 1
-fi
-
-phase3_apply_managed "${rendered}"
-deployments=$(kubectl get deployment --namespace "${kubemate_namespace}" -o name)
-if [ -n "${deployments}" ]; then
-    while IFS= read -r deployment; do
-        [ -z "${deployment}" ] || phase3_wait_rollout "${deployment%%/*}" "${deployment#*/}" "${kubemate_namespace}"
-    done <<< "${deployments}"
-fi
-kubectl get service --namespace "${kubemate_namespace}" -o name | grep -q . || {
-    log_error "Kubemate Service 未创建"
+[ -f "${resource_manifest}" ] || {
+    log_error "Kubemate 资源清单不存在: ${resource_manifest}"
     exit 1
 }
-log_success "Kubemate UI 已幂等安装并通过就绪检查"
+
+# 1. 使用管理节点 kubeconfig 创建 Kubemate ConfigMap。
+kubectl create configmap kubemate-etc --namespace "${kubemate_namespace}" \
+    --from-file=k8s_config.yml="${KUBECONFIG}"
+
+# 2. 仅修改任务资源副本中 kubemate-appx Deployment 的 hostAliases IP。
+rendered=$(mktemp "${resource_manifest}.XXXXXX")
+trap 'rm -f -- "${rendered}"' EXIT
+if ! awk -v control_ip="${KF_PRIMARY_CONTROL_IP}" '
+    /^---[[:space:]]*($|#)/ {
+        target_deployment = 0
+        host_aliases = 0
+    }
+    /^[[:space:]]*name:[[:space:]]*kubemate-appx[[:space:]]*$/ {
+        target_deployment = 1
+    }
+    target_deployment && /^[[:space:]]*hostAliases:[[:space:]]*$/ {
+        host_aliases = 1
+    }
+    target_deployment && host_aliases && /^[[:space:]]*-[[:space:]]*ip:[[:space:]]*/ && !replaced {
+        sub(/ip:[[:space:]]*.*/, "ip: " control_ip)
+        replaced = 1
+    }
+    { print }
+    END { if (!replaced) exit 42 }
+' "${resource_manifest}" > "${rendered}"; then
+    log_error "未找到 kubemate-appx Deployment 的 hostAliases IP 配置"
+    exit 1
+fi
+mv -- "${rendered}" "${resource_manifest}"
+
+# 3. 部署任务目录中的全部 Kubemate 资源。
+kubectl apply -f "${resource_dir}"
+
+log_success "Kubemate 管理组件安装命令执行完成"

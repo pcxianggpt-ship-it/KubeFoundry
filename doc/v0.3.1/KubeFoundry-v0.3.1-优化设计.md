@@ -379,9 +379,9 @@ CONTINUE        # 仅供未来无状态验证步骤使用，v0.3.1 不开放给�
 ### 11.4 组件清单首次应用与重试
 
 - 公共命名空间步骤只使用随任务分发的 `phase3.sh`，不依赖远端仓库中的 `PROJECT_ROOT`，并通过声明式命令重复创建。
-- 对包含 CRD 的文件或目录，先拆分并应用 `CustomResourceDefinition` 文档，逐个等待 `Established`，再应用完整组件清单，避免 Kubemate、Traefik 等自定义资源首次安装时抢跑。
-- KubeFoundry 管理的资源统一使用 `--server-side --field-manager=kubefoundry --force-conflicts` 收敛字段所有权；只对安装介质内由 KubeFoundry 管理并标记的资源执行该策略。
-- Kubemate 的 `kubemate-etc` ConfigMap 使用同一字段管理器生成，避免历史客户端应用记录与组件清单在 `data.k8s_config.yml` 上冲突。
+- 对包含 CRD 的通用组件文件或目录，先拆分并应用 `CustomResourceDefinition` 文档，逐个等待 `Established`，再应用完整组件清单，避免自定义资源首次安装时抢跑。
+- KubeFoundry 管理的通用组件资源使用 `--server-side --field-manager=kubefoundry --force-conflicts` 收敛字段所有权；Kubemate 管理组件不使用该通用应用函数，而是执行专用三步流程。
+- Kubemate 管理组件介质按 `kubemate/` 目录分发到任务资源目录：先通过 `/etc/kubernetes/admin.conf` 直接创建 `kubemate-etc` ConfigMap，再将任务副本 `kubemate-resources.yml` 中 `kubemate-appx` Deployment 的 `hostAliases` IP 替换为主控制节点 IP，最后执行 `kubectl apply -f <任务 Kubemate 资源目录>`。不得使用 `--dry-run=client`、服务端应用或字段管理器生成 `kubemate-etc`。
 - 其他组件组失败不改变本组状态。
 
 `job_steps.status` 支持 `pending/running/success/failed/skipped/interrupted`，并增加 `status_reason` 保存稳定原因码。任务执行页将 `partial_success` 显示为“部分成功”，将 `skipped` 显示为“已跳过”，不能显示成成功或失败。
