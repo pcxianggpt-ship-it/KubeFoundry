@@ -43,7 +43,7 @@ class ComponentPlanFactoryTest {
     }
 
     @Test
-    void usesTheActualMinioMediaDirectoryAndSkipsMetricsServerMediaValidation() {
+    void usesTheActualMinioMediaDirectoryAndDoesNotCreateASeparateMetricsServerStep() {
         ComponentPlanFactory factory = new ComponentPlanFactory(temporaryDirectory);
 
         InstallPlan storagePlan = factory.create(snapshot(List.of(group("storage_observability", true))));
@@ -52,7 +52,9 @@ class ComponentPlanFactoryTest {
         assertThat(storagePlan.require("49-install-minio").resources()).singleElement().satisfies(resource ->
                 assertThat(resource.localPath().toString().replace('\\', '/'))
                         .endsWith("kube-media/03.setup_file/vunknown/minio"));
-        assertThat(prometheusPlan.require("40-install-metrics-server").resources()).isEmpty();
+        assertThat(prometheusPlan.steps()).extracting(InstallStep::key).containsExactly(
+                "29-install-helm", "30-create-namespace", "37-prepare-prometheus-workers",
+                "38-install-prometheus");
     }
 
     @Test

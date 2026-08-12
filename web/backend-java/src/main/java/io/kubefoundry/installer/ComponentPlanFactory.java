@@ -79,9 +79,7 @@ public class ComponentPlanFactory {
                     script(snapshot, "37-prepare-prometheus-workers", "准备 Prometheus Worker 目录", "workers",
                             groupKey, "parallel", 5, true),
                     script(snapshot, "38-install-prometheus", "安装 Prometheus", "primary_control_plane", groupKey,
-                            "serial", 1, true),
-                    script(snapshot, "40-install-metrics-server", "安装 Metrics Server", "primary_control_plane",
-                            groupKey, "serial", 1, true));
+                            "serial", 1, true));
             default -> throw new IllegalArgumentException("组件组不可安装: " + groupKey);
         };
     }

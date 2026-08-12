@@ -30,7 +30,7 @@ describe('ClusterListView', () => {
     listClusters.mockResolvedValue({
       items: [
         { id: 1, name: '待配置', status: 'configuration_incomplete', current_stage: 'nodes' },
-        { id: 2, name: '待安装', status: 'precheck_passed', current_stage: 'nodes' },
+        { id: 2, name: '待安装', status: 'precheck_passed', current_stage: 'nodes', latest_job_id: 21 },
         { id: 3, name: '安装中', status: 'installing', active_job_id: 31 },
         { id: 4, name: '安装失败', status: 'install_failed', latest_job_id: 41 },
         { id: 5, name: '生产集群', status: 'installed', latest_job_id: 51 }
@@ -50,14 +50,14 @@ describe('ClusterListView', () => {
     const actions = wrapper.findAllComponents(RouterLinkStub).filter((link) => link.classes('cluster-row__action'));
     expect(actions.map((link) => link.text())).toEqual([
       '查看安装状态',
-      '开始安装',
+      '查看进度',
       '查看进度',
       '查看失败原因',
       '查看执行记录'
     ]);
     expect(actions.map((link) => link.props('to'))).toEqual([
       { name: 'install-overview', params: { clusterId: '1' } },
-      { name: 'install-overview', params: { clusterId: '2' } },
+      { name: 'job-execution', params: { jobId: '21' } },
       { name: 'job-execution', params: { jobId: '31' } },
       { name: 'job-execution', params: { jobId: '41' } },
       { name: 'job-execution', params: { jobId: '51' } }
@@ -84,10 +84,10 @@ describe('ClusterListView', () => {
 
     const actions = wrapper.findAllComponents(RouterLinkStub)
       .filter((link) => link.classes('cluster-row__action'));
-    expect(actions.map((link) => link.text())).toEqual(['查看进度', '开始安装', '查看执行记录', '查看失败原因']);
+    expect(actions.map((link) => link.text())).toEqual(['查看进度', '查看进度', '查看执行记录', '查看失败原因']);
     expect(actions.map((link) => link.props('to'))).toEqual([
       { name: 'job-execution', params: { jobId: '101' } },
-      { name: 'install-overview', params: { clusterId: '11' } },
+      { name: 'job-execution', params: { jobId: '111' } },
       { name: 'job-execution', params: { jobId: '121' } },
       { name: 'job-execution', params: { jobId: '131' } }
     ]);

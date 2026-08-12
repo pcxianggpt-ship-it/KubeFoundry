@@ -207,13 +207,6 @@ function fixedWorkspaceRoute(cluster, stage) {
   };
 }
 
-function installConfirmRoute(cluster) {
-  return {
-    name: 'install-overview',
-    params: { clusterId: String(cluster.id) }
-  };
-}
-
 function jobRoute(cluster) {
   const jobId = cluster.active_job_id ?? cluster.latest_job_id ?? cluster.job_id;
   if (jobId === undefined || jobId === null || jobId === '') return null;
@@ -234,11 +227,11 @@ function presentation(cluster) {
   }
   if (['precheck_passed', 'precheck_success'].includes(status)) {
     return {
-      actionText: '开始安装',
+      actionText: '查看进度',
       icon: CircleCheckFilled,
       statusText: '预检查通过',
       tone: 'ready',
-      to: installConfirmRoute(cluster)
+      to: jobRoute(cluster)
     };
   }
   if (['installing', 'running'].includes(status)) {

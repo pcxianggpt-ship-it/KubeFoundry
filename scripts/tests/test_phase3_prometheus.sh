@@ -44,6 +44,7 @@ log_error() { printf '%s\n' "$*" >&2; }
 export -f log_info log_success log_warn log_error
 
 printf 'apiVersion: v1\nkind: PersistentVolume\nspec:\n  hostPath:\n    path: /data/prom_data\n' > "${KF_COMPONENT_RESOURCE_DIR}/prometheus.yaml"
+printf 'apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: metrics-server\n' > "${KF_COMPONENT_RESOURCE_DIR}/metrics-server.yaml"
 cat > "${KF_COMPONENT_RESOURCE_DIR}/additional-scrape-configs.Secret.yaml" <<'EOF'
 apiVersion: v1
 kind: Secret
@@ -63,12 +64,8 @@ bash "${ROOT}/scripts/steps/phase3_ecosystem/38-install-prometheus.sh"
 grep -q -- 'apply --server-side' "${KF_PROM_KUBECTL_LOG}"
 test -f "${KF_PROM_RENDERED_OK}"
 grep -q -- 'additional-scrape-configs.Secret.yaml' "${KF_PROM_KUBECTL_LOG}"
+grep -q -- 'metrics-server.yaml' "${KF_PROM_KUBECTL_LOG}"
 
-rm -f "${KF_COMPONENT_RESOURCE_DIR}/prometheus.yaml"
-rm -f "${KF_COMPONENT_RESOURCE_DIR}/additional-scrape-configs.Secret.yaml"
-printf 'apiVersion: v1\nkind: Deployment\nmetadata:\n  name: metrics-server\n' > "${KF_COMPONENT_RESOURCE_DIR}/metrics.yaml"
-bash "${ROOT}/scripts/steps/phase3_ecosystem/40-install-metrics-server.sh"
-grep -q -- 'top nodes' "${KF_PROM_KUBECTL_LOG}"
-! grep -Eq 'ssh_exec|config_get|get_all_|k8sw1|k8sw2' "${ROOT}/scripts/steps/phase3_ecosystem/38-install-prometheus.sh" "${ROOT}/scripts/steps/phase3_ecosystem/40-install-metrics-server.sh"
+! grep -Eq 'ssh_exec|config_get|get_all_|k8sw1|k8sw2' "${ROOT}/scripts/steps/phase3_ecosystem/38-install-prometheus.sh"
 
 printf 'phase3 Prometheus tests passed\n'

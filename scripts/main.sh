@@ -847,27 +847,6 @@ run_ecosystem() {
         step_done "3.12"
     fi
 
-    # 3.13 安装Metrics Server（主控制节点）
-    if ! ecosystem_enabled "metrics_server"; then
-        log_info "[跳过] 3.13 安装Metrics Server（配置中已禁用）"
-    elif step_is_done "3.13"; then
-        log_info "[跳过] 3.13 安装Metrics Server（已完成）"
-    else
-        log_info "安装metrics-server..."
-        exec_script_on_control_plane "${P3}/40-install-metrics-server.sh"
-        if [ $? -ne 0 ]; then
-            log_error "metrics-server安装失败"
-            return 1
-        fi
-        log_success "metrics-server安装完成"
-        verify_step "${V3}/verify-40-install-metrics-server.sh" "metrics-server"
-        if [ $? -ne 0 ]; then
-            log_error "metrics-server验证失败"
-            return 1
-        fi
-        step_done "3.13"
-    fi
-
     # 3.14 配置普通用户kubectl权限（主控制节点）
     if ! ecosystem_enabled "kubectl_permission"; then
         log_info "[跳过] 3.14 配置kubectl权限（配置中已禁用）"
