@@ -5,67 +5,69 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 TMP=$(mktemp -d)
 trap 'rm -rf -- "${TMP}"' EXIT
 BIN="${TMP}/bin"
-mkdir -p "${BIN}" "${TMP}/resources"
+RESOURCE_DIR="${TMP}/resources"
+mkdir -p "${BIN}" "${RESOURCE_DIR}"
+
 cat > "${BIN}/kubectl" <<'EOF'
 #!/bin/bash
 printf '%s\n' "$*" >> "${KF_PROM_KUBECTL_LOG}"
-for argument in "$@"; do
-  if [ -f "${argument}" ] && [ "$(basename "${argument}")" = 'additional-scrape-configs.Secret.yaml' ] \
-      && grep -Eq 'managedFields|resourceVersion|uid:|creationTimestamp' "${argument}"; then
-    exit 1
-  fi
-  if [ -f "${argument}" ] && grep -q '/data/prom_data' "${argument}"; then
-    : > "${KF_PROM_RENDERED_OK}"
-  fi
-done
+if [ "${1:-}" = 'apply' ] && [ "${2:-}" = '-f' ] && [ -f "${3:-}" ] \
+    && grep -q '/data/k8s_install/prom_data' "${3}"; then
+  : > "${KF_PROM_RENDERED_OK}"
+fi
 case "$*" in
-  *"get deployment"*) printf 'prometheus-operator 1 1 1 1m\n' ;;
-  *"get pods"*) printf 'prometheus-prometheus 3/3 Running\nnode-exporter 1/1 Running\nkube-state-metrics 1/1 Running\n' ;;
-  *"top nodes"*) printf 'cp-a 10m 100Mi\n' ;;
-  *) : ;;
+  "get nodes -l "*) printf 'node/k8sw1\nnode/k8sw2\n' ;;
 esac
-exit 0
 EOF
 chmod +x "${BIN}/kubectl"
+
 export PATH="${BIN}:${PATH}"
 export PROJECT_ROOT="${ROOT}"
-export KF_COMPONENT_RESOURCE_DIR="${TMP}/resources"
+export KF_COMPONENT_RESOURCE_DIR="${RESOURCE_DIR}"
 export KF_PROM_KUBECTL_LOG="${TMP}/kubectl.log"
 export KF_PROM_RENDERED_OK="${TMP}/rendered-ok"
-export KF_CRD_TIMEOUT=1s
-export KF_ROLLOUT_TIMEOUT=1s
-export KF_NODE_HOSTNAME=cp-a
-export KF_NODE_IP=10.0.0.1
-export KF_NODE_ROLE=control_plane
+export KF_K8S_HOME="/data/k8s_install"
 log_info() { :; }
 log_success() { :; }
 log_warn() { :; }
 log_error() { printf '%s\n' "$*" >&2; }
 export -f log_info log_success log_warn log_error
 
-printf 'apiVersion: v1\nkind: PersistentVolume\nspec:\n  hostPath:\n    path: /data/prom_data\n' > "${KF_COMPONENT_RESOURCE_DIR}/prometheus.yaml"
-printf 'apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: metrics-server\n' > "${KF_COMPONENT_RESOURCE_DIR}/metrics-server.yaml"
-cat > "${KF_COMPONENT_RESOURCE_DIR}/additional-scrape-configs.Secret.yaml" <<'EOF'
-apiVersion: v1
-kind: Secret
-metadata:
-  creationTimestamp: '2025-05-07T02:00:50Z'
-  managedFields:
-  - apiVersion: v1
-    manager: kubectl-create
-  name: additional-scrape-configs
-  namespace: kubemate-system
-  resourceVersion: '197458704'
-  uid: b0718516-6033-4234-906d-acf2f619fe1a
-type: Opaque
-data: {}
-EOF
-bash "${ROOT}/scripts/steps/phase3_ecosystem/38-install-prometheus.sh"
-grep -q -- 'apply --server-side' "${KF_PROM_KUBECTL_LOG}"
-test -f "${KF_PROM_RENDERED_OK}"
-grep -q -- 'additional-scrape-configs.Secret.yaml' "${KF_PROM_KUBECTL_LOG}"
-grep -q -- 'metrics-server.yaml' "${KF_PROM_KUBECTL_LOG}"
+printf 'path: /data/prom_data\n' > "${RESOURCE_DIR}/promlocal-pv.yaml"
+mkdir -p \
+    "${RESOURCE_DIR}/1-crd" \
+    "${RESOURCE_DIR}/2-prometheusOperator" \
+    "${RESOURCE_DIR}/3-prometheus" \
+    "${RESOURCE_DIR}/4-nodeExporter" \
+    "${RESOURCE_DIR}/5-kubeStateMetrics" \
+    "${RESOURCE_DIR}/6-alertmanager" \
+    "${RESOURCE_DIR}/7-kubernetesControlPlaneRule"
+printf 'apiVersion: apps/v1\nkind: Deployment\n' > "${RESOURCE_DIR}/8-metrics-server-ha.yaml"
 
-! grep -Eq 'ssh_exec|config_get|get_all_|k8sw1|k8sw2' "${ROOT}/scripts/steps/phase3_ecosystem/38-install-prometheus.sh"
+bash "${ROOT}/scripts/steps/phase3_ecosystem/38-install-prometheus.sh"
+
+grep -Fxq -- 'label node/k8sw1 node/k8sw2 prom=true --overwrite=true' "${KF_PROM_KUBECTL_LOG}"
+grep -Eq '^apply -f /tmp/' "${KF_PROM_KUBECTL_LOG}"
+grep -Fxq -- "create -f ${RESOURCE_DIR}/1-crd" "${KF_PROM_KUBECTL_LOG}"
+
+expected=(
+    "${RESOURCE_DIR}/2-prometheusOperator"
+    "${RESOURCE_DIR}/3-prometheus"
+    "${RESOURCE_DIR}/4-nodeExporter"
+    "${RESOURCE_DIR}/5-kubeStateMetrics"
+    "${RESOURCE_DIR}/6-alertmanager"
+    "${RESOURCE_DIR}/7-kubernetesControlPlaneRule"
+    "${RESOURCE_DIR}/8-metrics-server-ha.yaml"
+)
+previous_line=$(grep -nF -- "create -f ${RESOURCE_DIR}/1-crd" "${KF_PROM_KUBECTL_LOG}" | cut -d: -f1)
+for resource in "${expected[@]}"; do
+    current_line=$(grep -nF -- "apply -f ${resource}" "${KF_PROM_KUBECTL_LOG}" | cut -d: -f1)
+    [ "${current_line}" -gt "${previous_line}" ]
+    previous_line="${current_line}"
+done
+
+test -f "${KF_PROM_RENDERED_OK}"
+! grep -Eq 'phase3_apply_managed|rollout|additional-scrape|server-side|dry-run' \
+    "${ROOT}/scripts/steps/phase3_ecosystem/38-install-prometheus.sh"
 
 printf 'phase3 Prometheus tests passed\n'

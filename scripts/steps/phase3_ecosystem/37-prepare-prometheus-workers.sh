@@ -8,5 +8,6 @@
 
 if [ -f "./phase3.sh" ]; then source "./phase3.sh"; else source "${PROJECT_ROOT}/scripts/lib/phase3.sh"; fi
 phase3_init
-mkdir -p -- /data/prom_data
-log_success "当前 Worker Prometheus 数据目录已准备"
+prom_data_dir="${KF_K8S_HOME}/prom_data"
+mkdir -p -- "${prom_data_dir}"
+log_success "当前 Worker Prometheus 数据目录已准备: ${prom_data_dir}"

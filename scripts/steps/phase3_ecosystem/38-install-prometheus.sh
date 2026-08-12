@@ -2,52 +2,58 @@
 
 #===============================================================================
 # 脚本名称：38-install-prometheus.sh
-# 功能：在主控节点声明式安装 Prometheus 监控组件
-# 版本：0.3.0
+# 功能：在主控制节点按介质目录顺序安装 Prometheus 监控组件
+# 版本：0.3.1
 #===============================================================================
 
 if [ -f "./phase3.sh" ]; then source "./phase3.sh"; else source "${PROJECT_ROOT}/scripts/lib/phase3.sh"; fi
 phase3_init
-namespace="${KF_PROMETHEUS_NAMESPACE:-kubemate-system}"
+
 resource_dir=$(phase3_resource_path .)
-phase3_ensure_namespace "${namespace}"
-rendered=$(mktemp -d)
-trap 'rm -rf -- "${rendered}"' EXIT
-cp -a "${resource_dir}/." "${rendered}/"
-prom_data_dir="${KF_PROM_DATA_DIR:-/data/prom_data}"
-find "${rendered}" -type f \( -name '*.yaml' -o -name '*.yml' \) -exec sed -i "s|/data/prom_data|${prom_data_dir}|g" {} +
-additional_scrape_secret="${rendered}/additional-scrape-configs.Secret.yaml"
-[ -f "${additional_scrape_secret}" ] || {
-    log_error "Prometheus additional-scrape-configs Secret 不存在: ${additional_scrape_secret}"
+prom_data_dir="${KF_K8S_HOME}/prom_data"
+
+required_resources=(
+    "promlocal-pv.yaml"
+    "1-crd"
+    "2-prometheusOperator"
+    "3-prometheus"
+    "4-nodeExporter"
+    "5-kubeStateMetrics"
+    "6-alertmanager"
+    "7-kubernetesControlPlaneRule"
+    "8-metrics-server-ha.yaml"
+)
+
+for resource in "${required_resources[@]}"; do
+    [ -e "${resource_dir}/${resource}" ] || {
+        log_error "Prometheus 安装资源不存在: ${resource_dir}/${resource}"
+        exit 1
+    }
+done
+
+mapfile -t worker_nodes < <(kubectl get nodes \
+    -l '!node-role.kubernetes.io/control-plane,!node-role.kubernetes.io/master' \
+    -o name)
+[ "${#worker_nodes[@]}" -gt 0 ] || {
+    log_error "未找到可用于部署 Prometheus 的工作节点"
     exit 1
 }
-sanitized_secret=$(mktemp)
-if ! awk '
-    /^  managedFields:[[:space:]]*$/ { skip_managed_fields = 1; next }
-    skip_managed_fields && /^  [[:alnum:]_.-]+:/ { skip_managed_fields = 0 }
-    skip_managed_fields { next }
-    /^  (creationTimestamp|resourceVersion|uid):/ { next }
-    { print }
-' "${additional_scrape_secret}" > "${sanitized_secret}"; then
-    rm -f -- "${sanitized_secret}"
-    log_error "清理 Prometheus Secret 服务端元数据失败"
-    exit 1
-fi
-mv -- "${sanitized_secret}" "${additional_scrape_secret}"
-phase3_apply_managed "${additional_scrape_secret}"
-find "${rendered}" -type f \( -name '*.yaml' -o -name '*.yml' \) -print0 \
-    | sort -z \
-    | while IFS= read -r -d '' manifest; do
-        [ "${manifest}" = "${additional_scrape_secret}" ] && continue
-        phase3_apply_managed "${manifest}"
-    done
-kubectl wait --for=condition=Established crd --all --timeout "${KF_CRD_TIMEOUT:-10m}"
-deployments=$(kubectl get deployment --namespace "${namespace}" --no-headers 2>/dev/null | awk '{print $1}')
-while IFS= read -r name; do
-    [ -z "${name}" ] || phase3_wait_rollout deployment "${name}" "${namespace}"
-done <<< "${deployments}"
-kubectl get pods --namespace "${namespace}" --no-headers 2>/dev/null | grep -Eq 'prometheus|node-exporter|kube-state-metrics' || {
-    log_error "Prometheus 监控工作负载未就绪"
-    exit 1
-}
-log_success "Prometheus 监控组件已安装并通过就绪检查"
+
+kubectl label "${worker_nodes[@]}" prom=true --overwrite=true
+
+rendered_pv=$(mktemp)
+trap 'rm -f -- "${rendered_pv}"' EXIT
+sed "s|/data/prom_data|${prom_data_dir}|g" \
+    "${resource_dir}/promlocal-pv.yaml" > "${rendered_pv}"
+
+kubectl apply -f "${rendered_pv}"
+kubectl create -f "${resource_dir}/1-crd"
+kubectl apply -f "${resource_dir}/2-prometheusOperator"
+kubectl apply -f "${resource_dir}/3-prometheus"
+kubectl apply -f "${resource_dir}/4-nodeExporter"
+kubectl apply -f "${resource_dir}/5-kubeStateMetrics"
+kubectl apply -f "${resource_dir}/6-alertmanager"
+kubectl apply -f "${resource_dir}/7-kubernetesControlPlaneRule"
+kubectl apply -f "${resource_dir}/8-metrics-server-ha.yaml"
+
+log_success "Prometheus 监控组件安装命令执行完成"
