@@ -11,6 +11,7 @@ import { createAppRouter } from '../router';
 import {
   getCluster,
   getClusterSettings,
+  getClusterJob,
   getJob,
   getJobLogs,
   getJobSteps,
@@ -25,6 +26,7 @@ import {
 vi.mock('../api/client', () => ({
   getCluster: vi.fn(),
   getClusterSettings: vi.fn(),
+  getClusterJob: vi.fn(),
   getJob: vi.fn(),
   getJobLogs: vi.fn(),
   getJobSteps: vi.fn(),
@@ -69,6 +71,7 @@ describe('安装流程', () => {
     getPrecheckResults.mockResolvedValue({ items: [
       { id: 1, hostname: 'cp-1', check_name: '操作系统', severity: 'error', status: 'success', message: '通过' }
     ] });
+    getClusterJob.mockImplementation((_clusterId, jobId) => getJob(jobId));
   });
 
   it('预检查全部成功后进入安装确认，但不自动开始安装', async () => {
@@ -132,7 +135,7 @@ describe('安装流程', () => {
     await flushPromises();
 
     expect(startComponentInstall).toHaveBeenCalledWith('42');
-    expect(router.currentRoute.value.fullPath).toBe('/jobs/123/execution');
+    expect(router.currentRoute.value.fullPath).toBe('/cluster-install/42/jobs/123');
   });
 
   it('确认页展示目标信息，只有点击开始安装才创建任务并跳转', async () => {
@@ -156,7 +159,7 @@ describe('安装流程', () => {
     await wrapper.get('[data-testid="start-install"]').trigger('click');
     await flushPromises();
     expect(startInstall).toHaveBeenCalledWith('42');
-    expect(router.currentRoute.value.fullPath).toBe('/jobs/99/execution');
+    expect(router.currentRoute.value.fullPath).toBe('/cluster-install/42/jobs/99');
   });
 
   it('执行页刷新时先恢复任务快照，再订阅实时事件', async () => {
@@ -172,7 +175,7 @@ describe('安装流程', () => {
       constructor(url) { order.push('sse'); super(url); }
     });
 
-    const { wrapper } = await mountAt(JobExecutionView, '/jobs/99/execution');
+    const { wrapper } = await mountAt(JobExecutionView, '/cluster-install/42/jobs/99');
 
     expect(order.slice(0, 4).sort()).toEqual(['cluster', 'job', 'logs', 'steps']);
     expect(order[4]).toBe('sse');
@@ -198,12 +201,19 @@ describe('安装流程', () => {
       { id: 20, name: '安装 containerd', order: 2, status: 'failed', nodes: [{ id: 201, node_id: 2, hostname: 'worker-1', status: 'failed', message: '软件包校验失败' }] }
     ] });
     getJobLogs.mockResolvedValue({ items: [] });
-    const { wrapper } = await mountAt(JobExecutionView, '/jobs/100/execution');
+    const { wrapper } = await mountAt(JobExecutionView, '/cluster-install/42/jobs/100');
 
     await wrapper.get('[data-testid="locate-failure"]').trigger('click');
     await flushPromises();
     expect(wrapper.get('[data-testid="job-stage-20"]').classes()).toContain('is-selected');
     expect(wrapper.get('[data-testid="job-node-201"]').classes()).toContain('is-selected');
     expect(wrapper.text()).toContain('软件包校验失败');
+  });
+
+  it('旧任务地址加载任务后重定向到包含集群 ID 的规范地址', async () => {
+    getJob.mockResolvedValue({ id: 101, cluster_id: 42, job_type: 'install', status: 'success' });
+    const { router } = await mountAt(JobExecutionView, '/jobs/101/execution');
+
+    expect(router.currentRoute.value.fullPath).toBe('/cluster-install/42/jobs/101');
   });
 });

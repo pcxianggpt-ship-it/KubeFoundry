@@ -39,6 +39,12 @@ public class Job {
     @Column(name = "updated_at", nullable = false, insertable = false, updatable = false)
     private LocalDateTime updatedAt;
 
+    @Column(name = "started_at")
+    private LocalDateTime startedAt;
+
+    @Column(name = "finished_at")
+    private LocalDateTime finishedAt;
+
     protected Job() {
     }
 
@@ -56,10 +62,21 @@ public class Job {
     public String getLogPath() { return logPath; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
+    public LocalDateTime getStartedAt() { return startedAt; }
+    public LocalDateTime getFinishedAt() { return finishedAt; }
 
-    public void markRunning() { status = "running"; }
-    public void markSuccess() { status = "success"; }
-    public void markPartialSuccess() { status = "partial_success"; }
-    public void markFailed() { status = "failed"; }
-    public void markInterrupted() { status = "interrupted"; }
+    public void markRunning() {
+        status = "running";
+        if (startedAt == null) startedAt = LocalDateTime.now();
+        finishedAt = null;
+    }
+    public void markSuccess() { finish("success"); }
+    public void markPartialSuccess() { finish("partial_success"); }
+    public void markFailed() { finish("failed"); }
+    public void markInterrupted() { finish("interrupted"); }
+
+    private void finish(String terminalStatus) {
+        status = terminalStatus;
+        finishedAt = LocalDateTime.now();
+    }
 }

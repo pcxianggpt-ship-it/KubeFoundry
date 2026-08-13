@@ -1,0 +1,3 @@
+ALTER TABLE jobs ADD COLUMN started_at TIMESTAMP;
+ALTER TABLE jobs ADD COLUMN finished_at TIMESTAMP;
+ALTER TABLE job_steps ADD COLUMN status_reason VARCHAR(256);

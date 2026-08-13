@@ -9,6 +9,10 @@ mkdir -p "${BIN}"
 cat > "${BIN}/helm" <<'EOF'
 #!/bin/bash
 printf '%s\n' "$*" >> "${KF_STORAGE_HELM_LOG}"
+if [ "${1:-}" = "status" ]; then
+    [ "${KF_OPENEBS_RELEASE_EXISTS:-false}" = "true" ]
+    exit $?
+fi
 exit 0
 EOF
 cat > "${BIN}/curl" <<'EOF'
@@ -37,6 +41,7 @@ export KF_ROLLOUT_TIMEOUT=1s
 export KF_NODE_HOSTNAME=cp-a
 export KF_NODE_IP=10.0.0.1
 export KF_NODE_ROLE=control_plane
+unset KF_OPENEBS_RELEASE_EXISTS || true
 log_info() { :; }
 log_success() { :; }
 log_warn() { :; }
@@ -58,14 +63,22 @@ run_group() {
 }
 
 run_group openebs 47-install-openebs.sh
+export KF_OPENEBS_RELEASE_EXISTS=true
+run_group openebs 47-install-openebs.sh
 run_group minio 49-install-minio.sh
 run_group loki 35-install-loki.sh
 run_group alloy 48-install-alloy.sh
-grep -q -- '^install openebs --namespace kubemate-system .*openebs-4.2.0.tgz -f .*openebs-values.yaml$' "${KF_STORAGE_HELM_LOG}"
+grep -q -- '^install openebs --namespace kubemate-system .*openebs-4.2.0.tgz -f .*openebs-values.yaml$' "${KF_STORAGE_HELM_LOG}" || {
+    printf 'OpenEBS Helm 调用不符合预期:\n' >&2
+    cat "${KF_STORAGE_HELM_LOG}" >&2
+    exit 1
+}
+[ "$(grep -c -- '^install openebs --namespace kubemate-system ' "${KF_STORAGE_HELM_LOG}")" -eq 1 ]
 grep -q -- 'loki-5.45.0.tgz.*-f .*values.yaml' "${KF_STORAGE_HELM_LOG}"
-grep -q -- '--set read.replicas=2 --set write.replicas=2 --set backend.replicas=2 --set loki.commonConfig.replication_factor=2 --set loki.storage.s3.endpoint=kubemate-minio-hl:9000' "${KF_STORAGE_HELM_LOG}"
+grep -q -- '--set read.replicas=2 --set write.replicas=2 --set backend.replicas=2 --set loki.commonConfig.replication_factor=2 --set sidecar.image.repository=registry:5000/ghcr.io/kiwigrid/k8s-sidecar --set loki.storage.s3.endpoint=kubemate-minio-hl:9000' "${KF_STORAGE_HELM_LOG}"
 grep -q -- 'alloy-1.4.0.tgz.*-f .*alloy-values.yaml' "${KF_STORAGE_HELM_LOG}"
 grep -q -- 'wait --for=condition=Ready pod/minio --namespace kubemate-system --timeout 10m' "${KF_STORAGE_KUBECTL_LOG}"
 ! grep -Eq 'ssh_exec|config_get|get_all_' "${ROOT}/scripts/steps/phase3_ecosystem/47-install-openebs.sh" "${ROOT}/scripts/steps/phase3_ecosystem/49-install-minio.sh" "${ROOT}/scripts/steps/phase3_ecosystem/35-install-loki.sh" "${ROOT}/scripts/steps/phase3_ecosystem/48-install-alloy.sh"
 ! grep -Eq -- '--dry-run' "${ROOT}/scripts/steps/phase3_ecosystem/47-install-openebs.sh" "${ROOT}/scripts/steps/phase3_ecosystem/35-install-loki.sh" "${ROOT}/scripts/steps/phase3_ecosystem/48-install-alloy.sh"
+grep -q 'application/vnd.oci.image.index.v1+json' "${ROOT}/scripts/lib/phase3.sh"
 printf 'phase3 storage observability tests passed\n'

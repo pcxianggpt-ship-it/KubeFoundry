@@ -10,6 +10,7 @@ import io.kubefoundry.installer.InstallationReadinessException;
 import io.kubefoundry.installer.ResetConfirmationMismatchException;
 import io.kubefoundry.ssh.NodeTestService.ActiveNodeTestException;
 import io.kubefoundry.cluster.ClusterComponentService.ComponentConfigurationException;
+import io.kubefoundry.api.ClusterJobController.ClusterJobMismatchException;
 import java.util.Map;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -20,6 +21,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+
+    @ExceptionHandler(ClusterJobMismatchException.class)
+    public ResponseEntity<Map<String, String>> clusterJobMismatch(ClusterJobMismatchException exception) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                "code", "CLUSTER_JOB_NOT_FOUND", "message", exception.getMessage()));
+    }
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<Map<String, String>> notFound(ResourceNotFoundException exception) {

@@ -141,6 +141,18 @@ phase3_wait_rollout() {
         --timeout "${KF_ROLLOUT_TIMEOUT:-10m}"
 }
 
+phase3_registry_image_exists() {
+    local image="$1"
+    local repository_and_tag repository tag
+    repository_and_tag="${image#registry:5000/}"
+    repository="${repository_and_tag%:*}"
+    tag="${repository_and_tag##*:}"
+    [ "${repository}" != "${repository_and_tag}" ] || return 1
+    curl --fail --silent --show-error --output /dev/null \
+        --header 'Accept: application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json' \
+        "http://registry:5000/v2/${repository}/manifests/${tag}"
+}
+
 phase3_redact() {
     sed -E 's/((password|token|secret|credential)[[:space:]]*[:=][[:space:]]*)[^[:space:]]+/\1[REDACTED]/Ig'
 }
@@ -153,4 +165,4 @@ phase3_log_safe() {
 
 export -f phase3_init phase3_resource_path phase3_helm_upgrade phase3_ensure_namespace \
     phase3_apply_configmap phase3_apply_crds_first phase3_apply_managed phase3_wait_rollout \
-    phase3_redact phase3_log_safe
+    phase3_registry_image_exists phase3_redact phase3_log_safe

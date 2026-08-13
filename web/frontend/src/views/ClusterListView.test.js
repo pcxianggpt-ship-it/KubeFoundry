@@ -57,10 +57,10 @@ describe('ClusterListView', () => {
     ]);
     expect(actions.map((link) => link.props('to'))).toEqual([
       { name: 'install-overview', params: { clusterId: '1' } },
-      { name: 'job-execution', params: { jobId: '21' } },
-      { name: 'job-execution', params: { jobId: '31' } },
-      { name: 'job-execution', params: { jobId: '41' } },
-      { name: 'job-execution', params: { jobId: '51' } }
+      { name: 'cluster-job-execution', params: { clusterId: '2', jobId: '21' } },
+      { name: 'cluster-job-execution', params: { clusterId: '3', jobId: '31' } },
+      { name: 'cluster-job-execution', params: { clusterId: '4', jobId: '41' } },
+      { name: 'cluster-job-execution', params: { clusterId: '5', jobId: '51' } }
     ]);
     expect(wrapper.find('[data-testid="create-cluster"]').exists()).toBe(false);
   });
@@ -86,10 +86,10 @@ describe('ClusterListView', () => {
       .filter((link) => link.classes('cluster-row__action'));
     expect(actions.map((link) => link.text())).toEqual(['查看进度', '查看进度', '查看执行记录', '查看失败原因']);
     expect(actions.map((link) => link.props('to'))).toEqual([
-      { name: 'job-execution', params: { jobId: '101' } },
-      { name: 'job-execution', params: { jobId: '111' } },
-      { name: 'job-execution', params: { jobId: '121' } },
-      { name: 'job-execution', params: { jobId: '131' } }
+      { name: 'cluster-job-execution', params: { clusterId: '10', jobId: '101' } },
+      { name: 'cluster-job-execution', params: { clusterId: '11', jobId: '111' } },
+      { name: 'cluster-job-execution', params: { clusterId: '12', jobId: '121' } },
+      { name: 'cluster-job-execution', params: { clusterId: '13', jobId: '131' } }
     ]);
   });
 

@@ -43,4 +43,32 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-log_success "Flannel CNI插件安装完成"
+if ! kubectl rollout status daemonset/kube-flannel-ds -n kube-flannel --timeout=180s; then
+    log_error "Flannel DaemonSet 未在 180 秒内就绪"
+    exit 1
+fi
+
+# Registry 使用 nerdctl 时会创建自己的 10.4.0.0/24 CNI 网桥。若 CoreDNS
+# 在 Flannel 就绪前启动，可能错误获得 10.4.0.x 地址，导致跨节点 Pod 无法
+# 访问集群 DNS。Flannel 就绪后发现异常地址时，滚动重建 CoreDNS。
+coredns_ips=$(kubectl get pods -n kube-system -l k8s-app=kube-dns \
+    -o jsonpath='{range .items[*]}{.status.podIP}{"\n"}{end}')
+coredns_needs_restart=false
+while IFS= read -r pod_ip; do
+    [ -z "${pod_ip}" ] && continue
+    case "${pod_ip}" in
+        10.244.*) ;;
+        *) coredns_needs_restart=true ;;
+    esac
+done <<< "${coredns_ips}"
+
+if [ "${coredns_needs_restart}" = true ]; then
+    log_warn "检测到 CoreDNS Pod 地址不属于 Flannel 网段，正在滚动重建: ${coredns_ips//$'\n'/,}"
+    kubectl rollout restart deployment/coredns -n kube-system
+fi
+if ! kubectl rollout status deployment/coredns -n kube-system --timeout=180s; then
+    log_error "CoreDNS 未在 Flannel 网络中就绪"
+    exit 1
+fi
+
+log_success "Flannel CNI插件和 CoreDNS 网络已就绪"

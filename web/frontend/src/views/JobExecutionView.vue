@@ -34,21 +34,22 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { ArrowLeft, CircleCheckFilled, Clock, Refresh, WarningFilled } from '@element-plus/icons-vue';
-import { RouterLink, useRoute } from 'vue-router';
+import { RouterLink, useRoute, useRouter } from 'vue-router';
 import JobStageList from '../components/jobs/JobStageList.vue';
 import NodeExecutionTable from '../components/jobs/NodeExecutionTable.vue';
 import LiveLogViewer from '../components/jobs/LiveLogViewer.vue';
 import { isTerminalJob, jobStatusLabel } from '../components/jobs/jobStatus';
-import { getCluster, getJob, getJobLogs, getJobSteps } from '../api/client';
+import { getCluster, getClusterJob, getJob, getJobLogs, getJobSteps } from '../api/client';
 import { safeErrorMessage } from '../utils/redaction';
 
 const route = useRoute();
+const router = useRouter();
 const job = ref({}); const cluster = ref({}); const stages = ref([]); const logs = ref([]);
 const loading = ref(true); const connected = ref(false); const errorMessage = ref('');
 const selectedStageId = ref(''); const selectedNodeId = ref('');
-let eventSource; let logId = 0;
+let eventSource; let logId = 0; let loadSequence = 0;
 
 const terminal = computed(() => isTerminalJob(job.value.status));
 const completedStages = computed(() => stages.value.filter((stage) => ['success', 'skipped'].includes(stage.status)).length);
@@ -69,30 +70,51 @@ const filteredLogs = computed(() => logs.value.filter((entry) =>
   && (!selectedNodeId.value || !entry.node_id || entry.node_id === selectedNodeId.value)));
 
 onMounted(() => loadSnapshot(true));
+watch(() => route.params.jobId, () => {
+  selectedStageId.value = '';
+  selectedNodeId.value = '';
+  stages.value = [];
+  logs.value = [];
+  job.value = {};
+  loadSnapshot(true);
+});
 onBeforeUnmount(disconnect);
 function items(payload) { return Array.isArray(payload) ? payload : payload?.items || []; }
 
 async function loadSnapshot(reconnect) {
+  const sequence = ++loadSequence;
+  const requestedJobId = String(route.params.jobId);
   if (loading.value && !reconnect) return;
   if (reconnect) disconnect();
   loading.value = !job.value.id; errorMessage.value = '';
   try {
-    const jobPayload = await getJob(route.params.jobId);
-    job.value = jobPayload?.data || jobPayload;
+    const jobPayload = route.params.clusterId
+      ? await getClusterJob(route.params.clusterId, route.params.jobId)
+      : await getJob(route.params.jobId);
+    if (sequence !== loadSequence || requestedJobId !== String(route.params.jobId)) return;
+    const loadedJob = jobPayload?.data || jobPayload;
+    if (!route.params.clusterId) {
+      await router.replace({ name: 'cluster-job-execution', params: {
+        clusterId: String(loadedJob.cluster_id), jobId: requestedJobId
+      } });
+      return;
+    }
     const [clusterPayload, stepPayload, logPayload] = await Promise.all([
-      getCluster(job.value.cluster_id), getJobSteps(route.params.jobId), loadLogs()
+      getCluster(loadedJob.cluster_id), getJobSteps(requestedJobId), loadLogs(requestedJobId)
     ]);
+    if (sequence !== loadSequence || requestedJobId !== String(route.params.jobId)) return;
+    job.value = loadedJob;
     cluster.value = clusterPayload?.data || clusterPayload;
     stages.value = normalizeStages(items(stepPayload).sort((a, b) => a.order - b.order));
     logs.value = normalizeLogs(logPayload);
     if (!selectedStageId.value) selectedStageId.value = (stages.value.find((stage) => ['running', 'failed', 'interrupted'].includes(stage.status)) || stages.value[0])?.id || '';
     if (reconnect && !isTerminalJob(job.value.status)) connect();
   } catch (error) { errorMessage.value = safeErrorMessage(error, '安装任务加载失败，请重试。'); }
-  finally { loading.value = false; }
+  finally { if (sequence === loadSequence) loading.value = false; }
 }
 
-async function loadLogs() {
-  try { return await getJobLogs(route.params.jobId); }
+async function loadLogs(jobId = route.params.jobId) {
+  try { return await getJobLogs(jobId); }
   catch (error) { if (error?.status === 404) return { items: [] }; throw error; }
 }
 function normalizeLogs(payload) { return items(payload).map((entry) => ({ id: entry.id || `snapshot-${++logId}`, message: entry.message || entry.content || '', ...entry })); }

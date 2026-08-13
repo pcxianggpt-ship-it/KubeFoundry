@@ -18,17 +18,12 @@ values_file="${resource_dir}/values.yaml"
 required_images=(
     registry:5000/grafana/loki:2.9.4
     registry:5000/grafana/loki-canary:2.9.4
-    registry:5000/kiwigrid/k8s-sidecar:1.24.3
+    registry:5000/ghcr.io/kiwigrid/k8s-sidecar:1.24.3
     registry:5000/nginxinc/nginx-unprivileged:1.24-alpine
 )
 missing_images=()
 for image in "${required_images[@]}"; do
-    repository_and_tag="${image#registry:5000/}"
-    repository="${repository_and_tag%:*}"
-    tag="${repository_and_tag##*:}"
-    if ! curl --fail --silent --show-error --output /dev/null \
-            --header 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
-            "http://registry:5000/v2/${repository}/manifests/${tag}"; then
+    if ! phase3_registry_image_exists "${image}"; then
         missing_images+=("${image}")
     fi
 done
@@ -55,6 +50,7 @@ if [ -f "${values_file}" ]; then
         --set "write.replicas=${loki_replicas}" \
         --set "backend.replicas=${loki_replicas}" \
         --set "loki.commonConfig.replication_factor=${loki_replicas}" \
+        --set 'sidecar.image.repository=registry:5000/ghcr.io/kiwigrid/k8s-sidecar' \
         --set 'loki.storage.s3.endpoint=kubemate-minio-hl:9000'
 else
     phase3_helm_upgrade loki kubemate-system "${chart_file}" \
@@ -62,6 +58,7 @@ else
         --set "write.replicas=${loki_replicas}" \
         --set "backend.replicas=${loki_replicas}" \
         --set "loki.commonConfig.replication_factor=${loki_replicas}" \
+        --set 'sidecar.image.repository=registry:5000/ghcr.io/kiwigrid/k8s-sidecar' \
         --set 'loki.storage.s3.endpoint=kubemate-minio-hl:9000'
 fi
 deployments=$(kubectl get deployment --namespace kubemate-system --no-headers 2>/dev/null \

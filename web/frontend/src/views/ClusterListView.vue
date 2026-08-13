@@ -210,7 +210,7 @@ function fixedWorkspaceRoute(cluster, stage) {
 function jobRoute(cluster) {
   const jobId = cluster.active_job_id ?? cluster.latest_job_id ?? cluster.job_id;
   if (jobId === undefined || jobId === null || jobId === '') return null;
-  return { name: 'job-execution', params: { jobId: String(jobId) } };
+  return { name: 'cluster-job-execution', params: { clusterId: String(cluster.id), jobId: String(jobId) } };
 }
 
 function presentation(cluster) {

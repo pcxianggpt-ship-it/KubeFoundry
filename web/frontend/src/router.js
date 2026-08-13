@@ -38,6 +38,10 @@ export const routes = [
         props: { mode: 'install' }
       },
       {
+        path: 'cluster-install/:clusterId',
+        redirect: (to) => ({ name: 'install-overview', params: { clusterId: to.params.clusterId } })
+      },
+      {
         path: 'cluster-install/:clusterId/overview',
         name: 'install-overview',
         component: InstallOverviewView
@@ -57,6 +61,11 @@ export const routes = [
         path: 'cluster-install/:clusterId/reset',
         name: 'reset-confirm',
         component: ResetConfirmView
+      },
+      {
+        path: 'cluster-install/:clusterId/jobs/:jobId',
+        name: 'cluster-job-execution',
+        component: JobExecutionView
       },
       {
         path: 'clusters/:clusterId',

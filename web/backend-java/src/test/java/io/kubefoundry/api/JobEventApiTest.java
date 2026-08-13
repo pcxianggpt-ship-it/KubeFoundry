@@ -99,12 +99,18 @@ class JobEventApiTest {
     @Test
     void returnsJobDtoWithOpenInViewDisabled() throws Exception {
         Job job = newJob("dto");
+        job.markRunning();
+        job.markSuccess();
+        job = jobs.save(job);
 
         mvc.perform(get("/api/jobs/{jobId}", job.getId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(job.getId()))
                 .andExpect(jsonPath("$.cluster_id").value(job.getCluster().getId()))
-                .andExpect(jsonPath("$.job_type").value("node_test"));
+                .andExpect(jsonPath("$.job_type").value("node_test"))
+                .andExpect(jsonPath("$.created_at").isNotEmpty())
+                .andExpect(jsonPath("$.started_at").isNotEmpty())
+                .andExpect(jsonPath("$.finished_at").isNotEmpty());
     }
 
     @Test
@@ -114,11 +120,29 @@ class JobEventApiTest {
         node.update("node-a", "10.0.0.1", "", "worker", "root", 22);
         node = nodes.save(node);
         JobStep step = steps.save(new JobStep(job, "节点测试", 1));
+        step.markSkipped("COMPONENT_GROUP_PREVIOUS_STEP_FAILED");
+        step = steps.save(step);
         stepNodes.save(new JobStepNode(step, node));
 
         mvc.perform(get("/api/jobs/{jobId}/steps", job.getId()))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].status_reason")
+                        .value("COMPONENT_GROUP_PREVIOUS_STEP_FAILED"))
                 .andExpect(jsonPath("$.items[0].nodes[0].hostname").value("node-a"));
+    }
+
+    @Test
+    void rejectsJobLookupThroughAnotherCluster() throws Exception {
+        Job job = newJob("scoped");
+        Cluster other = clusters.save(new Cluster("event-other-" + System.nanoTime()));
+
+        mvc.perform(get("/api/clusters/{clusterId}/jobs/{jobId}", other.getId(), job.getId()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("CLUSTER_JOB_NOT_FOUND"));
+
+        mvc.perform(get("/api/clusters/{clusterId}/jobs/{jobId}", job.getCluster().getId(), job.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(job.getId()));
     }
 
     private Job newJob(String suffix) {

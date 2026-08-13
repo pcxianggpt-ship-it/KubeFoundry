@@ -50,6 +50,26 @@
         <div><strong>{{ jobTypeLabel(activeJob.job_type) }}正在执行</strong><p>页面刷新后可继续查看任务进度和日志。</p></div>
         <RouterLink class="el-button" :to="jobRoute(activeJob)">查看任务</RouterLink>
       </section>
+
+      <section class="install-history" aria-labelledby="install-history-title">
+        <div class="panel-heading">
+          <h2 id="install-history-title">安装任务记录</h2>
+          <span>{{ installJobs.length }} 项</span>
+        </div>
+        <div v-if="installJobs.length" class="cluster-table-wrap">
+          <table class="cluster-table">
+            <thead><tr><th scope="col">任务 ID</th><th scope="col">类型</th><th scope="col">状态</th><th scope="col">创建时间</th><th scope="col">开始时间</th><th scope="col">结束时间</th><th scope="col"><span class="visually-hidden">操作</span></th></tr></thead>
+            <tbody>
+              <tr v-for="item in installJobs" :key="item.id" data-testid="install-history-row">
+                <td>#{{ item.id }}</td><td>{{ jobTypeLabel(item.job_type) }}</td><td>{{ statusLabel(item.status) }}</td>
+                <td>{{ formatTime(item.created_at) }}</td><td>{{ formatTime(item.started_at) }}</td><td>{{ formatTime(item.finished_at) }}</td>
+                <td><RouterLink class="cluster-row__action" :to="jobRoute(item)">查看进度</RouterLink></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-else class="empty-copy">暂无安装任务记录</p>
+      </section>
     </template>
   </section>
 </template>
@@ -75,6 +95,9 @@ const latestReset = computed(() => latest('reset'));
 const resetAvailable = computed(() => Boolean(cluster.value?.configuration_locked) && !activeJob.value);
 const activeJob = computed(() => jobs.value.find((job) => ['precheck', 'install', 'component_install', 'reset'].includes(job.job_type)
   && ['pending', 'running'].includes(job.status)) || null);
+const installJobs = computed(() => jobs.value
+  .filter((job) => ['install', 'component_install'].includes(job.job_type))
+  .slice().sort((a, b) => Number(b.id) - Number(a.id)));
 const installAvailable = computed(() => !activeJob.value && !cluster.value?.configuration_locked);
 const configurationLabel = computed(() => cluster.value?.configuration_locked ? '安装成功后已锁定' : '可编辑');
 const configRoute = computed(() => ({ name: 'cluster-config-workspace', params: { clusterId: clusterId.value, stage: 'cluster-info' } }));
@@ -89,14 +112,15 @@ function latest(type) { return jobs.value.filter((job) => job.job_type === type)
 function jobLabel(job) { return job ? `${jobTypeLabel(job.job_type)}${statusLabel(job.status)}` : '暂无任务'; }
 function jobTypeLabel(type) { return { precheck: '预检查', install: '安装', component_install: '组件补装', reset: '重置' }[type] || '任务'; }
 function statusLabel(status) { return { pending: '等待中', running: '执行中', success: '成功', partial_success: '部分成功', failed: '失败', interrupted: '已中断' }[status] || '未完成'; }
-function jobRoute(job) { return { name: 'job-execution', params: { jobId: String(job.id) } }; }
+function jobRoute(job) { return { name: 'cluster-job-execution', params: { clusterId: clusterId.value, jobId: String(job.id) } }; }
+function formatTime(value) { return value ? new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'medium', hour12: false }).format(new Date(value)) : '-'; }
 function goToPrecheck() { if (installAvailable.value) router.push(precheckRoute.value); }
 function goToReset() { if (resetAvailable.value) router.push(resetRoute.value); }
 async function startComponents() {
   if (activeJob.value) return;
   try {
     const accepted = await startComponentInstall(clusterId.value);
-    await router.push({ name: 'job-execution', params: { jobId: String(accepted.job_id || accepted.id) } });
+    await router.push({ name: 'cluster-job-execution', params: { clusterId: clusterId.value, jobId: String(accepted.job_id || accepted.id) } });
   } catch (error) {
     errorMessage.value = safeErrorMessage(error, '组件补装任务启动失败，请检查组件预检查状态。');
   }

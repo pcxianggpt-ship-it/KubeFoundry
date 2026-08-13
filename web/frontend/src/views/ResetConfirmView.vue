@@ -86,7 +86,7 @@ async function submit() {
   errorMessage.value = '';
   try {
     const accepted = await resetCluster(clusterId.value, acknowledged.value, confirmationPhrase.value);
-    await router.push({ name: 'job-execution', params: { jobId: String(accepted.job_id || accepted.id) } });
+    await router.push({ name: 'cluster-job-execution', params: { clusterId: clusterId.value, jobId: String(accepted.job_id || accepted.id) } });
   } catch (error) {
     errorMessage.value = safeErrorMessage(error, '远程重置任务创建失败。');
   } finally {

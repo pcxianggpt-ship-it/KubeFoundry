@@ -22,9 +22,7 @@ minio_manifest="${resource_dir}/minio-dev.yaml"
 }
 
 minio_image="registry:5000/quay.io/minio/minio:RELEASE.2024-03-05T04-48-44Z"
-curl --fail --silent --show-error --output /dev/null \
-    --header 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
-    'http://registry:5000/v2/quay.io/minio/minio/manifests/RELEASE.2024-03-05T04-48-44Z' || {
+phase3_registry_image_exists "${minio_image}" || {
     log_error "MinIO 私有仓库镜像缺失: ${minio_image}"
     exit 1
 }

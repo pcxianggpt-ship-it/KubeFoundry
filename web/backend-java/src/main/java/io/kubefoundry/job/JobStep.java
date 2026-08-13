@@ -37,6 +37,9 @@ public class JobStep {
     @Column(name = "log_path", length = 512)
     private String logPath;
 
+    @Column(name = "status_reason", length = 256)
+    private String statusReason;
+
     protected JobStep() {
     }
 
@@ -59,8 +62,17 @@ public class JobStep {
     public String getComponentGroupKey() { return componentGroupKey; }
     public String getStatus() { return status; }
     public String getLogPath() { return logPath; }
-    public void markRunning() { status = "running"; }
-    public void markSuccess() { status = "success"; }
-    public void markFailed() { status = "failed"; }
-    public void markSkipped() { status = "skipped"; }
+    public String getStatusReason() { return statusReason; }
+    public void markRunning() { status = "running"; statusReason = null; }
+    public void markSuccess() { status = "success"; statusReason = null; }
+    public void markFailed() { markFailed("STEP_EXECUTION_FAILED"); }
+    public void markFailed(String reason) { status = "failed"; statusReason = normalizeReason(reason); }
+    public void markSkipped() { markSkipped("STEP_SKIPPED"); }
+    public void markSkipped(String reason) { status = "skipped"; statusReason = normalizeReason(reason); }
+
+    private static String normalizeReason(String reason) {
+        if (reason == null || reason.isBlank()) return null;
+        String normalized = reason.trim();
+        return normalized.length() <= 256 ? normalized : normalized.substring(0, 256);
+    }
 }

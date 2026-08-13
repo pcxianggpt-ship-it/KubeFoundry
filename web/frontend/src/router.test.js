@@ -28,8 +28,11 @@ describe('router', () => {
 
   it('安装确认和任务执行使用独立页面路由', async () => {
     const router = createAppRouter(createMemoryHistory());
-    await router.push('/clusters/9/install');
+    await router.push('/cluster-install/9');
     await router.isReady();
+    expect(router.currentRoute.value.fullPath).toBe('/cluster-install/9/overview');
+
+    await router.push('/clusters/9/install');
     expect(router.currentRoute.value.fullPath).toBe('/cluster-install/9/overview');
     expect(router.currentRoute.value.name).toBe('install-overview');
 
@@ -39,5 +42,9 @@ describe('router', () => {
     await router.push('/jobs/88/execution');
     expect(router.currentRoute.value.name).toBe('job-execution');
     expect(router.currentRoute.value.params.jobId).toBe('88');
+
+    await router.push('/cluster-install/9/jobs/88');
+    expect(router.currentRoute.value.name).toBe('cluster-job-execution');
+    expect(router.currentRoute.value.params).toMatchObject({ clusterId: '9', jobId: '88' });
   });
 });

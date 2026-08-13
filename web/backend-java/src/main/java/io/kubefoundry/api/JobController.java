@@ -9,6 +9,7 @@ import io.kubefoundry.job.JobService;
 import io.kubefoundry.job.JobStep;
 import io.kubefoundry.job.JobStepNode;
 import java.util.List;
+import java.time.LocalDateTime;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -65,10 +66,14 @@ public class JobController {
             @JsonProperty("cluster_id") long clusterId,
             @JsonProperty("job_type") String jobType,
             String status,
-            @JsonProperty("log_path") String logPath) {
+            @JsonProperty("log_path") String logPath,
+            @JsonProperty("created_at") LocalDateTime createdAt,
+            @JsonProperty("started_at") LocalDateTime startedAt,
+            @JsonProperty("finished_at") LocalDateTime finishedAt) {
         static JobResponse from(Job job) {
             return new JobResponse(job.getId(), job.getCluster().getId(), job.getType(),
-                    job.getStatus(), job.getLogPath());
+                    job.getStatus(), job.getLogPath(), job.getCreatedAt(),
+                    job.getStartedAt(), job.getFinishedAt());
         }
     }
 
@@ -77,9 +82,11 @@ public class JobController {
             String name,
             int order,
             String status,
+            @JsonProperty("status_reason") String statusReason,
             List<NodeResponse> nodes) {
         static StepResponse from(JobStep step, List<JobStepNode> nodes) {
             return new StepResponse(step.getId(), step.getName(), step.getOrder(), step.getStatus(),
+                    step.getStatusReason(),
                     nodes.stream().map(NodeResponse::from).toList());
         }
     }

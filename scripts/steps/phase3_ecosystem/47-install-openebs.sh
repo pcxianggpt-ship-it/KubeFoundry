@@ -18,10 +18,14 @@ chart_file="${resource_dir}/openebs-4.2.0.tgz"
 values_file="${resource_dir}/openebs-values.yaml"
 storage_class_file="${resource_dir}/openebssc.yaml"
 [ -f "${storage_class_file}" ] && phase3_apply_managed "${storage_class_file}"
-if [ -f "${values_file}" ]; then
-    helm install openebs --namespace kubemate-system "${chart_file}" -f "${values_file}"
+if helm status openebs --namespace kubemate-system >/dev/null 2>&1; then
+    log_info "OpenEBS Helm Release 已存在，跳过重复安装"
 else
-    helm install openebs --namespace kubemate-system "${chart_file}"
+    if [ -f "${values_file}" ]; then
+        helm install openebs --namespace kubemate-system "${chart_file}" -f "${values_file}"
+    else
+        helm install openebs --namespace kubemate-system "${chart_file}"
+    fi
 fi
 kubectl get storageclass >/dev/null
 deployments=$(kubectl get deployment --namespace kubemate-system --no-headers 2>/dev/null \

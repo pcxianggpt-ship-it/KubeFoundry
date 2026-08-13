@@ -67,6 +67,17 @@ class SchemaMigrationTest {
     }
 
     @Test
+    void addsJobTimelineAndStepReasonInV14() throws SQLException {
+        try (Connection connection = openConnection()) {
+            DatabaseMetaData metadata = connection.getMetaData();
+            assertThat(columnExists(metadata, "JOBS", "STARTED_AT")).isTrue();
+            assertThat(columnExists(metadata, "JOBS", "FINISHED_AT")).isTrue();
+            assertThat(columnExists(metadata, "JOB_STEPS", "STATUS_REASON")).isTrue();
+            assertThat(successfulMigration(connection, "14")).isTrue();
+        }
+    }
+
+    @Test
     void recordsSuccessfulV1MigrationInFlywayHistory() throws SQLException {
         try (Connection connection = openConnection()) {
             assertThat(tableExists(connection.getMetaData(), "flyway_schema_history")).isTrue();

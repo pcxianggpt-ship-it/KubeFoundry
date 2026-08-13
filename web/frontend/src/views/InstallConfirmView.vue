@@ -77,7 +77,7 @@ async function start() {
   starting.value = true; errorMessage.value = '';
   try {
     const accepted = await startInstall(clusterId);
-    await router.push({ name: 'job-execution', params: { jobId: String(accepted.job_id || accepted.id) } });
+    await router.push({ name: 'cluster-job-execution', params: { clusterId, jobId: String(accepted.job_id || accepted.id) } });
   } catch (error) { errorMessage.value = safeErrorMessage(error, '安装任务启动失败，请检查预检查状态。'); }
   finally { starting.value = false; }
 }

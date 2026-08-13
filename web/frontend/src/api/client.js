@@ -161,6 +161,10 @@ export function getJob(jobId) {
   return request(`/api/jobs/${jobId}`);
 }
 
+export function getClusterJob(clusterId, jobId) {
+  return request(`/api/clusters/${clusterId}/jobs/${jobId}`);
+}
+
 export function getJobSteps(jobId) {
   return request(`/api/jobs/${jobId}/steps`);
 }

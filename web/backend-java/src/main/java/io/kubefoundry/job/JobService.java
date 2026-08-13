@@ -228,7 +228,7 @@ public class JobService {
                 if ("failed".equals(summary.status())) {
                     if (componentAwareJob && componentGroupKey != null) {
                         failNodes(step, "组件组步骤执行失败");
-                        step.markFailed();
+                        step.markFailed("COMPONENT_GROUP_STEP_FAILED");
                         steps.saveAndFlush(step);
                         events.publish(jobId, "step.status", Map.of(
                                 "step_id", step.getId(), "status", "failed"));
@@ -270,7 +270,7 @@ public class JobService {
 
     private void failStepAndJob(long jobId, Job job, JobStep step, String message) {
         failNodes(step, message);
-        step.markFailed();
+        step.markFailed(message);
         steps.saveAndFlush(step);
         events.publish(jobId, "step.status", Map.of(
                 "step_id", step.getId(), "status", "failed"));
@@ -303,7 +303,7 @@ public class JobService {
         for (JobStep step : listSteps(jobId)) {
             if ("running".equals(step.getStatus())) {
                 failNodes(step, message);
-                step.markFailed();
+                step.markFailed(message);
                 steps.saveAndFlush(step);
                 events.publish(jobId, "step.status", Map.of(
                         "step_id", step.getId(), "status", "failed"));
@@ -340,7 +340,7 @@ public class JobService {
                     "status", "skipped",
                     "message", reason));
         }
-        step.markSkipped();
+        step.markSkipped(reason);
         steps.saveAndFlush(step);
         events.publish(jobId, "step.status", Map.of(
                 "step_id", step.getId(), "status", "skipped", "reason", reason));

@@ -51,7 +51,7 @@ describe('ResetConfirmView', () => {
     await flushPromises();
 
     expect(resetCluster).toHaveBeenCalledWith('42', true, 'RESET 生产集群');
-    expect(router.currentRoute.value.fullPath).toBe('/jobs/91/execution');
+    expect(router.currentRoute.value.fullPath).toBe('/cluster-install/42/jobs/91');
   });
 
   it('短语不匹配时保持提交按钮禁用', async () => {

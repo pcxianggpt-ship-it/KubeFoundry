@@ -19,6 +19,7 @@ public interface JobRepository extends JpaRepository<Job, Long> {
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional
-    @Query("update Job job set job.status = 'interrupted' where job.status = :status")
+    @Query("update Job job set job.status = 'interrupted', job.finishedAt = CURRENT_TIMESTAMP "
+            + "where job.status = :status")
     int replaceStatus(@Param("status") String status);
 }
