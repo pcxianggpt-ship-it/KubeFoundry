@@ -87,18 +87,17 @@ class ComponentPlanFactoryTest {
     }
 
     @Test
-    void importsTheOfflineNfsImageBeforeInstallingTheNfsChart() {
+    void installsTheNfsChartWithoutTheRemovedOfflineImageArchive() {
         ComponentPlanFactory factory = new ComponentPlanFactory(temporaryDirectory);
 
         InstallPlan plan = factory.create(snapshot(List.of(group("nfs", true))));
 
         assertThat(plan.steps()).extracting(InstallStep::key).containsExactly(
                 "29-install-helm", "30-create-namespace", "32-configure-nfs-exports",
-                "32-import-nfs-image", "32-install-nfs", "32-mount-nfs-workers");
-        assertThat(plan.require("32-import-nfs-image").resources()).singleElement().satisfies(resource -> {
-            assertThat(resource.kind()).isEqualTo("file");
-            assertThat(resource.remotePath()).endsWith("/resources/nfs/32-import-nfs-image");
-        });
+                "32-install-nfs", "32-mount-nfs-workers");
+        assertThat(plan.require("32-install-nfs").resources()).singleElement().satisfies(resource ->
+                assertThat(resource.localPath().toString().replace('\\', '/'))
+                        .endsWith("kube-media/03.setup_file/vunknown/helmapp/nfs/nfs-subdir-external-provisioner"));
     }
 
     private static InstallationSnapshotPayload snapshot(List<InstallationSnapshotPayload.ComponentGroup> groups) {

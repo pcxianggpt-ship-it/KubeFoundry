@@ -54,8 +54,6 @@ public class ComponentPlanFactory {
             case "nfs" -> List.of(
                     script(snapshot, "32-configure-nfs-exports", "配置 NFS exports", "nfs_server", groupKey,
                             "serial", 1, true),
-                    script(snapshot, "32-import-nfs-image", "导入 NFS 离线镜像", "primary_control_plane", groupKey,
-                            "serial", 1, true),
                     script(snapshot, "32-install-nfs", "安装 NFS Provisioner", "primary_control_plane", groupKey,
                             "serial", 1, true),
                     script(snapshot, "32-mount-nfs-workers", "挂载 NFS 工作节点", "workers", groupKey,
@@ -95,7 +93,7 @@ public class ComponentPlanFactory {
     }
 
     private static boolean requiresComponentMedia(String key) {
-        return List.of("31-install-kubemate-ui", "32-import-nfs-image", "32-install-nfs", "36-install-traefik",
+        return List.of("31-install-kubemate-ui", "32-install-nfs", "36-install-traefik",
                 "47-install-openebs", "49-install-minio", "35-install-loki", "48-install-alloy",
                 "38-install-prometheus").contains(key);
     }
