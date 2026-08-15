@@ -1,0 +1,70 @@
+apiVersion: minio.min.io/v2
+kind: Tenant
+metadata:
+  name: kubemate-minio
+  namespace: kubemate-system
+  labels:
+    app.kubernetes.io/managed-by: kubefoundry
+spec:
+  configuration:
+    name: kubemate-minio-env
+  image: registry:5000/quay.io/minio/minio:RELEASE.2024-03-05T04-48-44Z
+  mountPath: /export
+  subPath: ""
+  requestAutoCert: false
+  exposeServices:
+    minio: false
+    console: false
+  buckets:
+    - name: chunks
+    - name: ruler
+    - name: admin
+  pools:
+    - name: pool-0
+      servers: 4
+      volumesPerServer: 1
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
+        limits:
+          cpu: "2"
+          memory: 4Gi
+      nodeSelector:
+        kubefoundry.io/minio: "true"
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  v1.min.io/tenant: kubemate-minio
+              topologyKey: kubernetes.io/hostname
+      volumeClaimTemplate:
+        apiVersion: v1
+        kind: persistentvolumeclaims
+        metadata:
+          labels:
+            app.kubernetes.io/managed-by: kubefoundry
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              # 家庭网络验收容量；生产环境必须按容量规划调整。
+              storage: 10Gi
+          storageClassName: openebs-hostpath
+        status: {}
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containerSecurityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL

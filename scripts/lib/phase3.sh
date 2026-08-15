@@ -129,8 +129,25 @@ phase3_apply_configmap() {
     local name="$1"
     local namespace="$2"
     local file="$3"
+    local key="${4:-$(basename "${file}")}"
+    local manifest
     [ -f "${file}" ] || { log_error "ConfigMap 源文件不存在: ${file}"; return 1; }
-    kubectl create configmap "${name}" --namespace "${namespace}" --from-file="${file}"
+    [[ "${key}" =~ ^[-._A-Za-z0-9]+$ ]] || {
+        log_error "ConfigMap 数据键不合法: ${key}"
+        return 1
+    }
+    manifest=$(mktemp)
+    {
+        printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: %s\n  namespace: %s\n' \
+            "${name}" "${namespace}"
+        printf '  labels:\n    app.kubernetes.io/managed-by: kubefoundry\ndata:\n  %s: |-\n' "${key}"
+        sed 's/^/    /' "${file}"
+    } > "${manifest}"
+    if ! phase3_apply_managed "${manifest}"; then
+        rm -f -- "${manifest}"
+        return 1
+    fi
+    rm -f -- "${manifest}"
 }
 
 phase3_wait_rollout() {

@@ -51,6 +51,9 @@ for arch in x86_64 aarch64; do
         "${prefix}/scripts/lib/phase3.sh" \
         "${prefix}/scripts/verify/reset/verify-reset-kubernetes-node.sh" \
         "${prefix}/scripts/steps/reset/reset-kubemate-components.sh" \
+        "${prefix}/templates/minio/kustomization.yaml" \
+        "${prefix}/templates/minio/tenant.yaml" \
+        "${prefix}/templates/minio/tenant.env.example" \
         "${prefix}/deploy.sh" \
         "${prefix}/VERSION" \
         "${prefix}/ARCHITECTURE" \
@@ -85,6 +88,7 @@ printf 'keep\n' > "${TEST_ROOT}/deployment/kube-media/keep.txt"
 [ -x "${TEST_ROOT}/deployment/tools/helm-arm" ] || fail "未安装 arm64 Helm 介质"
 [ -f "${TEST_ROOT}/deployment/kube-media/keep.txt" ] || fail "部署覆盖了独立维护的离线介质目录"
 [ -d "${TEST_ROOT}/deployment/scripts/steps" ] || fail "未安装步骤脚本"
+[ -f "${TEST_ROOT}/deployment/templates/minio/tenant.yaml" ] || fail "未安装 MinIO 配置模板"
 [ -f "${TEST_ROOT}/deployment/scripts/verify/reset/verify-reset-kubernetes-node.sh" ] ||
     fail "未安装重置验证脚本"
 

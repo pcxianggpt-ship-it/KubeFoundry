@@ -183,6 +183,7 @@ create_archive() {
     mkdir -p "${release_dir}/scripts/lib"
     cp "${PROJECT_ROOT}/scripts/lib/phase3.sh" "${release_dir}/scripts/lib/phase3.sh"
     cp -a "${PROJECT_ROOT}/scripts/verify" "${release_dir}/scripts/verify"
+    cp -a "${PROJECT_ROOT}/templates" "${release_dir}/templates"
     cp "${PROJECT_ROOT}/deploy.sh" "${release_dir}/deploy.sh"
     chmod 0755 "${release_dir}/deploy.sh" "${release_dir}/runtime/bin/java"
     printf '%s\n' "${version}" > "${release_dir}/VERSION"

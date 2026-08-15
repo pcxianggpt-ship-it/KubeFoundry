@@ -35,6 +35,21 @@ kubectl get service kubemate-minio-hl --namespace kubemate-system >/dev/null 2>&
     log_error "Loki 依赖的 MinIO Service 未就绪: kubemate-system/kubemate-minio-hl"
     exit 1
 }
+minio_config=$(kubectl get secret kubemate-minio-env --namespace kubemate-system \
+    -o go-template='{{index .data "config.env" | base64decode}}')
+minio_access_key=$(printf '%s\n' "${minio_config}" \
+    | sed -n 's/^export MINIO_ROOT_USER="\([A-Za-z0-9._-]*\)"$/\1/p')
+minio_secret_key=$(printf '%s\n' "${minio_config}" \
+    | sed -n 's/^export MINIO_ROOT_PASSWORD="\([A-Za-z0-9._-]*\)"$/\1/p')
+[ -n "${minio_access_key}" ] && [ -n "${minio_secret_key}" ] || {
+    log_error "MinIO Tenant Secret 缺少合法的 MINIO_ROOT_USER 或 MINIO_ROOT_PASSWORD"
+    exit 1
+}
+loki_secret_values=$(mktemp)
+chmod 600 "${loki_secret_values}"
+trap 'rm -f -- "${loki_secret_values}"' EXIT
+printf 'loki:\n  storage:\n    s3:\n      accessKeyId: "%s"\n      secretAccessKey: "%s"\n' \
+    "${minio_access_key}" "${minio_secret_key}" > "${loki_secret_values}"
 worker_count=$(kubectl get nodes \
     --selector='!node-role.kubernetes.io/control-plane,!node-role.kubernetes.io/master' \
     --no-headers 2>/dev/null | awk '$2 == "Ready" { count++ } END { print count + 0 }')
@@ -45,7 +60,7 @@ worker_count=$(kubectl get nodes \
 loki_replicas="${worker_count}"
 [ "${loki_replicas}" -le 3 ] || loki_replicas=3
 if [ -f "${values_file}" ]; then
-    phase3_helm_upgrade loki kubemate-system "${chart_file}" -f "${values_file}" \
+    phase3_helm_upgrade loki kubemate-system "${chart_file}" -f "${values_file}" -f "${loki_secret_values}" \
         --set "read.replicas=${loki_replicas}" \
         --set "write.replicas=${loki_replicas}" \
         --set "backend.replicas=${loki_replicas}" \
@@ -53,7 +68,7 @@ if [ -f "${values_file}" ]; then
         --set 'sidecar.image.repository=registry:5000/ghcr.io/kiwigrid/k8s-sidecar' \
         --set 'loki.storage.s3.endpoint=kubemate-minio-hl:9000'
 else
-    phase3_helm_upgrade loki kubemate-system "${chart_file}" \
+    phase3_helm_upgrade loki kubemate-system "${chart_file}" -f "${loki_secret_values}" \
         --set "read.replicas=${loki_replicas}" \
         --set "write.replicas=${loki_replicas}" \
         --set "backend.replicas=${loki_replicas}" \

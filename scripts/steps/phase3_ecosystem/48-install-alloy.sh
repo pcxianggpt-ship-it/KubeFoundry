@@ -19,9 +19,7 @@ chart_file="${resource_dir}/alloy-1.4.0.tgz"
     log_error "Alloy Helm Chart 压缩包不存在: ${chart_file}"
     exit 1
 }
-kubectl create configmap alloy --namespace kubemate-system --from-file=config.alloy="${config_file}"
-kubectl label configmap alloy --namespace kubemate-system --overwrite \
-    app.kubernetes.io/managed-by=kubefoundry
+phase3_apply_configmap alloy kubemate-system "${config_file}" config.alloy
 values_file="${resource_dir}/alloy-values.yaml"
 if [ -f "${values_file}" ]; then
     phase3_helm_upgrade alloy kubemate-system "${chart_file}" -f "${values_file}"
