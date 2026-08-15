@@ -83,7 +83,7 @@ class ComponentPlanFactoryTest {
         assertThat(step.resources().get(0).localPath().toString().replace('\\', '/'))
                 .endsWith("kube-media/03.setup_file/vunknown/kubemate");
         assertThat(step.resources().get(0).remotePath())
-                .endsWith("/resources/kubemate");
+                .endsWith("/resources/kubemate/31-install-kubemate-ui");
     }
 
     @Test

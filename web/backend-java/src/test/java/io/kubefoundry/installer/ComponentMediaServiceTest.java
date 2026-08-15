@@ -53,6 +53,21 @@ class ComponentMediaServiceTest {
                 .hasMessageContaining("missing");
     }
 
+    @Test
+    void assignsEveryComponentStepAnIndependentPermanentRemoteResourceDirectory() throws Exception {
+        Path minio = temporaryDirectory.resolve(
+                "kube-media/03.setup_file/v1.29.3/minio");
+        Files.createDirectories(minio);
+        Files.writeString(minio.resolve("tenant.yaml"), "kind: Tenant\n", StandardCharsets.UTF_8);
+        ComponentMediaService media = new ComponentMediaService(temporaryDirectory);
+
+        InstallStep.Resource resource = media.componentResource(
+                snapshot("amd64"), "storage_observability", "49-install-minio");
+
+        assertThat(resource.remotePath()).isEqualTo(
+                "/tmp/kubefoundry/jobs/{job_id}/resources/storage_observability/49-install-minio");
+    }
+
     private static InstallationSnapshotPayload snapshot(String architecture) {
         Cluster cluster = new Cluster("component-media");
         ReflectionTestUtils.setField(cluster, "id", 1L);

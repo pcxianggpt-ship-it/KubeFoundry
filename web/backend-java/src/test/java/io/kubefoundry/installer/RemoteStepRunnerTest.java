@@ -98,15 +98,25 @@ class RemoteStepRunnerTest {
         assertThat(outcome.logPath()).isEqualTo(temporaryDirectory.resolve(
                 "data/jobs/42/logs/test-step/cp-a.log").toAbsolutePath().normalize().toString());
         assertThat(Path.of(outcome.logPath())).hasContent("stdout\nstderr\n");
-        assertThat(commands).hasSize(2);
+        assertThat(commands).hasSize(3);
         assertThat(commands.get(0)).startsWith("bash -lc ").contains("mkdir -p");
-        assertThat(commands.get(1)).startsWith("bash -lc ")
-                .contains("/tmp/kubefoundry/42/")
+        assertThat(commands.get(1)).contains("chmod -R go-rwx --", "/tmp/kubefoundry/jobs/42");
+        assertThat(commands.get(2)).startsWith("bash -lc ")
+                .contains("/tmp/kubefoundry/jobs/42/steps/test-step/cp-a/")
                 .contains("source ./runtime.env")
                 .contains("bash ./step.sh")
                 .contains("printf verified");
-        assertThat(remoteRoot.resolve("tmp/kubefoundry/42/runtime.env")).isRegularFile();
-        assertThat(remoteRoot.resolve("tmp/kubefoundry/42/step.sh")).hasSameTextualContentAs(script);
+        Path remoteStep = remoteRoot.resolve("tmp/kubefoundry/jobs/42/steps/test-step/cp-a");
+        assertThat(remoteStep.resolve("runtime.env")).isRegularFile();
+        assertThat(remoteStep.resolve("step.sh")).hasSameTextualContentAs(script);
+        Path evidence = temporaryDirectory.resolve("data/jobs/42/evidence/test-step/cp-a");
+        assertThat(evidence.resolve("runtime.env")).isRegularFile();
+        assertThat(evidence.resolve("step.sh")).hasSameTextualContentAs(script);
+        assertThat(evidence.resolve("execution.log")).hasContent("stdout\nstderr\n");
+        assertThat(Files.readString(evidence.resolve("result.properties")))
+                .contains("success=true", "exit_code=0", "step_key=test-step");
+        assertThat(Files.readString(evidence.resolve("checksums.sha256")))
+                .contains("runtime.env", "step.sh", "execution.log", "result.properties");
     }
 
     @Test
@@ -123,7 +133,7 @@ class RemoteStepRunnerTest {
         JobService.NodeOutcome outcome = runner().run(42L, cluster, List.of(node), node, step);
 
         assertThat(outcome.success()).isTrue();
-        String command = unquoteBashLoginCommand(commands.get(1));
+        String command = unquoteBashLoginCommand(commands.get(commands.size() - 1));
         assertThat(command)
                 .containsSubsequence(
                         "source ./runtime.env",
@@ -134,8 +144,8 @@ class RemoteStepRunnerTest {
         Path compatibilityDirectory = Files.createDirectory(temporaryDirectory.resolve("bash-compatibility"));
         Path runtime = compatibilityDirectory.resolve("runtime.env");
         Path uploadedScript = compatibilityDirectory.resolve("step.sh");
-        Files.copy(remoteRoot.resolve("tmp/kubefoundry/42/runtime.env"), runtime);
-        Files.copy(remoteRoot.resolve("tmp/kubefoundry/42/step.sh"), uploadedScript);
+        Files.copy(remoteRoot.resolve("tmp/kubefoundry/jobs/42/steps/syntax-only/cp-a/runtime.env"), runtime);
+        Files.copy(remoteRoot.resolve("tmp/kubefoundry/jobs/42/steps/syntax-only/cp-a/step.sh"), uploadedScript);
         String bash = availableBash();
         Assumptions.assumeTrue(bash != null, "当前环境未提供 Bash，跳过语法兼容检查");
         assertThat(runBash(bash, "-n", runtime.toString())).isZero();
@@ -158,6 +168,25 @@ class RemoteStepRunnerTest {
         assertThat(outcome.exitCode()).isEqualTo(7);
         assertThat(outcome.message()).isEqualTo("执行失败，退出码: 7");
         assertThat(Path.of(outcome.logPath())).hasContent("failed\n");
+        Path evidence = temporaryDirectory.resolve("data/jobs/7/evidence/fail-step/cp-a");
+        assertThat(Files.readString(evidence.resolve("result.properties")))
+                .contains("success=false", "exit_code=7");
+        assertThat(evidence.resolve("execution.log")).hasContent("failed\n");
+    }
+
+    @Test
+    void retainsCommandLogResultAndChecksumEvidence() throws Exception {
+        RemoteStepRunner.CommandOutcome outcome = runner().runCommandCapture(
+                9L, cluster, node, "inspect-state", "printf state", Duration.ofSeconds(10));
+
+        assertThat(outcome.exitCode()).isZero();
+        Path evidence = temporaryDirectory.resolve("data/jobs/9/evidence/inspect-state/cp-a");
+        assertThat(evidence.resolve("command.sh")).hasContent("#!/bin/bash\nprintf state\n");
+        assertThat(evidence.resolve("execution.log")).hasContent("stdout\nstderr\n");
+        assertThat(Files.readString(evidence.resolve("result.properties")))
+                .contains("success=true", "exit_code=0");
+        assertThat(Files.readString(evidence.resolve("checksums.sha256")))
+                .contains("command.sh", "execution.log", "result.properties");
     }
 
     @Test
@@ -165,6 +194,7 @@ class RemoteStepRunnerTest {
         Path directory = Files.createDirectory(temporaryDirectory.resolve("payload"));
         Files.createDirectories(directory.resolve("bin/tools"));
         Files.writeString(directory.resolve("bin/tools/containerd"), "binary", StandardCharsets.UTF_8);
+        Files.writeString(directory.resolve("tenant.env"), "plain-text-secret", StandardCharsets.UTF_8);
         Path script = temporaryDirectory.resolve("directory-step.sh");
         Files.writeString(script, "#!/bin/bash\n", StandardCharsets.UTF_8);
         InstallStep step = InstallStep.script(
@@ -181,8 +211,13 @@ class RemoteStepRunnerTest {
         assertThat(outcome.success()).isTrue();
         assertThat(remoteRoot.resolve("tmp/kubefoundry/jobs/8/resources/shared/bin/tools/containerd"))
                 .hasContent("binary");
-        assertThat(commands).anyMatch(command -> command.contains("rm -rf --")
-                && command.contains("/tmp/kubefoundry/jobs/8/resources/shared"));
+        assertThat(remoteRoot.resolve("tmp/kubefoundry/jobs/8/resources/shared/tenant.env"))
+                .hasContent("plain-text-secret");
+        assertThat(commands).noneMatch(command -> command.contains("rm -rf --"));
+        Path evidence = temporaryDirectory.resolve(
+                "data/jobs/8/evidence/directory-step/cp-a/resources/01-payload");
+        assertThat(evidence.resolve("bin/tools/containerd")).hasContent("binary");
+        assertThat(evidence.resolve("tenant.env")).hasContent("plain-text-secret");
     }
 
     @Test
@@ -202,7 +237,7 @@ class RemoteStepRunnerTest {
         JobService.NodeOutcome outcome = runner().run(42L, cluster, List.of(node, primary), node, step);
 
         assertThat(outcome.success()).isTrue();
-        assertThat(commands.get(1)).contains("10.0.0.10").doesNotContain("10.0.0.20");
+        assertThat(commands.get(commands.size() - 1)).contains("10.0.0.10").doesNotContain("10.0.0.20");
     }
 
     @Test
@@ -227,10 +262,11 @@ class RemoteStepRunnerTest {
                 List.of(duplicateControl, canonicalControl, node), node, step);
 
         assertThat(outcome.success()).isTrue();
-        assertThat(commands.get(1))
+        assertThat(commands.get(commands.size() - 1))
                 .contains("10.0.0.30", "cp-primary")
                 .doesNotContain("duplicate-control");
-        assertThat(Files.readString(remoteRoot.resolve("tmp/kubefoundry/42/runtime.env")))
+        assertThat(Files.readString(remoteRoot.resolve(
+                "tmp/kubefoundry/jobs/42/steps/normalized-primary/worker-a/runtime.env")))
                 .contains("export KF_PRIMARY_CONTROL_IP='10.0.0.30'");
     }
 
@@ -274,7 +310,8 @@ class RemoteStepRunnerTest {
         JobService.NodeOutcome outcome = runner().run(42L, cluster, List.of(node), node, step);
 
         assertThat(outcome.success()).isTrue();
-        String script = Files.readString(remoteRoot.resolve("tmp/kubefoundry/42/step.sh"));
+        String script = Files.readString(remoteRoot.resolve(
+                "tmp/kubefoundry/jobs/42/steps/hostname/cp-a/step.sh"));
         assertThat(script).contains("registry'\"'\"'; touch /tmp/pwn; #");
         assertThat(script).contains("printf '%s\\n'");
         assertThat(script).doesNotContain("cat >> /etc/hosts <<");
@@ -290,7 +327,8 @@ class RemoteStepRunnerTest {
         JobService.NodeOutcome outcome = runner().run(42L, cluster, List.of(node), node, step);
 
         assertThat(outcome.success()).isTrue();
-        assertThat(Files.readString(remoteRoot.resolve("tmp/kubefoundry/42/step.sh")))
+        assertThat(Files.readString(remoteRoot.resolve(
+                "tmp/kubefoundry/jobs/42/steps/hostname/cp-a/step.sh")))
                 .contains("'127.0.0.1    cp-a registry'");
     }
 
@@ -303,9 +341,11 @@ class RemoteStepRunnerTest {
         JobService.NodeOutcome outcome = runner().run(42L, cluster, List.of(node), node, step);
 
         assertThat(outcome.success()).isTrue();
-        assertThat(Files.readString(remoteRoot.resolve("tmp/kubefoundry/42/step.sh")))
+        assertThat(Files.readString(remoteRoot.resolve(
+                "tmp/kubefoundry/jobs/42/steps/hostname/cp-a/step.sh")))
                 .contains("'127.0.0.1    cp-a registry'");
-        assertThat(Files.readString(remoteRoot.resolve("tmp/kubefoundry/42/runtime.env")))
+        assertThat(Files.readString(remoteRoot.resolve(
+                "tmp/kubefoundry/jobs/42/steps/hostname/cp-a/runtime.env")))
                 .contains("export KF_REGISTRY_HOSTNAME='registry'");
     }
 
@@ -384,7 +424,8 @@ class RemoteStepRunnerTest {
                             .resolve(getCommand().contains("/42/") ? "42" :
                                     getCommand().contains("/7/") ? "7" : "8"));
                     onExit(0);
-                } else if (getCommand().contains("/tmp/kubefoundry/7/")) {
+                } else if (getCommand().contains("/tmp/kubefoundry/jobs/7/steps/")
+                        && getCommand().contains("bash ./step.sh")) {
                     getErrorStream().write("failed\n".getBytes(StandardCharsets.UTF_8));
                     getErrorStream().flush();
                     onExit(7);

@@ -157,10 +157,10 @@ v0.3.1 采用“离线固定版本 Operator 清单 + Tenant CR”方案：
 
 ### 7.3 凭据处理
 
-- 首次安装且 Secret 不存在时，在主控制节点使用系统安全随机源生成 Access Key 和 Secret Key。
-- 凭据通过标准输入直接创建 Kubernetes Secret；脚本执行期间关闭命令回显，不把值写入环境快照、任务事件、日志或异常信息。
-- Secret 已存在时直接复用，不重新生成，保证重试幂等。
-- 任务记录只保存 Secret 名称、namespace 和资源版本，不保存 Secret 数据。
+- MinIO Access Key 和 Secret Key 由管理员写入离线介质 `tenant.env`，文件权限必须为 `0600`，且不得包含 `CHANGE_ME_` 占位符。
+- Kustomize 根据 `tenant.env` 创建固定名称的 Kubernetes Secret，重试时继续使用同一配置文件，避免无意轮换凭据。
+- 根据运维留痕要求，`tenant.env` 会原文进入控制端和远程任务资源快照；任务事件、页面日志、数据库错误字段和异常摘要仍不得输出凭据值。
+- 控制端留痕文件权限为 `0600`、目录为 `0700`；远程任务根目录移除 group/other 的全部权限。
 - KubeFoundry 页面不回显 MinIO 管理凭据；如后续需要凭据管理，应作为独立安全需求设计。
 
 ### 7.4 就绪门禁
@@ -520,6 +520,29 @@ job_steps.status_reason
 
 事件和日志至少包含 `job_id`、步骤 ID、组件组键、节点 ID、状态、原因码和安全错误摘要。所有 MinIO Secret、SSH 密码、私钥和令牌继续使用现有脱敏规则，禁止进入任务事件和数据库错误字段。
 
+### 14.1 任务执行文件永久留痕
+
+每个任务按“步骤/节点”保存互不覆盖的执行证据，执行成功和失败均保留：
+
+```text
+data/jobs/<jobId>/evidence/<stepKey>/<hostname>/
+├── runtime.env
+├── step.sh 或 command.sh
+├── phase3.sh
+├── resources/                 # 实际分发的 YAML、Chart、配置和凭据
+├── execution.log
+├── result.properties
+└── checksums.sha256
+```
+
+- `checksums.sha256` 对脚本、配置、资源、日志和结果文件逐文件计算 SHA-256。
+- `result.properties` 保存任务、步骤、节点、成功状态、退出码、完成时间和日志路径。
+- 根据运维留痕要求，`tenant.env`、kubeconfig 等凭据文件允许在证据资源中原文保存；任务事件、页面日志和数据库错误字段仍不得输出凭据内容。
+- 控制端证据目录在支持 POSIX 权限时设置为目录 `0700`、文件 `0600`。
+- 远程执行文件按 `/tmp/kubefoundry/jobs/<jobId>/steps/<stepKey>/<hostname>/` 保存，组件资源按 `/tmp/kubefoundry/jobs/<jobId>/resources/<groupKey>/<stepKey>/` 保存，权限移除 group/other 访问。
+- KubeFoundry 不在步骤结束、任务结束或固定周期内清理上述控制端和远程文件，也不配置自动留存周期。
+- 远程目录位于 `/tmp`，KubeFoundry 不主动清理，但操作系统重启、`systemd-tmpfiles` 或管理员操作仍可能删除；正式审计证据以控制端 `data/jobs/.../evidence` 为准。
+
 ## 15. 前端改造
 
 ### 15.1 节点配置页
@@ -658,6 +681,7 @@ job_steps.status_reason
 | 切换任务时旧请求迟到 | 页面显示其他任务日志 | 请求序号、jobId 校验、切换前关闭 SSE 和清空状态 |
 | 新增任务终态影响旧前端 | 状态显示未知或持续加载 | 前后端同版本发布，统一终态集合，契约测试覆盖 |
 | 组件组继续执行产生共享资源竞争 | 后续组出现连锁失败 | 仍按固定顺序串行，仅放宽失败边界，不并行 Helm |
+| 永久明文留痕泄露凭据 | 获得运行账户或 root 权限的人员可读取 MinIO、kubeconfig 等敏感内容 | 控制端目录 `0700/0600`、远程目录移除 group/other 权限，限制主机登录与备份访问权限 |
 
 ## 21. 发布与回滚
 
@@ -687,4 +711,5 @@ job_steps.status_reason
 - NFS 正确挂载可安全跳过，冲突挂载和超时可控失败。
 - 单个组件组失败不会阻塞其他无依赖组件组，任务和组状态准确反映部分成功。
 - 集群安装详情可按任务 ID 查看历史过程，刷新和切换不会混合数据。
+- 每个步骤和节点永久保留资源、脚本、日志、执行结果及 SHA-256；远程 `/tmp` 执行目录不由 KubeFoundry 清理。
 - Java、Vue、Bash、数据库迁移、LF、脱敏和发布包验证全部通过。

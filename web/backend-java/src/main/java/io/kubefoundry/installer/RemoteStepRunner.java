@@ -9,12 +9,16 @@ import io.kubefoundry.ssh.SshSession;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -117,6 +121,8 @@ public class RemoteStepRunner {
             ResourceResolution resources = resolveResources(jobId, step, settings);
             if (resources.error() != null) {
                 writeLog(logPath, "", resources.error() + "\n");
+                writeEvidenceOutcome(jobId, step.key(), node, logPath,
+                        false, 2, resources.error());
                 return new JobService.NodeOutcome(false, 2, resources.error(), logPath.toString());
             }
 
@@ -131,7 +137,8 @@ public class RemoteStepRunner {
                     StandardCharsets.UTF_8);
             writeStepScript(scriptFile, cluster, normalizedNodes, step);
             writePhase3Library(phase3Library, step);
-            String remoteDirectory = "/tmp/kubefoundry/" + jobId + "/";
+            createEvidenceSnapshot(jobId, step, node, workDirectory, resources.files());
+            String remoteDirectory = remoteStepDirectory(jobId, step, node);
 
             SshCommandResult result = sessions.withSession(cluster, node, session -> {
                 createRemoteDirectories(session, remoteDirectory, resources.files());
@@ -147,26 +154,25 @@ public class RemoteStepRunner {
                         ssh.upload(session, resource.localPath(), resource.remotePath());
                     }
                 }
-                try {
-                    SshCommandResult executed = ssh.execute(
-                            session, buildExecutionCommand(
-                                    remoteDirectory, step, cluster, normalizedNodes, node),
-                            STEP_TIMEOUT);
-                    if (executed.exitCode() == 0) collectOutputs(session, jobId, step);
-                    return executed;
-                } finally {
-                    cleanupJobResources(session, jobId, step, resources.files());
-                }
+                restrictRemoteJobDirectory(session, jobId);
+                SshCommandResult executed = ssh.execute(
+                        session, buildExecutionCommand(
+                                remoteDirectory, step, cluster, normalizedNodes, node),
+                        STEP_TIMEOUT);
+                if (executed.exitCode() == 0) collectOutputs(session, jobId, step);
+                return executed;
             });
             writeLog(logPath, result.stdout(), result.stderr());
             boolean success = result.exitCode() == 0;
             String message = success ? "执行成功" : "执行失败，退出码: " + result.exitCode();
+            writeEvidenceOutcome(jobId, step.key(), node, logPath, success, result.exitCode(), message);
             return new JobService.NodeOutcome(
                     success, result.exitCode(), message, logPath.toString());
         } catch (Exception exception) {
             String message = stableMessage(exception);
             try {
                 writeLog(logPath, "", message + "\n");
+                writeEvidenceOutcome(jobId, step.key(), node, logPath, false, 1, message);
             } catch (IOException suppressed) {
                 exception.addSuppressed(suppressed);
             }
@@ -197,15 +203,20 @@ public class RemoteStepRunner {
         Path logPath = dataDirectory.resolve("jobs").resolve(Long.toString(jobId))
                 .resolve("logs").resolve(stepKey).resolve(node.getHostname() + ".log");
         try {
+            writeCommandEvidence(jobId, stepKey, node, command);
             SshCommandResult result = sessions.withSession(cluster, node,
                     session -> ssh.execute(session,
                             "bash -lc " + RuntimeEnvRenderer.shellQuote(command), timeout));
             writeLog(logPath, result.stdout(), result.stderr());
+            writeEvidenceOutcome(jobId, stepKey, node, logPath, result.exitCode() == 0,
+                    result.exitCode(), result.exitCode() == 0
+                            ? "执行成功" : "执行失败，退出码: " + result.exitCode());
             return new CommandOutcome(result.exitCode(), result.stdout(), result.stderr(), logPath.toString());
         } catch (Exception exception) {
             String message = stableMessage(exception);
             try {
                 writeLog(logPath, "", message + "\n");
+                writeEvidenceOutcome(jobId, stepKey, node, logPath, false, 1, message);
             } catch (IOException suppressed) {
                 exception.addSuppressed(suppressed);
             }
@@ -253,7 +264,7 @@ public class RemoteStepRunner {
             int separator = resource.remotePath().lastIndexOf('/');
             if (separator > 0) directories.add(resource.remotePath().substring(0, separator));
         }
-        String mkdir = "mkdir -p " + directories.stream().distinct()
+        String mkdir = "umask 077 && mkdir -p " + directories.stream().distinct()
                 .map(RuntimeEnvRenderer::shellQuote)
                 .collect(java.util.stream.Collectors.joining(" "));
         SshCommandResult result = ssh.execute(
@@ -263,24 +274,20 @@ public class RemoteStepRunner {
         }
     }
 
-    private void cleanupJobResources(
-            SshSession session, long jobId, InstallStep step, List<ResolvedResource> resources)
-            throws IOException {
-        String group = step.componentGroupKey() == null ? "shared" : step.componentGroupKey();
-        if (!group.matches("[a-z0-9_]+")) {
-            throw new IOException("非法组件资源目录键");
-        }
-        String directory = "/tmp/kubefoundry/jobs/" + jobId + "/resources/" + group;
-        if (resources.stream().noneMatch(resource -> resource.remotePath().equals(directory)
-                || resource.remotePath().startsWith(directory + "/"))) {
-            return;
-        }
+    private void restrictRemoteJobDirectory(SshSession session, long jobId) throws IOException {
+        String directory = "/tmp/kubefoundry/jobs/" + jobId;
         SshCommandResult result = ssh.execute(session,
-                "bash -lc " + RuntimeEnvRenderer.shellQuote("rm -rf -- "
+                "bash -lc " + RuntimeEnvRenderer.shellQuote("chmod -R go-rwx -- "
                         + RuntimeEnvRenderer.shellQuote(directory)), DIRECTORY_TIMEOUT);
         if (result.exitCode() != 0) {
-            throw new IOException("清理任务组件资源失败，退出码: " + result.exitCode());
+            throw new IOException("设置远程任务留痕目录权限失败，退出码: " + result.exitCode());
         }
+    }
+
+    private static String remoteStepDirectory(long jobId, InstallStep step, Node node) throws IOException {
+        return "/tmp/kubefoundry/jobs/" + jobId + "/steps/"
+                + safeEvidenceSegment(step.key(), "步骤键") + "/"
+                + safeEvidenceSegment(node.getHostname(), "节点主机名") + "/";
     }
 
     private String buildExecutionCommand(
@@ -343,8 +350,13 @@ public class RemoteStepRunner {
             long jobId, Cluster cluster, InstallStep step, List<ResolvedResource> resources) {
         String group = step.componentGroupKey() == null ? "shared" : step.componentGroupKey();
         Map<String, String> values = new LinkedHashMap<>();
-        values.put("KF_COMPONENT_RESOURCE_DIR", "/tmp/kubefoundry/jobs/" + jobId
-                + "/resources/" + group);
+        String resourceDirectory = "/tmp/kubefoundry/jobs/" + jobId + "/resources/" + group;
+        if (!resources.isEmpty()) {
+            ResolvedResource first = resources.get(0);
+            resourceDirectory = "directory".equals(first.kind())
+                    ? first.remotePath() : remoteParent(first.remotePath());
+        }
+        values.put("KF_COMPONENT_RESOURCE_DIR", resourceDirectory);
         if ("29-install-helm".equals(step.key()) && !resources.isEmpty()
                 && resources.get(0).checksum() != null) {
             values.put("KF_HELM_SHA256", resources.get(0).checksum());
@@ -486,6 +498,140 @@ public class RemoteStepRunner {
         Files.createDirectories(path.getParent());
         Files.writeString(path, (stdout == null ? "" : stdout) + (stderr == null ? "" : stderr),
                 StandardCharsets.UTF_8);
+    }
+
+    private void createEvidenceSnapshot(
+            long jobId,
+            InstallStep step,
+            Node node,
+            Path workDirectory,
+            List<ResolvedResource> resources) throws IOException {
+        Path evidence = evidenceDirectory(jobId, step, node);
+        Files.createDirectories(evidence);
+        copyIfPresent(workDirectory.resolve("runtime.env"), evidence.resolve("runtime.env"));
+        copyIfPresent(workDirectory.resolve("step.sh"), evidence.resolve("step.sh"));
+        copyIfPresent(workDirectory.resolve("phase3.sh"), evidence.resolve("phase3.sh"));
+        Path resourceRoot = evidence.resolve("resources");
+        Files.createDirectories(resourceRoot);
+        for (int index = 0; index < resources.size(); index++) {
+            ResolvedResource resource = resources.get(index);
+            String name = resource.localPath().getFileName() == null
+                    ? "resource" : resource.localPath().getFileName().toString();
+            copyEvidenceTree(resource.localPath(), resourceRoot.resolve(
+                    String.format("%02d-%s", index + 1, safeEvidenceSegment(name, "资源名称"))));
+        }
+        writeEvidenceChecksums(evidence);
+        restrictLocalEvidencePermissions(evidence);
+    }
+
+    private void writeCommandEvidence(long jobId, String stepKey, Node node, String command) throws IOException {
+        Path evidence = evidenceDirectory(jobId, stepKey, node);
+        Files.createDirectories(evidence);
+        Files.writeString(evidence.resolve("command.sh"), "#!/bin/bash\n" + command + "\n",
+                StandardCharsets.UTF_8);
+        restrictLocalEvidencePermissions(evidence);
+    }
+
+    private void writeEvidenceOutcome(
+            long jobId,
+            String stepKey,
+            Node node,
+            Path logPath,
+            boolean success,
+            int exitCode,
+            String message) throws IOException {
+        Path evidence = evidenceDirectory(jobId, stepKey, node);
+        Files.createDirectories(evidence);
+        copyIfPresent(logPath, evidence.resolve("execution.log"));
+        String result = "job_id=" + jobId + "\n"
+                + "step_key=" + escapeEvidenceValue(stepKey) + "\n"
+                + "node=" + escapeEvidenceValue(node.getHostname()) + "\n"
+                + "success=" + success + "\n"
+                + "exit_code=" + exitCode + "\n"
+                + "message=" + escapeEvidenceValue(message) + "\n"
+                + "completed_at=" + Instant.now() + "\n"
+                + "log_path=" + escapeEvidenceValue(logPath.toString()) + "\n";
+        Files.writeString(evidence.resolve("result.properties"), result, StandardCharsets.UTF_8);
+        writeEvidenceChecksums(evidence);
+        restrictLocalEvidencePermissions(evidence);
+    }
+
+    private Path evidenceDirectory(long jobId, InstallStep step, Node node) throws IOException {
+        return evidenceDirectory(jobId, step.key(), node);
+    }
+
+    private Path evidenceDirectory(long jobId, String stepKey, Node node) throws IOException {
+        Path root = dataDirectory.resolve("jobs").resolve(Long.toString(jobId)).resolve("evidence")
+                .toAbsolutePath().normalize();
+        Path evidence = root.resolve(safeEvidenceSegment(stepKey, "步骤键"))
+                .resolve(safeEvidenceSegment(node.getHostname(), "节点主机名")).normalize();
+        if (!evidence.startsWith(root)) throw new IOException("任务留痕目录越界");
+        return evidence;
+    }
+
+    private static String safeEvidenceSegment(String value, String field) throws IOException {
+        if (value == null || !value.matches("[A-Za-z0-9._-]+") || value.contains("..")) {
+            throw new IOException(field + "不适合作为留痕目录名称");
+        }
+        return value;
+    }
+
+    private static String remoteParent(String path) {
+        int separator = path.lastIndexOf('/');
+        return separator > 0 ? path.substring(0, separator) : path;
+    }
+
+    private static void copyIfPresent(Path source, Path target) throws IOException {
+        if (Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS)) {
+            Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private static void copyEvidenceTree(Path source, Path target) throws IOException {
+        if (Files.isSymbolicLink(source)) throw new IOException("留痕资源不能是符号链接: " + source);
+        if (Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS)) {
+            Files.createDirectories(target.getParent());
+            Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
+            return;
+        }
+        try (var paths = Files.walk(source)) {
+            for (Path path : paths.sorted().toList()) {
+                if (Files.isSymbolicLink(path)) throw new IOException("留痕资源不能包含符号链接: " + path);
+                Path destination = target.resolve(source.relativize(path).toString());
+                if (Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) Files.createDirectories(destination);
+                else Files.copy(path, destination, StandardCopyOption.REPLACE_EXISTING);
+            }
+        }
+    }
+
+    private static void writeEvidenceChecksums(Path evidence) throws IOException {
+        Path checksumFile = evidence.resolve("checksums.sha256");
+        StringBuilder contents = new StringBuilder();
+        try (var paths = Files.walk(evidence)) {
+            for (Path path : paths.filter(item -> Files.isRegularFile(item, LinkOption.NOFOLLOW_LINKS))
+                    .filter(item -> !item.equals(checksumFile)).sorted().toList()) {
+                contents.append(sha256(path)).append("  ")
+                        .append(evidence.relativize(path).toString().replace('\\', '/')).append('\n');
+            }
+        }
+        Files.writeString(checksumFile, contents, StandardCharsets.UTF_8);
+    }
+
+    private static void restrictLocalEvidencePermissions(Path evidence) throws IOException {
+        if (!evidence.getFileSystem().supportedFileAttributeViews().contains("posix")) return;
+        try (var paths = Files.walk(evidence)) {
+            for (Path path : paths.toList()) {
+                Files.setPosixFilePermissions(path, Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)
+                        ? EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE,
+                                PosixFilePermission.OWNER_EXECUTE)
+                        : EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
+            }
+        }
+    }
+
+    private static String escapeEvidenceValue(String value) {
+        return (value == null ? "" : value).replace("\\", "\\\\")
+                .replace("\r", "\\r").replace("\n", "\\n");
     }
 
     private static String stableMessage(Exception exception) {

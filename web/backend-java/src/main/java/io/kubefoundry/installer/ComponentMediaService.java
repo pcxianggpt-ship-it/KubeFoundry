@@ -74,8 +74,7 @@ public class ComponentMediaService {
         Path source = projectRoot.resolve("kube-media").resolve("03.setup_file")
                 .resolve("v" + version).resolve(location.relativePath()).normalize();
         requireWithinProject(source);
-        String remotePath = JOB_RESOURCE_ROOT + "/" + groupKey
-                + ("directory".equals(location.kind()) ? "" : "/" + stepKey);
+        String remotePath = JOB_RESOURCE_ROOT + "/" + groupKey + "/" + stepKey;
         return InstallStep.Resource.local(source, location.kind(), remotePath);
     }
 
