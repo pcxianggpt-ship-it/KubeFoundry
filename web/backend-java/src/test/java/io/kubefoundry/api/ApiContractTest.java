@@ -121,15 +121,26 @@ class ApiContractTest {
                 .andExpect(jsonPath("$.env.containerd_root").isString());
         mvc.perform(get("/api/clusters/{id}/install-plan", cluster.getId()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items.length()").value(15));
+                .andExpect(jsonPath("$.items.length()").value(15))
+                .andExpect(jsonPath("$.items[0].stage_key").value("k8s_base"))
+                .andExpect(jsonPath("$.items[0].stage_name").value("Kubernetes 基础安装"))
+                .andExpect(jsonPath("$.items[0].stage_order").value(1))
+                .andExpect(jsonPath("$.items[0].step_order_in_stage").value(1));
         mvc.perform(get("/api/jobs").param("cluster_id", cluster.getId().toString()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items[0].job_type").value("install"));
+                .andExpect(jsonPath("$.items[0].job_type").value("install"))
+                .andExpect(jsonPath("$.items[0].run_mode").value("normal"))
+                .andExpect(jsonPath("$.items[0].source_job_id").doesNotExist());
         mvc.perform(get("/api/jobs/{id}", job.getId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.cluster_id").value(cluster.getId()));
         mvc.perform(get("/api/jobs/{id}/steps", job.getId()))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].step_key").value("step-1"))
+                .andExpect(jsonPath("$.items[0].stage_key").value("default"))
+                .andExpect(jsonPath("$.items[0].stage_name").value("任务步骤"))
+                .andExpect(jsonPath("$.items[0].stage_order").value(1))
+                .andExpect(jsonPath("$.items[0].step_order_in_stage").value(1))
                 .andExpect(jsonPath("$.items[0].nodes[0].hostname").value("cp-1"));
 
         mvc.perform(post("/api/clusters/{id}/precheck", cluster.getId()))

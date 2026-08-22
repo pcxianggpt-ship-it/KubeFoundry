@@ -30,6 +30,13 @@ public class Job {
     @Column(nullable = false, length = 32)
     private String status = "pending";
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "source_job_id")
+    private Job sourceJob;
+
+    @Column(name = "run_mode", nullable = false, length = 16)
+    private String runMode = "normal";
+
     @Column(name = "log_path", length = 512)
     private String logPath;
 
@@ -49,16 +56,37 @@ public class Job {
     }
 
     public Job(Cluster cluster, String type) {
+        this(cluster, type, null, "normal");
+    }
+
+    public Job(Cluster cluster, String type, Job sourceJob, String runMode) {
         if (cluster == null) throw new IllegalArgumentException("集群不能为空");
         if (type == null || type.isBlank()) throw new IllegalArgumentException("任务类型不能为空");
+        if (sourceJob != null && !sourceJob.getCluster().getId().equals(cluster.getId())) {
+            throw new IllegalArgumentException("来源任务必须属于同一集群");
+        }
+        String normalizedRunMode = runMode == null || runMode.isBlank() ? "normal" : runMode.trim();
+        if (!java.util.Set.of("normal", "resume").contains(normalizedRunMode)) {
+            throw new IllegalArgumentException("不支持的任务运行模式: " + normalizedRunMode);
+        }
+        if ("resume".equals(normalizedRunMode) && sourceJob == null) {
+            throw new IllegalArgumentException("续跑任务必须指定来源任务");
+        }
+        if ("normal".equals(normalizedRunMode) && sourceJob != null) {
+            throw new IllegalArgumentException("普通任务不能指定来源任务");
+        }
         this.cluster = cluster;
         this.type = type;
+        this.sourceJob = sourceJob;
+        this.runMode = normalizedRunMode;
     }
 
     public Long getId() { return id; }
     public Cluster getCluster() { return cluster; }
     public String getType() { return type; }
     public String getStatus() { return status; }
+    public Job getSourceJob() { return sourceJob; }
+    public String getRunMode() { return runMode; }
     public String getLogPath() { return logPath; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }

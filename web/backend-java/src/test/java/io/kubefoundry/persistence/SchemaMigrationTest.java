@@ -78,6 +78,60 @@ class SchemaMigrationTest {
     }
 
     @Test
+    void createsJobLineageAndStepMetadataInV15() throws SQLException {
+        try (Connection connection = openConnection()) {
+            DatabaseMetaData metadata = connection.getMetaData();
+            assertThat(columnExists(metadata, "JOBS", "SOURCE_JOB_ID")).isTrue();
+            assertThat(columnExists(metadata, "JOBS", "RUN_MODE")).isTrue();
+            assertThat(columnExists(metadata, "JOB_STEPS", "STEP_KEY")).isTrue();
+            assertThat(columnExists(metadata, "JOB_STEPS", "STAGE_KEY")).isTrue();
+            assertThat(columnExists(metadata, "JOB_STEPS", "STAGE_NAME")).isTrue();
+            assertThat(columnExists(metadata, "JOB_STEPS", "STAGE_ORDER")).isTrue();
+            assertThat(columnExists(metadata, "JOB_STEPS", "STEP_ORDER_IN_STAGE")).isTrue();
+            assertThat(successfulMigration(connection, "15")).isTrue();
+        }
+    }
+
+    @Test
+    void backfillsLegacyStepMetadataWhenUpgradingFromV14() throws SQLException {
+        String databaseUrl = "jdbc:h2:mem:schema-v14-job-metadata;MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
+        Flyway.configure().dataSource(databaseUrl, "sa", "").target("14").load().migrate();
+
+        long stepId;
+        try (Connection connection = DriverManager.getConnection(databaseUrl, "sa", "")) {
+            long clusterId = insertCluster(connection, "legacy-job", "", false);
+            insertInstallJob(connection, clusterId, "failed");
+            try (var statement = connection.prepareStatement(
+                    "INSERT INTO job_steps (job_id, step_name, step_order, status) "
+                            + "VALUES ((SELECT MAX(id) FROM jobs), '旧步骤', 3, 'failed')",
+                    java.sql.Statement.RETURN_GENERATED_KEYS)) {
+                statement.executeUpdate();
+                try (ResultSet keys = statement.getGeneratedKeys()) {
+                    keys.next();
+                    stepId = keys.getLong(1);
+                }
+            }
+        }
+
+        Flyway.configure().dataSource(databaseUrl, "sa", "").load().migrate();
+
+        try (Connection connection = DriverManager.getConnection(databaseUrl, "sa", "");
+                var statement = connection.prepareStatement(
+                        "SELECT step_key, stage_key, stage_name, stage_order, step_order_in_stage "
+                                + "FROM job_steps WHERE id = ?")) {
+            statement.setLong(1, stepId);
+            try (ResultSet result = statement.executeQuery()) {
+                assertThat(result.next()).isTrue();
+                assertThat(result.getString("step_key")).isEqualTo("legacy-" + stepId);
+                assertThat(result.getString("stage_key")).isEqualTo("legacy");
+                assertThat(result.getString("stage_name")).isEqualTo("历史任务");
+                assertThat(result.getInt("stage_order")).isEqualTo(1);
+                assertThat(result.getInt("step_order_in_stage")).isEqualTo(3);
+            }
+        }
+    }
+
+    @Test
     void recordsSuccessfulV1MigrationInFlywayHistory() throws SQLException {
         try (Connection connection = openConnection()) {
             assertThat(tableExists(connection.getMetaData(), "flyway_schema_history")).isTrue();

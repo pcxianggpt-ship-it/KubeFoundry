@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest(properties = {
         "spring.datasource.url=jdbc:h2:mem:job-service;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
@@ -74,6 +75,51 @@ class JobServiceTest {
         assertThat(jobs.findById(running.getId()).orElseThrow().getStatus()).isEqualTo("interrupted");
         assertThat(jobs.findById(finished.getId()).orElseThrow().getStatus()).isEqualTo("success");
         assertThat(clusters.findById(cluster.getId()).orElseThrow().getStatus()).isEqualTo("install_failed");
+    }
+
+    @Test
+    void submitPersistsResumeLineageAndStepMetadata() throws Exception {
+        Cluster cluster = clusters.save(new Cluster("resume-metadata-test"));
+        Node node = node(cluster, "node-1", "10.0.0.11");
+        Job source = new Job(cluster, "install");
+        source.markFailed();
+        source = jobs.saveAndFlush(source);
+
+        JobService.StepDefinition step = new JobService.StepDefinition(
+                "安装镜像仓库", 1, 1, true,
+                List.of(new JobService.NodeOperation(node.getId(), () -> { })),
+                null, "17-install-registry", "registry", "部署镜像仓库", 1, 1);
+        long jobId = service.submit(new JobService.JobDefinition(
+                cluster.getId(), "install", List.of(step), source.getId(), "resume"));
+
+        assertThat(executor.awaitIdle(5, TimeUnit.SECONDS)).isTrue();
+
+        Job resumed = jobs.findById(jobId).orElseThrow();
+        assertThat(resumed.getRunMode()).isEqualTo("resume");
+        assertThat(resumed.getSourceJob().getId()).isEqualTo(source.getId());
+        JobStep persistedStep = steps.findByJobIdOrderByOrder(jobId).get(0);
+        assertThat(persistedStep.getStepKey()).isEqualTo("17-install-registry");
+        assertThat(persistedStep.getStageKey()).isEqualTo("registry");
+        assertThat(persistedStep.getStageName()).isEqualTo("部署镜像仓库");
+        assertThat(persistedStep.getStageOrder()).isEqualTo(1);
+        assertThat(persistedStep.getStepOrderInStage()).isEqualTo(1);
+    }
+
+    @Test
+    void submitRejectsDuplicateStepKeysBeforePersisting() {
+        Cluster cluster = clusters.save(new Cluster("duplicate-step-key-test"));
+        JobService.StepDefinition first = new JobService.StepDefinition(
+                "步骤一", 1, 1, true, List.of(), null,
+                "shared-step", "base", "基础部署", 1, 1);
+        JobService.StepDefinition second = new JobService.StepDefinition(
+                "步骤二", 2, 1, true, List.of(), null,
+                "shared-step", "base", "基础部署", 1, 2);
+
+        assertThatThrownBy(() -> service.submit(new JobService.JobDefinition(
+                cluster.getId(), "install", List.of(first, second))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("同一任务的步骤键不能重复");
+        assertThat(jobs.findAll()).isEmpty();
     }
 
     @Test

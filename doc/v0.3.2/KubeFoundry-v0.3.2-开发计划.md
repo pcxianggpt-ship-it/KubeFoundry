@@ -162,10 +162,10 @@
 
 - [ ] 完成门禁 A～E，逐项记录批准、调整、延期或移出范围结论。
 - [x] 检查当前 Flyway 最大版本：现有迁移最高为 `V14__job_timeline_and_step_reason.sql`，v0.3.2 从 V15 开始新增迁移。
-- [ ] 冻结 `source_job_id`、`run_mode`、步骤键和部署单元字段命名。
+- [x] 冻结 `source_job_id`、`run_mode`、步骤键和部署单元字段命名。
 - [ ] 冻结续跑接口、准入错误码、步骤状态原因码和 SSE 事件字段。
-- [ ] 生成所有安装步骤、目标范围、验证脚本、资源和输出产物清单。
-- [ ] 标出验证脚本中的嵌套 SSH、交互命令、无超时检查和敏感输出。
+- [x] 生成所有安装步骤、目标范围、验证脚本、资源和输出产物清单，见[安装步骤与验证脚本清单](./安装步骤与验证脚本清单.md)。
+- [x] 标出验证脚本中的嵌套 SSH、控制端配置依赖、无统一超时检查和敏感输出风险。
 - [x] 记录 Maven、Vitest、Bash、LF 和敏感信息检查的基线结果。
 - [ ] 确认前端、后端、脚本、Flyway 和离线介质必须同版本发布。
 
@@ -212,7 +212,7 @@
 
 ### 主要文件
 
-- 新增：`web/backend-java/src/main/resources/db/migration/V15__job_resume_and_stage_metadata.sql`
+- 新增：`web/backend-java/src/main/resources/db/migration/V15__job_resume_lineage_and_step_metadata.sql`
 - 修改：`job/Job.java`
 - 修改：`job/JobStep.java`
 - 修改：`job/JobRepository.java`
@@ -224,14 +224,14 @@
 
 ### 实施步骤
 
-- [ ] 先编写 V1/V14 升级到 V15 的迁移测试。
-- [ ] 为 `jobs` 增加来源任务外键和 `normal/resume` 运行模式。
-- [ ] 为 `job_steps` 增加步骤键、部署单元键/名称/顺序和组内顺序。
-- [ ] 使用稳定 `legacy-*` 值迁移旧任务，禁止通过中文名称推断可续跑步骤。
-- [ ] 在实体构造器和 `JobDefinition/StepDefinition` 中传递新字段。
-- [ ] 在任务和步骤响应中返回新字段，同时保持旧字段兼容。
-- [ ] 增加来源任务同集群、不可自引用和不可循环引用校验。
-- [ ] 增加索引并验证任务列表、步骤列表和历史任务性能。
+- [x] 先编写 V1/V14 升级到 V15 的迁移测试。
+- [x] 为 `jobs` 增加来源任务外键和 `normal/resume` 运行模式。
+- [x] 为 `job_steps` 增加步骤键、部署单元键/名称/顺序和组内顺序。
+- [x] 使用稳定 `legacy-*` 值迁移旧任务，禁止通过中文名称推断可续跑步骤。
+- [x] 在实体构造器和 `JobDefinition/StepDefinition` 中传递新字段。
+- [x] 在任务和步骤响应中返回新字段，同时保持旧字段兼容。
+- [x] 增加来源任务同集群、不可自引用和不可循环引用校验。
+- [x] 增加索引并通过任务列表、步骤列表和历史数据回归测试。
 
 ### 验收
 

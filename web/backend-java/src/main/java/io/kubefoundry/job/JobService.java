@@ -58,13 +58,16 @@ public class JobService {
         Cluster cluster = clusters.findById(definition.clusterId())
                 .orElseThrow(() -> new IllegalArgumentException("集群不存在: " + definition.clusterId()));
         Map<Long, Node> operationNodes = resolveNodes(definition);
-        Job job = jobs.saveAndFlush(new Job(cluster, definition.type()));
+        Job sourceJob = resolveSourceJob(definition, cluster);
+        Job job = jobs.saveAndFlush(new Job(cluster, definition.type(), sourceJob, definition.runMode()));
         try {
             for (StepDefinition stepDefinition : definition.steps().stream()
                     .sorted(Comparator.comparingInt(StepDefinition::order)).toList()) {
                 JobStep step = steps.saveAndFlush(
                         new JobStep(job, stepDefinition.name(), stepDefinition.order(),
-                                stepDefinition.componentGroupKey()));
+                                stepDefinition.componentGroupKey(), stepDefinition.stepKey(),
+                                stepDefinition.stageKey(), stepDefinition.stageName(),
+                                stepDefinition.stageOrder(), stepDefinition.stepOrderInStage()));
                 for (NodeOperation operation : stepDefinition.nodes()) {
                     Node node = operationNodes.get(operation.nodeId());
                     stepNodes.save(new JobStepNode(step, node));
@@ -81,6 +84,29 @@ public class JobService {
             throw exception;
         }
         return job.getId();
+    }
+
+    private Job resolveSourceJob(JobDefinition definition, Cluster cluster) {
+        if (definition.sourceJobId() == null) return null;
+        Job sourceJob = jobs.findById(definition.sourceJobId())
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "来源任务不存在: " + definition.sourceJobId()));
+        if (!sourceJob.getCluster().getId().equals(cluster.getId())) {
+            throw new IllegalArgumentException("来源任务必须属于同一集群");
+        }
+        Set<Long> visitedJobIds = new HashSet<>();
+        Job lineageJob = sourceJob;
+        while (lineageJob != null) {
+            Long lineageJobId = lineageJob.getId();
+            if (lineageJobId == null || !visitedJobIds.add(lineageJobId)) {
+                throw new IllegalArgumentException("来源任务血缘存在循环");
+            }
+            if (!lineageJob.getCluster().getId().equals(cluster.getId())) {
+                throw new IllegalArgumentException("来源任务血缘必须属于同一集群");
+            }
+            lineageJob = lineageJob.getSourceJob();
+        }
+        return sourceJob;
     }
 
     private void submitAfterCommit(long jobId, JobDefinition definition) {
@@ -361,11 +387,15 @@ public class JobService {
             throw new IllegalArgumentException("任务步骤不能为空");
         }
         Set<Integer> orders = new HashSet<>();
+        Set<String> stepKeys = new HashSet<>();
         for (StepDefinition step : definition.steps()) {
             if (step == null || step.name() == null || step.name().isBlank()) {
                 throw new IllegalArgumentException("任务步骤名称不能为空");
             }
             if (!orders.add(step.order())) throw new IllegalArgumentException("任务步骤顺序不能重复");
+            if (!stepKeys.add(step.stepKey())) {
+                throw new IllegalArgumentException("同一任务的步骤键不能重复");
+            }
             if (step.nodes() == null) throw new IllegalArgumentException("节点任务列表不能为空");
             if (step.maxWorkers() < 1) throw new IllegalArgumentException("节点并发数必须大于 0");
             Set<Long> nodeIds = new HashSet<>();
@@ -393,7 +423,29 @@ public class JobService {
         return resolved;
     }
 
-    public record JobDefinition(long clusterId, String type, List<StepDefinition> steps) {
+    public record JobDefinition(
+            long clusterId,
+            String type,
+            List<StepDefinition> steps,
+            Long sourceJobId,
+            String runMode) {
+        public JobDefinition(long clusterId, String type, List<StepDefinition> steps) {
+            this(clusterId, type, steps, null, "normal");
+        }
+
+        public JobDefinition {
+            runMode = runMode == null || runMode.isBlank() ? "normal" : runMode.trim();
+            if (!Set.of("normal", "resume").contains(runMode)) {
+                throw new IllegalArgumentException("不支持的任务运行模式: " + runMode);
+            }
+            if ("resume".equals(runMode) && sourceJobId == null) {
+                throw new IllegalArgumentException("续跑任务必须指定来源任务");
+            }
+            if ("normal".equals(runMode) && sourceJobId != null) {
+                throw new IllegalArgumentException("普通任务不能指定来源任务");
+            }
+        }
+
         Set<String> componentGroupKeys() {
             Set<String> values = new HashSet<>();
             for (StepDefinition step : steps == null ? List.<StepDefinition>of() : steps) {
@@ -412,13 +464,43 @@ public class JobService {
             int maxWorkers,
             boolean failFast,
             List<NodeOperation> nodes,
-            String componentGroupKey) {
+            String componentGroupKey,
+            String stepKey,
+            String stageKey,
+            String stageName,
+            int stageOrder,
+            int stepOrderInStage) {
+        public StepDefinition {
+            stepKey = normalizeStepMetadata(stepKey, "step-" + order);
+            stageKey = normalizeStepMetadata(stageKey, "default");
+            stageName = normalizeStepMetadata(stageName, "任务步骤");
+            stageOrder = stageOrder < 1 ? 1 : stageOrder;
+            stepOrderInStage = stepOrderInStage < 1 ? order : stepOrderInStage;
+        }
+
+        public StepDefinition(String name, int order, int maxWorkers, boolean failFast,
+                List<NodeOperation> nodes, String componentGroupKey) {
+            this(name, order, maxWorkers, failFast, nodes, componentGroupKey,
+                    "step-" + order,
+                    componentGroupKey == null || componentGroupKey.isBlank() ? "default" : componentGroupKey,
+                    componentGroupKey == null || componentGroupKey.isBlank() ? "任务步骤" : componentGroupKey,
+                    1, order);
+        }
+
         public StepDefinition(String name, int order, int maxWorkers, boolean failFast,
                 List<NodeOperation> nodes) {
             this(name, order, maxWorkers, failFast, nodes, null);
         }
         public StepDefinition(String name, int order, List<NodeOperation> nodes) {
             this(name, order, 5, false, nodes, null);
+        }
+
+        private static String normalizeStepMetadata(String value, String fallback) {
+            String normalized = value == null || value.isBlank() ? fallback : value.trim();
+            if (normalized.length() > 128) {
+                throw new IllegalArgumentException("步骤元数据不能超过 128 个字符");
+            }
+            return normalized;
         }
     }
 

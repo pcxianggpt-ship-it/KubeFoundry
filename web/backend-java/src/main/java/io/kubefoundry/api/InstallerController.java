@@ -5,6 +5,7 @@ import io.kubefoundry.installer.ClusterSettingsService;
 import io.kubefoundry.installer.ComponentInstallService;
 import io.kubefoundry.installer.InstallService;
 import io.kubefoundry.installer.InstallStep;
+import io.kubefoundry.installer.InstallStepMetadata;
 import io.kubefoundry.installer.PrecheckService;
 import java.util.List;
 import java.util.Map;
@@ -62,8 +63,12 @@ public class InstallerController {
     @GetMapping("/clusters/{clusterId}/install-plan")
     public Items<PlanItem> plan(@PathVariable long clusterId) {
         List<InstallStep> steps = installs.preview(clusterId).steps();
+        InstallStepMetadata.Tracker metadata = InstallStepMetadata.tracker();
         return new Items<>(java.util.stream.IntStream.range(0, steps.size())
-                .mapToObj(index -> PlanItem.from(index + 1, steps.get(index))).toList());
+                .mapToObj(index -> {
+                    InstallStep step = steps.get(index);
+                    return PlanItem.from(index + 1, step, metadata.next(step));
+                }).toList());
     }
 
     @PostMapping("/clusters/{clusterId}/precheck")
@@ -102,12 +107,17 @@ public class InstallerController {
             String key,
             String name,
             String phase,
+            @JsonProperty("stage_key") String stageKey,
+            @JsonProperty("stage_name") String stageName,
+            @JsonProperty("stage_order") int stageOrder,
+            @JsonProperty("step_order_in_stage") int stepOrderInStage,
             @JsonProperty("target_scope") String targetScope,
             String mode,
             @JsonProperty("max_workers") int maxWorkers,
             @JsonProperty("required_resources") List<String> requiredResources) {
-        static PlanItem from(int order, InstallStep step) {
-            return new PlanItem(order, step.key(), step.name(), step.phase(), step.targetScope(),
+        static PlanItem from(int order, InstallStep step, InstallStepMetadata.Stage stage) {
+            return new PlanItem(order, step.key(), step.name(), step.phase(),
+                    stage.key(), stage.name(), stage.order(), stage.stepOrder(), step.targetScope(),
                     step.mode(), step.maxWorkers(), step.resources().stream()
                             .map(resource -> resource.pathKey() == null
                                     ? resource.artifactKey() : resource.pathKey())

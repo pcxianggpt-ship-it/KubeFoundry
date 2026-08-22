@@ -89,6 +89,7 @@ public class InstallService {
             plan = media == null ? generatedPlan : media.verifyAndChecksum(generatedPlan);
         }
         List<JobService.StepDefinition> definitions = new ArrayList<>();
+        InstallStepMetadata.Tracker metadata = InstallStepMetadata.tracker();
         for (int index = 0; index < plan.steps().size(); index++) {
             InstallStep step = plan.steps().get(index);
             List<Node> targets = plans.resolveTargets(step, cluster, configuredNodes);
@@ -105,9 +106,7 @@ public class InstallService {
                                 : runner.run(jobId, cluster, configuredNodes, node, step, runtimeSettings);
                     }))
                     .toList();
-            definitions.add(new JobService.StepDefinition(
-                    step.name(), index + 1, step.maxWorkers(), step.failFast(), operations,
-                    step.componentGroupKey()));
+            definitions.add(metadata.definition(step, index + 1, operations));
         }
         return admission.submit(clusterId, () -> {
             Cluster admittedCluster = clusters.findById(clusterId)

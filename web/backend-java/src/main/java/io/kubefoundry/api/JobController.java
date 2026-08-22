@@ -65,6 +65,8 @@ public class JobController {
             long id,
             @JsonProperty("cluster_id") long clusterId,
             @JsonProperty("job_type") String jobType,
+            @JsonProperty("source_job_id") Long sourceJobId,
+            @JsonProperty("run_mode") String runMode,
             String status,
             @JsonProperty("log_path") String logPath,
             @JsonProperty("created_at") LocalDateTime createdAt,
@@ -72,6 +74,7 @@ public class JobController {
             @JsonProperty("finished_at") LocalDateTime finishedAt) {
         static JobResponse from(Job job) {
             return new JobResponse(job.getId(), job.getCluster().getId(), job.getType(),
+                    job.getSourceJob() == null ? null : job.getSourceJob().getId(), job.getRunMode(),
                     job.getStatus(), job.getLogPath(), job.getCreatedAt(),
                     job.getStartedAt(), job.getFinishedAt());
         }
@@ -79,14 +82,20 @@ public class JobController {
 
     public record StepResponse(
             long id,
+            @JsonProperty("step_key") String stepKey,
             String name,
             int order,
+            @JsonProperty("stage_key") String stageKey,
+            @JsonProperty("stage_name") String stageName,
+            @JsonProperty("stage_order") int stageOrder,
+            @JsonProperty("step_order_in_stage") int stepOrderInStage,
             String status,
             @JsonProperty("status_reason") String statusReason,
             List<NodeResponse> nodes) {
         static StepResponse from(JobStep step, List<JobStepNode> nodes) {
-            return new StepResponse(step.getId(), step.getName(), step.getOrder(), step.getStatus(),
-                    step.getStatusReason(),
+            return new StepResponse(step.getId(), step.getStepKey(), step.getName(), step.getOrder(),
+                    step.getStageKey(), step.getStageName(), step.getStageOrder(),
+                    step.getStepOrderInStage(), step.getStatus(), step.getStatusReason(),
                     nodes.stream().map(NodeResponse::from).toList());
         }
     }

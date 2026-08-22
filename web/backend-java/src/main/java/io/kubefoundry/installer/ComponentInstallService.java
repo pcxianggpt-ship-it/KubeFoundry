@@ -72,6 +72,7 @@ public class ComponentInstallService {
         InstallPlan plan = media.verifyAndChecksum(assembler.forExistingCluster(snapshot, candidates));
         if (plan.steps().isEmpty()) throw new IllegalStateException("没有可补装的 Kubemate 组件组");
         List<JobService.StepDefinition> definitions = new ArrayList<>();
+        InstallStepMetadata.Tracker metadata = InstallStepMetadata.tracker();
         for (int index = 0; index < plan.steps().size(); index++) {
             InstallStep step = plan.steps().get(index);
             List<Node> targets = plans.resolveTargets(step, cluster, configuredNodes);
@@ -84,8 +85,7 @@ public class ComponentInstallService {
                         return runner.run(jobId, cluster, configuredNodes, node, step, runtimeSettings);
                     }))
                     .toList();
-            definitions.add(new JobService.StepDefinition(step.name(), index + 1, step.maxWorkers(),
-                    step.failFast(), operations, step.componentGroupKey()));
+            definitions.add(metadata.definition(step, index + 1, operations));
         }
         return submit(clusterId, snapshot.componentConfigurationVersion(), definitions, media.checksums(plan));
     }
