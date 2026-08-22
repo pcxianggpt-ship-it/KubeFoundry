@@ -17,7 +17,11 @@ public record InstallStep(
         List<Argument> arguments,
         List<Output> outputs,
         String verifyCommand,
-        String componentGroupKey) {
+        String componentGroupKey,
+        StepType type,
+        Path verifyScript) {
+
+    public enum StepType { INSTALL, VALIDATION, MAINTENANCE }
 
     public InstallStep {
         if (key == null || key.isBlank()) throw new IllegalArgumentException("Step key is required");
@@ -32,6 +36,18 @@ public record InstallStep(
         verifyCommand = verifyCommand == null ? "" : verifyCommand;
         componentGroupKey = componentGroupKey == null || componentGroupKey.isBlank()
                 ? null : componentGroupKey.trim();
+        type = type == null ? StepType.INSTALL : type;
+        verifyScript = verifyScript == null ? null : verifyScript.toAbsolutePath().normalize();
+    }
+
+    public InstallStep(
+            String key, String name, String phase, String targetScope, Path script, String builtin,
+            String mode, int maxWorkers, boolean failFast, List<Resource> resources,
+            List<Argument> arguments, List<Output> outputs, String verifyCommand,
+            String componentGroupKey) {
+        this(key, name, phase, targetScope, script, builtin, mode, maxWorkers, failFast,
+                resources, arguments, outputs, verifyCommand, componentGroupKey,
+                "cluster_health".equals(builtin) ? StepType.VALIDATION : StepType.INSTALL, null);
     }
 
     public static InstallStep script(
@@ -58,7 +74,14 @@ public record InstallStep(
 
     public InstallStep withResources(List<Resource> updatedResources) {
         return new InstallStep(key, name, phase, targetScope, script, builtin, mode, maxWorkers,
-                failFast, updatedResources, arguments, outputs, verifyCommand, componentGroupKey);
+                failFast, updatedResources, arguments, outputs, verifyCommand, componentGroupKey,
+                type, verifyScript);
+    }
+
+    public InstallStep withVerification(Path updatedVerifyScript) {
+        return new InstallStep(key, name, phase, targetScope, script, builtin, mode, maxWorkers,
+                failFast, resources, arguments, outputs, verifyCommand, componentGroupKey,
+                type, updatedVerifyScript);
     }
 
     public record Resource(

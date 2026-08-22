@@ -73,8 +73,8 @@ public class JobStepNode {
                 ? "组件组前置步骤失败，已跳过" : skipMessage;
     }
     public void complete(JobService.NodeOutcome outcome) {
-        status = outcome.success() ? "success" : "failed";
-        exitCode = outcome.exitCode();
+        status = outcome.status();
+        exitCode = "skipped".equals(status) ? null : outcome.exitCode();
         message = outcome.message();
         logPath = outcome.logPath();
     }

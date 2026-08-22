@@ -111,13 +111,16 @@ public class InstallerController {
             @JsonProperty("stage_name") String stageName,
             @JsonProperty("stage_order") int stageOrder,
             @JsonProperty("step_order_in_stage") int stepOrderInStage,
+            @JsonProperty("step_type") String stepType,
+            @JsonProperty("has_strict_verification") boolean hasStrictVerification,
             @JsonProperty("target_scope") String targetScope,
             String mode,
             @JsonProperty("max_workers") int maxWorkers,
             @JsonProperty("required_resources") List<String> requiredResources) {
         static PlanItem from(int order, InstallStep step, InstallStepMetadata.Stage stage) {
             return new PlanItem(order, step.key(), step.name(), step.phase(),
-                    stage.key(), stage.name(), stage.order(), stage.stepOrder(), step.targetScope(),
+                    stage.key(), stage.name(), stage.order(), stage.stepOrder(),
+                    step.type().name(), step.verifyScript() != null, step.targetScope(),
                     step.mode(), step.maxWorkers(), step.resources().stream()
                             .map(resource -> resource.pathKey() == null
                                     ? resource.artifactKey() : resource.pathKey())

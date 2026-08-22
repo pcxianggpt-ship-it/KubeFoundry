@@ -16,8 +16,10 @@ import java.security.KeyPairGenerator;
 import java.security.spec.ECGenParameterSpec;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Assumptions;
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory;
 import org.apache.sshd.common.keyprovider.KeyPairProvider;
@@ -42,6 +44,7 @@ class RemoteStepRunnerTest {
     SshClientFactory clients;
     Path remoteRoot;
     List<String> commands;
+    Map<String, AtomicInteger> verificationCalls;
     KeyPair clientKey;
     Cluster cluster;
     Node node;
@@ -50,6 +53,7 @@ class RemoteStepRunnerTest {
     void startServer() throws Exception {
         remoteRoot = Files.createDirectory(temporaryDirectory.resolve("remote"));
         commands = new CopyOnWriteArrayList<>();
+        verificationCalls = new ConcurrentHashMap<>();
         server = SshServer.setUpDefaultServer();
         server.setPort(0);
         KeyPairProvider hostKeys = new SimpleGeneratorHostKeyProvider(
@@ -117,6 +121,105 @@ class RemoteStepRunnerTest {
                 .contains("success=true", "exit_code=0", "step_key=test-step");
         assertThat(Files.readString(evidence.resolve("checksums.sha256")))
                 .contains("runtime.env", "step.sh", "execution.log", "result.properties");
+    }
+
+    @Test
+    void skipsSatisfiedStepBeforeResolvingOrUploadingInstallResources() throws Exception {
+        Path script = temporaryDirectory.resolve("pre-satisfied-step.sh");
+        Path verify = temporaryDirectory.resolve("pre-satisfied-verify.sh");
+        Path missingResource = temporaryDirectory.resolve("must-not-be-resolved.tgz");
+        Files.writeString(script, "#!/bin/bash\n", StandardCharsets.UTF_8);
+        Files.writeString(verify, "#!/bin/bash\nexit 0\n", StandardCharsets.UTF_8);
+        InstallStep step = InstallStep.script(
+                "pre-satisfied", "已安装步骤", "test", "primary_control_plane", script,
+                "serial", 1, true,
+                List.of(InstallStep.Resource.local(missingResource, "file", "/tmp/missing.tgz")),
+                List.of(), List.of(), "").withVerification(verify);
+
+        JobService.NodeOutcome outcome = runner().run(42L, cluster, List.of(node), node, step);
+
+        assertThat(outcome.success()).isTrue();
+        assertThat(outcome.status()).isEqualTo("skipped");
+        assertThat(outcome.message()).isEqualTo("PREVERIFY_SATISFIED");
+        assertThat(outcome.verificationPhase()).isEqualTo("before");
+        assertThat(commands).noneMatch(command -> command.contains("bash ./step.sh"));
+        Path remoteStep = remoteRoot.resolve("tmp/kubefoundry/jobs/42/steps/pre-satisfied/cp-a");
+        assertThat(remoteStep.resolve("verify.sh")).isRegularFile();
+        assertThat(remoteStep.resolve("step.sh")).doesNotExist();
+        Path evidence = temporaryDirectory.resolve("data/jobs/42/evidence/pre-satisfied/cp-a");
+        assertThat(evidence.resolve("verification-before.properties"))
+                .hasContent("phase=before\nexit_code=0\n");
+    }
+
+    @Test
+    void installsOnlyAfterExitTenAndRequiresSuccessfulPostVerification() throws Exception {
+        Path script = temporaryDirectory.resolve("strict-install-step.sh");
+        Path verify = temporaryDirectory.resolve("strict-install-verify.sh");
+        Path resource = temporaryDirectory.resolve("strict-install-resource.tgz");
+        Files.writeString(script, "#!/bin/bash\n", StandardCharsets.UTF_8);
+        Files.writeString(verify, "#!/bin/bash\nexit 10\n", StandardCharsets.UTF_8);
+        Files.writeString(resource, "payload", StandardCharsets.UTF_8);
+        InstallStep step = InstallStep.script(
+                "strict-install", "严格验证安装", "test", "primary_control_plane", script,
+                "serial", 1, true,
+                List.of(InstallStep.Resource.local(resource, "file", "/tmp/strict-install.tgz")),
+                List.of(), List.of(), "").withVerification(verify);
+
+        JobService.NodeOutcome outcome = runner().run(42L, cluster, List.of(node), node, step);
+
+        assertThat(outcome.success()).isTrue();
+        assertThat(outcome.status()).isEqualTo("success");
+        assertThat(outcome.verificationPhase()).isEqualTo("after");
+        assertThat(commands.stream().filter(command -> command.contains("bash ./verify.sh"))).hasSize(2);
+        assertThat(commands.stream().filter(command -> command.contains("bash ./step.sh"))).hasSize(1);
+        assertThat(remoteRoot.resolve("tmp/strict-install.tgz")).hasContent("payload");
+        Path evidence = temporaryDirectory.resolve("data/jobs/42/evidence/strict-install/cp-a");
+        assertThat(evidence.resolve("verification-before.properties"))
+                .hasContent("phase=before\nexit_code=10\n");
+        assertThat(evidence.resolve("verification-after.properties"))
+                .hasContent("phase=after\nexit_code=0\n");
+    }
+
+    @Test
+    void rejectsVerificationConfigurationErrorWithoutRunningInstall() throws Exception {
+        Path script = temporaryDirectory.resolve("strict-error-step.sh");
+        Path verify = temporaryDirectory.resolve("strict-error-verify.sh");
+        Files.writeString(script, "#!/bin/bash\n", StandardCharsets.UTF_8);
+        Files.writeString(verify, "#!/bin/bash\nexit 20\n", StandardCharsets.UTF_8);
+        InstallStep step = InstallStep.script(
+                "strict-error", "验证配置错误", "test", "primary_control_plane", script,
+                "serial", 1, true, List.of(), List.of(), List.of(), "").withVerification(verify);
+
+        JobService.NodeOutcome outcome = runner().run(42L, cluster, List.of(node), node, step);
+
+        assertThat(outcome.success()).isFalse();
+        assertThat(outcome.message()).isEqualTo("PREVERIFY_FAILED/CONFIGURATION_ERROR/exit_code=20");
+        assertThat(outcome.verificationPhase()).isEqualTo("before");
+        assertThat(commands).noneMatch(command -> command.contains("bash ./step.sh"));
+    }
+
+    @Test
+    void distinguishesVerificationTimeoutAndUnknownExitCodes() throws Exception {
+        JobService.NodeOutcome timeout = runner().run(
+                42L, cluster, List.of(node), node, strictStep("strict-timeout"));
+        JobService.NodeOutcome unknown = runner().run(
+                42L, cluster, List.of(node), node, strictStep("strict-unknown"));
+
+        assertThat(timeout.success()).isFalse();
+        assertThat(timeout.message()).isEqualTo("PREVERIFY_FAILED/VERIFICATION_TIMEOUT/exit_code=21");
+        assertThat(unknown.success()).isFalse();
+        assertThat(unknown.message()).isEqualTo("PREVERIFY_FAILED/VERIFICATION_ERROR/exit_code=37");
+    }
+
+    @Test
+    void failsStepWhenPostVerificationDoesNotPass() throws Exception {
+        JobService.NodeOutcome outcome = runner().run(
+                42L, cluster, List.of(node), node, strictStep("strict-post-fail"));
+
+        assertThat(outcome.success()).isFalse();
+        assertThat(outcome.message()).isEqualTo("POSTVERIFY_FAILED/CONFIGURATION_ERROR/exit_code=20");
+        assertThat(outcome.verificationPhase()).isEqualTo("after");
+        assertThat(commands.stream().filter(command -> command.contains("bash ./step.sh"))).hasSize(1);
     }
 
     @Test
@@ -383,6 +486,16 @@ class RemoteStepRunnerTest {
                 temporaryDirectory.resolve("data"));
     }
 
+    private InstallStep strictStep(String key) throws IOException {
+        Path script = temporaryDirectory.resolve(key + "-step.sh");
+        Path verify = temporaryDirectory.resolve(key + "-verify.sh");
+        Files.writeString(script, "#!/bin/bash\n", StandardCharsets.UTF_8);
+        Files.writeString(verify, "#!/bin/bash\n", StandardCharsets.UTF_8);
+        return InstallStep.script(key, key, "test", "primary_control_plane", script,
+                "serial", 1, true, List.of(), List.of(), List.of(), "")
+                .withVerification(verify);
+    }
+
     private static String availableBash() {
         List<String> candidates = System.getProperty("os.name").startsWith("Windows")
                 ? List.of("C:/Program Files/Git/bin/bash.exe", "bash")
@@ -424,6 +537,25 @@ class RemoteStepRunnerTest {
                             .resolve(getCommand().contains("/42/") ? "42" :
                                     getCommand().contains("/7/") ? "7" : "8"));
                     onExit(0);
+                } else if (getCommand().contains("/strict-install/")
+                        && getCommand().contains("bash ./verify.sh")) {
+                    int attempt = verificationCalls.computeIfAbsent(
+                            "strict-install", ignored -> new AtomicInteger()).getAndIncrement();
+                    onExit(attempt == 0 ? 10 : 0);
+                } else if (getCommand().contains("/strict-error/")
+                        && getCommand().contains("bash ./verify.sh")) {
+                    onExit(20);
+                } else if (getCommand().contains("/strict-timeout/")
+                        && getCommand().contains("bash ./verify.sh")) {
+                    onExit(21);
+                } else if (getCommand().contains("/strict-unknown/")
+                        && getCommand().contains("bash ./verify.sh")) {
+                    onExit(37);
+                } else if (getCommand().contains("/strict-post-fail/")
+                        && getCommand().contains("bash ./verify.sh")) {
+                    int attempt = verificationCalls.computeIfAbsent(
+                            "strict-post-fail", ignored -> new AtomicInteger()).getAndIncrement();
+                    onExit(attempt == 0 ? 10 : 20);
                 } else if (getCommand().contains("/tmp/kubefoundry/jobs/7/steps/")
                         && getCommand().contains("bash ./step.sh")) {
                     getErrorStream().write("failed\n".getBytes(StandardCharsets.UTF_8));

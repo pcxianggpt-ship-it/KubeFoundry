@@ -125,7 +125,9 @@ class ApiContractTest {
                 .andExpect(jsonPath("$.items[0].stage_key").value("k8s_base"))
                 .andExpect(jsonPath("$.items[0].stage_name").value("Kubernetes 基础安装"))
                 .andExpect(jsonPath("$.items[0].stage_order").value(1))
-                .andExpect(jsonPath("$.items[0].step_order_in_stage").value(1));
+                .andExpect(jsonPath("$.items[0].step_order_in_stage").value(1))
+                .andExpect(jsonPath("$.items[0].step_type").value("INSTALL"))
+                .andExpect(jsonPath("$.items[0].has_strict_verification").value(false));
         mvc.perform(get("/api/jobs").param("cluster_id", cluster.getId().toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].job_type").value("install"))

@@ -32,6 +32,7 @@ public class RemoteStepRunner {
 
     private static final Duration DIRECTORY_TIMEOUT = Duration.ofSeconds(60);
     private static final Duration STEP_TIMEOUT = Duration.ofHours(1);
+    private static final Duration VERIFICATION_TIMEOUT = Duration.ofMinutes(2);
 
     private final SshService ssh;
     private final RemoteSessionProvider sessions;
@@ -113,11 +114,59 @@ public class RemoteStepRunner {
         List<Node> normalizedNodes = InstallationNodes.normalize(nodes);
         Path logPath = dataDirectory.resolve("jobs").resolve(Long.toString(jobId))
                 .resolve("logs").resolve(step.key()).resolve(node.getHostname() + ".log");
+        java.util.concurrent.atomic.AtomicReference<String> activeVerificationPhase =
+                new java.util.concurrent.atomic.AtomicReference<>();
         try {
             if ("cluster_health".equals(step.builtin())) {
                 return runClusterHealth(jobId, cluster, normalizedNodes, node, step.key());
             }
             Files.createDirectories(logPath.getParent());
+            Path workDirectory = dataDirectory.resolve("jobs").resolve(Long.toString(jobId))
+                    .resolve("work").resolve(step.key()).resolve(node.getHostname());
+            Files.createDirectories(workDirectory);
+            Path runtimeFile = workDirectory.resolve("runtime.env");
+            Path scriptFile = workDirectory.resolve("step.sh");
+            Path verifyFile = workDirectory.resolve("verify.sh");
+            Path phase3Library = workDirectory.resolve("phase3.sh");
+            Files.writeString(runtimeFile, runtimeRenderer.render(cluster, normalizedNodes, node, settings,
+                    runtimeEnvironment(jobId, cluster, step, List.of())),
+                    StandardCharsets.UTF_8);
+            writePhase3Library(phase3Library, step);
+            String remoteDirectory = remoteStepDirectory(jobId, step, node);
+
+            if (usesStrictVerification(step)) {
+                writeVerifyScript(verifyFile, step);
+                createEvidenceSnapshot(jobId, step, node, workDirectory, List.of());
+                activeVerificationPhase.set("before");
+                SshCommandResult before = sessions.withSession(cluster, node, session -> {
+                    createRemoteDirectories(session, remoteDirectory, List.of());
+                    ssh.upload(session, runtimeFile, remoteDirectory + "runtime.env");
+                    ssh.upload(session, verifyFile, remoteDirectory + "verify.sh");
+                    if (Files.exists(phase3Library)) {
+                        ssh.upload(session, phase3Library, remoteDirectory + "phase3.sh");
+                    }
+                    restrictRemoteJobDirectory(session, jobId);
+                    return ssh.execute(session, buildVerificationCommand(remoteDirectory, step),
+                            VERIFICATION_TIMEOUT);
+                });
+                activeVerificationPhase.set(null);
+                writeVerificationEvidence(jobId, step, node, "before", before);
+                if (before.exitCode() == 0) {
+                    writeLog(logPath, before.stdout(), before.stderr());
+                    writeEvidenceOutcome(jobId, step.key(), node, logPath,
+                            true, 0, "PREVERIFY_SATISFIED");
+                    return JobService.NodeOutcome.preverified(logPath.toString());
+                }
+                if (before.exitCode() != 10) {
+                    String message = verificationFailure("PREVERIFY", before.exitCode());
+                    writeLog(logPath, before.stdout(), before.stderr());
+                    writeEvidenceOutcome(jobId, step.key(), node, logPath,
+                            false, before.exitCode(), message);
+                    return new JobService.NodeOutcome(false, before.exitCode(), message,
+                            logPath.toString(), "failed", "before");
+                }
+            }
+
             ResourceResolution resources = resolveResources(jobId, step, settings);
             if (resources.error() != null) {
                 writeLog(logPath, "", resources.error() + "\n");
@@ -125,25 +174,23 @@ public class RemoteStepRunner {
                         false, 2, resources.error());
                 return new JobService.NodeOutcome(false, 2, resources.error(), logPath.toString());
             }
-
-            Path workDirectory = dataDirectory.resolve("jobs").resolve(Long.toString(jobId))
-                    .resolve("work").resolve(step.key()).resolve(node.getHostname());
-            Files.createDirectories(workDirectory);
-            Path runtimeFile = workDirectory.resolve("runtime.env");
-            Path scriptFile = workDirectory.resolve("step.sh");
-            Path phase3Library = workDirectory.resolve("phase3.sh");
             Files.writeString(runtimeFile, runtimeRenderer.render(cluster, normalizedNodes, node, settings,
                     runtimeEnvironment(jobId, cluster, step, resources.files())),
                     StandardCharsets.UTF_8);
             writeStepScript(scriptFile, cluster, normalizedNodes, step);
-            writePhase3Library(phase3Library, step);
             createEvidenceSnapshot(jobId, step, node, workDirectory, resources.files());
-            String remoteDirectory = remoteStepDirectory(jobId, step, node);
 
+            java.util.concurrent.atomic.AtomicBoolean postVerification =
+                    new java.util.concurrent.atomic.AtomicBoolean(false);
+            java.util.concurrent.atomic.AtomicReference<SshCommandResult> afterResult =
+                    new java.util.concurrent.atomic.AtomicReference<>();
             SshCommandResult result = sessions.withSession(cluster, node, session -> {
                 createRemoteDirectories(session, remoteDirectory, resources.files());
                 ssh.upload(session, runtimeFile, remoteDirectory + "runtime.env");
                 ssh.upload(session, scriptFile, remoteDirectory + "step.sh");
+                if (Files.exists(verifyFile)) {
+                    ssh.upload(session, verifyFile, remoteDirectory + "verify.sh");
+                }
                 if (Files.exists(phase3Library)) {
                     ssh.upload(session, phase3Library, remoteDirectory + "phase3.sh");
                 }
@@ -159,24 +206,46 @@ public class RemoteStepRunner {
                         session, buildExecutionCommand(
                                 remoteDirectory, step, cluster, normalizedNodes, node),
                         STEP_TIMEOUT);
-                if (executed.exitCode() == 0) collectOutputs(session, jobId, step);
-                return executed;
+                if (executed.exitCode() != 0 || !usesStrictVerification(step)) {
+                    if (executed.exitCode() == 0) collectOutputs(session, jobId, step);
+                    return executed;
+                }
+                postVerification.set(true);
+                activeVerificationPhase.set("after");
+                SshCommandResult verified = ssh.execute(
+                        session, buildVerificationCommand(remoteDirectory, step), VERIFICATION_TIMEOUT);
+                activeVerificationPhase.set(null);
+                afterResult.set(verified);
+                if (verified.exitCode() == 0) collectOutputs(session, jobId, step);
+                return new SshCommandResult(verified.exitCode(),
+                        textOrEmpty(executed.stdout()) + textOrEmpty(verified.stdout()),
+                        textOrEmpty(executed.stderr()) + textOrEmpty(verified.stderr()));
             });
+            if (afterResult.get() != null) {
+                writeVerificationEvidence(jobId, step, node, "after", afterResult.get());
+            }
             writeLog(logPath, result.stdout(), result.stderr());
             boolean success = result.exitCode() == 0;
-            String message = success ? "执行成功" : "执行失败，退出码: " + result.exitCode();
+            String message = success ? "执行成功" : postVerification.get()
+                    ? verificationFailure("POSTVERIFY", result.exitCode())
+                    : "执行失败，退出码: " + result.exitCode();
             writeEvidenceOutcome(jobId, step.key(), node, logPath, success, result.exitCode(), message);
+            if (success) captureOutputEvidence(jobId, step, node);
             return new JobService.NodeOutcome(
-                    success, result.exitCode(), message, logPath.toString());
+                    success, result.exitCode(), message, logPath.toString(),
+                    success ? "success" : "failed", postVerification.get() ? "after" : null);
         } catch (Exception exception) {
-            String message = stableMessage(exception);
+            String verificationPhase = activeVerificationPhase.get();
+            String message = verificationPhase == null ? stableMessage(exception)
+                    : verificationException(verificationPhase, exception);
             try {
                 writeLog(logPath, "", message + "\n");
                 writeEvidenceOutcome(jobId, step.key(), node, logPath, false, 1, message);
             } catch (IOException suppressed) {
                 exception.addSuppressed(suppressed);
             }
-            return new JobService.NodeOutcome(false, 1, message, logPath.toString());
+            return new JobService.NodeOutcome(false, 1, message, logPath.toString(), "failed",
+                    verificationPhase);
         }
     }
 
@@ -304,10 +373,44 @@ public class RemoteStepRunner {
         for (InstallStep.Argument argument : step.arguments()) {
             inner.append(' ').append(RuntimeEnvRenderer.shellQuote(resolveArgument(argument, nodes)));
         }
-        if (!step.verifyCommand().isBlank()) {
+        if (!usesStrictVerification(step) && !step.verifyCommand().isBlank()) {
             inner.append(" && { ").append(formatVerify(step.verifyCommand(), node, nodes)).append("; }");
         }
         return "bash -lc " + RuntimeEnvRenderer.shellQuote(inner.toString());
+    }
+
+    private static String buildVerificationCommand(String remoteDirectory, InstallStep step) {
+        String inner = "cd " + RuntimeEnvRenderer.shellQuote(remoteDirectory)
+                + " && chmod +x ./verify.sh && source ./runtime.env"
+                + ("kubemate_component".equals(step.phase()) ? " && source ./phase3.sh" : "")
+                + " && bash ./verify.sh";
+        return "bash -lc " + RuntimeEnvRenderer.shellQuote(inner);
+    }
+
+    private static boolean usesStrictVerification(InstallStep step) {
+        return step.type() == InstallStep.StepType.INSTALL && step.verifyScript() != null;
+    }
+
+    private static String verificationFailure(String phase, int exitCode) {
+        String category = switch (exitCode) {
+            case 20 -> "CONFIGURATION_ERROR";
+            case 21 -> "VERIFICATION_TIMEOUT";
+            default -> "VERIFICATION_ERROR";
+        };
+        return phase + "_FAILED/" + category + "/exit_code=" + exitCode;
+    }
+
+    private static String verificationException(String phase, Exception exception) {
+        String normalizedPhase = "after".equals(phase) ? "POSTVERIFY" : "PREVERIFY";
+        String detail = stableMessage(exception);
+        String normalizedDetail = detail.toLowerCase(java.util.Locale.ROOT);
+        String category = normalizedDetail.contains("timeout") || normalizedDetail.contains("超时")
+                ? "VERIFICATION_TIMEOUT" : "VERIFICATION_EXCEPTION";
+        return normalizedPhase + "_FAILED/" + category;
+    }
+
+    private static String textOrEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private ResourceResolution resolveResources(
@@ -390,6 +493,16 @@ public class RemoteStepRunner {
             throw new IOException("安装脚本不存在: " + step.script());
         }
         Files.copy(step.script(), target, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    private static void writeVerifyScript(Path target, InstallStep step) throws IOException {
+        if (step.verifyScript() == null || !Files.isRegularFile(step.verifyScript())) {
+            throw new IOException("验证脚本不存在: " + step.verifyScript());
+        }
+        if (Files.isSymbolicLink(step.verifyScript())) {
+            throw new IOException("验证脚本不能是符号链接: " + step.verifyScript());
+        }
+        Files.copy(step.verifyScript(), target, StandardCopyOption.REPLACE_EXISTING);
     }
 
     private static void writePhase3Library(Path target, InstallStep step) throws IOException {
@@ -510,6 +623,7 @@ public class RemoteStepRunner {
         Files.createDirectories(evidence);
         copyIfPresent(workDirectory.resolve("runtime.env"), evidence.resolve("runtime.env"));
         copyIfPresent(workDirectory.resolve("step.sh"), evidence.resolve("step.sh"));
+        copyIfPresent(workDirectory.resolve("verify.sh"), evidence.resolve("verify.sh"));
         copyIfPresent(workDirectory.resolve("phase3.sh"), evidence.resolve("phase3.sh"));
         Path resourceRoot = evidence.resolve("resources");
         Files.createDirectories(resourceRoot);
@@ -519,6 +633,39 @@ public class RemoteStepRunner {
                     ? "resource" : resource.localPath().getFileName().toString();
             copyEvidenceTree(resource.localPath(), resourceRoot.resolve(
                     String.format("%02d-%s", index + 1, safeEvidenceSegment(name, "资源名称"))));
+        }
+        writeEvidenceChecksums(evidence);
+        restrictLocalEvidencePermissions(evidence);
+    }
+
+    private void writeVerificationEvidence(
+            long jobId,
+            InstallStep step,
+            Node node,
+            String phase,
+            SshCommandResult result) throws IOException {
+        Path evidence = evidenceDirectory(jobId, step, node);
+        Files.createDirectories(evidence);
+        String contents = (result.stdout() == null ? "" : result.stdout())
+                + (result.stderr() == null ? "" : result.stderr());
+        Files.writeString(evidence.resolve("verification-" + phase + ".log"), contents,
+                StandardCharsets.UTF_8);
+        Files.writeString(evidence.resolve("verification-" + phase + ".properties"),
+                "phase=" + phase + "\nexit_code=" + result.exitCode() + "\n",
+                StandardCharsets.UTF_8);
+        writeEvidenceChecksums(evidence);
+        restrictLocalEvidencePermissions(evidence);
+    }
+
+    private void captureOutputEvidence(long jobId, InstallStep step, Node node) throws IOException {
+        if (step.outputs().isEmpty()) return;
+        Path evidence = evidenceDirectory(jobId, step, node);
+        Path outputDirectory = evidence.resolve("outputs");
+        Files.createDirectories(outputDirectory);
+        for (InstallStep.Output output : step.outputs()) {
+            Path source = dataDirectory.resolve("jobs").resolve(Long.toString(jobId))
+                    .resolve("artifacts").resolve(output.key());
+            copyIfPresent(source, outputDirectory.resolve(safeEvidenceSegment(output.key(), "产物键")));
         }
         writeEvidenceChecksums(evidence);
         restrictLocalEvidencePermissions(evidence);

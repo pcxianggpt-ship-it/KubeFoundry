@@ -123,6 +123,33 @@ class JobServiceTest {
     }
 
     @Test
+    void aggregatesMixedPreverifiedAndInstalledNodesAsSuccessfulStep() throws Exception {
+        Cluster cluster = clusters.save(new Cluster("mixed-preverify-test"));
+        Node satisfied = node(cluster, "node-satisfied", "10.0.0.31");
+        Node installed = node(cluster, "node-installed", "10.0.0.32");
+        JobService.StepDefinition step = new JobService.StepDefinition(
+                "混合验证步骤", 1, 2, false,
+                List.of(
+                        JobService.NodeOperation.withOutcome(satisfied.getId(),
+                                ignored -> JobService.NodeOutcome.preverified("before.log")),
+                        JobService.NodeOperation.withOutcome(installed.getId(),
+                                ignored -> new JobService.NodeOutcome(
+                                        true, 0, "执行成功", "after.log",
+                                        "success", "after"))));
+
+        long jobId = service.submit(new JobService.JobDefinition(
+                cluster.getId(), "install", List.of(step)));
+
+        assertThat(executor.awaitIdle(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(jobs.findById(jobId).orElseThrow().getStatus()).isEqualTo("success");
+        JobStep persistedStep = steps.findByJobIdOrderByOrder(jobId).get(0);
+        assertThat(persistedStep.getStatus()).isEqualTo("success");
+        assertThat(stepNodes.findByStepIdOrderById(persistedStep.getId()))
+                .extracting(JobStepNode::getStatus)
+                .containsExactlyInAnyOrder("skipped", "success");
+    }
+
+    @Test
     void submitPersistsPartialFailureAndOrderedEvents() throws Exception {
         Cluster cluster = clusters.save(new Cluster("execution-test"));
         Node first = node(cluster, "node-1", "10.0.0.1");

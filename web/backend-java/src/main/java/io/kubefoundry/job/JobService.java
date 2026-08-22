@@ -264,11 +264,21 @@ public class JobService {
                     failStepAndJob(jobId, job, step, "节点任务失败");
                     return;
                 }
-                step.markSuccess();
+                List<JobStepNode> completedNodes = listStepNodes(step.getId());
+                boolean allNodesPreverified = !completedNodes.isEmpty() && completedNodes.stream()
+                        .allMatch(item -> "skipped".equals(item.getStatus())
+                                && "PREVERIFY_SATISFIED".equals(item.getMessage()));
+                if (allNodesPreverified) step.markSkipped("PREVERIFY_SATISFIED");
+                else step.markSuccess();
                 steps.saveAndFlush(step);
                 componentStates.onStepSucceeded(job, step.getComponentGroupKey());
-                events.publish(jobId, "step.status", Map.of(
-                        "step_id", step.getId(), "status", "success"));
+                Map<String, Object> stepPayload = new HashMap<>();
+                stepPayload.put("step_id", step.getId());
+                stepPayload.put("status", step.getStatus());
+                if (step.getStatusReason() != null) {
+                    stepPayload.put("reason", step.getStatusReason());
+                }
+                events.publish(jobId, "step.status", Map.copyOf(stepPayload));
             }
             Set<String> componentGroupKeys = definition.componentGroupKeys();
             boolean allComponentGroupsFailed = componentAwareJob && !componentGroupKeys.isEmpty()
@@ -549,8 +559,27 @@ public class JobService {
         NodeOutcome run(long jobId) throws Exception { return action.run(jobId); }
     }
 
-    public record NodeOutcome(boolean success, int exitCode, String message, String logPath) {
+    public record NodeOutcome(
+            boolean success,
+            int exitCode,
+            String message,
+            String logPath,
+            String status,
+            String verificationPhase) {
+        public NodeOutcome(boolean success, int exitCode, String message, String logPath) {
+            this(success, exitCode, message, logPath, success ? "success" : "failed", null);
+        }
+
         public NodeOutcome {
+            status = status == null || status.isBlank() ? (success ? "success" : "failed") : status;
+            if (!Set.of("success", "failed", "skipped").contains(status)) {
+                throw new IllegalArgumentException("不支持的节点结果状态: " + status);
+            }
+            if ("failed".equals(status) == success) {
+                throw new IllegalArgumentException("节点结果状态与成功标记不一致");
+            }
+            verificationPhase = verificationPhase == null || verificationPhase.isBlank()
+                    ? null : verificationPhase;
             message = message == null || message.isBlank()
                     ? (success ? "执行成功" : "执行失败，退出码: " + exitCode)
                     : message;
@@ -561,14 +590,20 @@ public class JobService {
             return new NodeOutcome(true, 0, "执行成功", "");
         }
 
+        public static NodeOutcome preverified(String logPath) {
+            return new NodeOutcome(true, 0, "PREVERIFY_SATISFIED", logPath,
+                    "skipped", "before");
+        }
+
         Map<String, Object> eventPayload(long nodeId, String hostname) {
             Map<String, Object> payload = new HashMap<>();
             payload.put("node_id", nodeId);
             payload.put("hostname", hostname);
-            payload.put("status", success ? "success" : "failed");
-            payload.put("exit_code", exitCode);
+            payload.put("status", status);
+            if (!"skipped".equals(status)) payload.put("exit_code", exitCode);
             payload.put("message", message);
             payload.put("log_path", logPath);
+            if (verificationPhase != null) payload.put("verification_phase", verificationPhase);
             return Map.copyOf(payload);
         }
     }
