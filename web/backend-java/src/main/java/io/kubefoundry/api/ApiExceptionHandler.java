@@ -7,6 +7,7 @@ import io.kubefoundry.job.JobQueueFullException;
 import io.kubefoundry.job.JobNotFoundException;
 import io.kubefoundry.installer.ActiveInstallerJobException;
 import io.kubefoundry.installer.InstallationReadinessException;
+import io.kubefoundry.installer.InstallResumeException;
 import io.kubefoundry.installer.ResetConfirmationMismatchException;
 import io.kubefoundry.ssh.NodeTestService.ActiveNodeTestException;
 import io.kubefoundry.cluster.ClusterComponentService.ComponentConfigurationException;
@@ -83,6 +84,12 @@ public class ApiExceptionHandler {
                 "code", "INSTALLER_JOB_ACTIVE",
                 "message", exception.getMessage(),
                 "job_id", exception.jobId()));
+    }
+
+    @ExceptionHandler(InstallResumeException.class)
+    public ResponseEntity<Map<String, String>> installResume(InstallResumeException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                "code", exception.code(), "message", exception.getMessage()));
     }
 
     @ExceptionHandler(ResetConfirmationMismatchException.class)

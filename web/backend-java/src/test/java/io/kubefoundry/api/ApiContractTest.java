@@ -12,6 +12,8 @@ import io.kubefoundry.job.JobStepNode;
 import io.kubefoundry.job.JobStepNodeRepository;
 import io.kubefoundry.job.JobStepRepository;
 import io.kubefoundry.installer.ComponentInstallService;
+import io.kubefoundry.installer.InstallResumeException;
+import io.kubefoundry.installer.InstallResumeService;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -50,6 +52,7 @@ class ApiContractTest {
     @Autowired JobStepRepository steps;
     @Autowired JobStepNodeRepository stepNodes;
     @MockBean ComponentInstallService componentInstalls;
+    @MockBean InstallResumeService resumes;
 
     private final Path dataDirectory = Path.of("target/api-contract-data").toAbsolutePath();
     private Cluster cluster;
@@ -80,6 +83,7 @@ class ApiContractTest {
         job = new Job(cluster, "install");
         job.markRunning();
         job = jobs.saveAndFlush(job);
+        when(resumes.resume(cluster.getId(), job.getId())).thenReturn(77L);
         JobStep step = steps.saveAndFlush(new JobStep(job, "安装 containerd", 1));
 
         Path log = dataDirectory.resolve("jobs").resolve(job.getId().toString())
@@ -153,6 +157,13 @@ class ApiContractTest {
         mvc.perform(post("/api/clusters/{id}/components/install", cluster.getId()))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.job_id").value(55));
+        mvc.perform(post("/api/clusters/{clusterId}/jobs/{jobId}/resume",
+                        cluster.getId(), job.getId()))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.job_id").value(77))
+                .andExpect(jsonPath("$.status").value("pending"))
+                .andExpect(jsonPath("$.source_job_id").value(job.getId()))
+                .andExpect(jsonPath("$.run_mode").value("resume"));
     }
 
     @Test
@@ -168,5 +179,17 @@ class ApiContractTest {
         mvc.perform(get("/api/jobs/999999/logs"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("JOB_NOT_FOUND"));
+    }
+
+    @Test
+    void returnsStableResumeAdmissionError() throws Exception {
+        when(resumes.resume(cluster.getId(), job.getId())).thenThrow(new InstallResumeException(
+                "RESUME_SOURCE_NOT_SUPPORTED", "该任务状态不支持续跑"));
+
+        mvc.perform(post("/api/clusters/{clusterId}/jobs/{jobId}/resume",
+                        cluster.getId(), job.getId()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("RESUME_SOURCE_NOT_SUPPORTED"))
+                .andExpect(jsonPath("$.message").value("该任务状态不支持续跑"));
     }
 }

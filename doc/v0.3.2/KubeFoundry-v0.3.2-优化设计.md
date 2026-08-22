@@ -93,6 +93,15 @@ POST /api/clusters/{clusterId}/jobs/{sourceJobId}/resume
 - 节点身份、SSH 连接参数或关键路径与来源快照不一致时拒绝续跑，要求重新预检或人工确认。
 - 来源任务和新任务永久保留，通过 `source_job_id` 形成审计链，不允许循环引用。
 
+v0.3.2 完整快照额外保存以下非敏感执行基线：
+
+- Pod/Service 网段、Registry 地址和端口、Kubemate 开关等集群安装参数。
+- 每个节点解析后的 `paths/env/advanced` 运行参数。
+- 节点主机指纹和认证信息 SHA-256 指纹；不保存明文密码、密文、IV、Token 或私钥。
+- 介质相对路径和 SHA-256。续跑创建时只绑定来源校验和，不提前读取大文件；步骤确需安装时再校验实际介质。
+
+缺少上述字段或 `componentPlanVersion` 不是 `v0.3.2` 的历史快照只允许查看，不开放续跑。
+
 数据库迁移新增：
 
 ```text
@@ -435,6 +444,15 @@ kube-media/03.setup_file/v1.30.14/helmapp/redis/
 | `GET /api/jobs/{jobId}/steps` | 增加步骤键和部署单元字段 |
 | `GET /api/clusters/{clusterId}/install-plan` | 增加步骤键、部署单元及组内顺序 |
 | `GET/PUT /api/clusters/{clusterId}/components` | `storage_observability.config` 增加 MinIO 资源字段；保存时不校验 Worker 数量 |
+
+续跑成功返回 `202 Accepted`。同步准入错误码冻结如下：
+
+| HTTP | 错误码 | 场景 |
+| --- | --- | --- |
+| 404 | `CLUSTER_NOT_FOUND` / `JOB_NOT_FOUND` | 集群或来源任务不存在 |
+| 409 | `INSTALLER_JOB_ACTIVE` | 同一集群存在活动安装、组件安装、预检或重置任务 |
+| 409 | `RESUME_SOURCE_NOT_SUPPORTED` | 来源跨集群、类型不支持或状态不是 `failed/interrupted/partial_success` |
+| 409 | `RESUME_SNAPSHOT_MISMATCH` | 快照缺失/历史不兼容、配置或节点漂移、计划/目标节点不一致、介质校验信息不完整 |
 
 稳定状态原因码新增：
 

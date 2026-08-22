@@ -54,6 +54,33 @@ class ComponentMediaServiceTest {
     }
 
     @Test
+    void resumeBindsSnapshotChecksumWithoutReadingMediaBeforePreverification() {
+        ComponentMediaService media = new ComponentMediaService(temporaryDirectory);
+        InstallStep.Resource missing = InstallStep.Resource.local(temporaryDirectory.resolve("missing"), "file",
+                "/tmp/kubefoundry/jobs/{job_id}/resources/shared/missing");
+        InstallStep step = new InstallStep("resource", "Resource", "component", "primary_control_plane",
+                temporaryDirectory.resolve("script.sh"), null, "serial", 1, true, List.of(missing),
+                List.of(), List.of(), "", null);
+        InstallationSnapshotPayload base = snapshot("amd64");
+        InstallationSnapshotPayload source = new InstallationSnapshotPayload(
+                base.clusterId(), base.clusterName(), base.kubernetesVersion(), base.kubernetesWorkDir(),
+                base.imageRegistryType(), base.nodes(), base.componentConfigurationVersion(),
+                base.componentGroups(), InstallationSnapshotPayload.COMPONENT_PLAN_VERSION,
+                Map.of("missing", "a".repeat(64)));
+
+        InstallPlan resumed = media.applySnapshotChecksums(new InstallPlan(List.of(step)), source);
+
+        assertThat(resumed.require("resource").resources().get(0).checksum())
+                .isEqualTo("a".repeat(64));
+        assertThat(temporaryDirectory.resolve("missing")).doesNotExist();
+
+        assertThatThrownBy(() -> media.applySnapshotChecksums(
+                new InstallPlan(List.of(step)), base))
+                .isInstanceOf(InstallResumeException.class)
+                .hasMessageContaining("校验信息");
+    }
+
+    @Test
     void assignsEveryComponentStepAnIndependentPermanentRemoteResourceDirectory() throws Exception {
         Path minio = temporaryDirectory.resolve(
                 "kube-media/03.setup_file/v1.29.3/minio");

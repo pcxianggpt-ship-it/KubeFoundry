@@ -12,6 +12,8 @@ import io.kubefoundry.job.JobRepository;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,16 +24,28 @@ public class InstallationSnapshotService {
     private final JobRepository jobs;
     private final ClusterComponentRepository components;
     private final ObjectMapper mapper;
+    private final ClusterSettingsService settings;
 
+    @Autowired
     public InstallationSnapshotService(
             InstallationSnapshotRepository snapshots,
             JobRepository jobs,
             ClusterComponentRepository components,
-            ObjectMapper mapper) {
+            ObjectMapper mapper,
+            ClusterSettingsService settings) {
         this.snapshots = snapshots;
         this.jobs = jobs;
         this.components = components;
         this.mapper = mapper;
+        this.settings = settings;
+    }
+
+    InstallationSnapshotService(
+            InstallationSnapshotRepository snapshots,
+            JobRepository jobs,
+            ClusterComponentRepository components,
+            ObjectMapper mapper) {
+        this(snapshots, jobs, components, mapper, null);
     }
 
     @Transactional
@@ -50,8 +64,10 @@ public class InstallationSnapshotService {
         if (!job.getCluster().getId().equals(cluster.getId())) {
             throw new IllegalArgumentException("安装快照所属集群不匹配");
         }
-        InstallationSnapshotPayload payload = InstallationSnapshotPayload.capture(
-                cluster, nodes, componentGroups(cluster.getId()), mediaChecksums);
+        InstallationSnapshotPayload payload = withRuntimeSettings(
+                InstallationSnapshotPayload.capture(
+                        cluster, nodes, componentGroups(cluster.getId()), mediaChecksums),
+                cluster, nodes);
         try {
             snapshots.save(new InstallationSnapshot(job, cluster, mapper.writeValueAsString(payload)));
         } catch (JsonProcessingException exception) {
@@ -71,8 +87,42 @@ public class InstallationSnapshotService {
         if (cluster == null || cluster.getId() == null) {
             throw new IllegalArgumentException("安装计划缺少集群");
         }
-        return InstallationSnapshotPayload.capture(cluster, nodes, componentGroups(cluster.getId()),
-                java.util.Map.of());
+        return withRuntimeSettings(InstallationSnapshotPayload.capture(
+                cluster, nodes, componentGroups(cluster.getId()), java.util.Map.of()), cluster, nodes);
+    }
+
+    private InstallationSnapshotPayload withRuntimeSettings(
+            InstallationSnapshotPayload payload, Cluster cluster, List<Node> nodes) {
+        if (settings == null) return payload;
+        Map<Long, InstallationSnapshotPayload.RuntimeConfiguration> values = new TreeMap<>();
+        for (Node node : InstallationNodes.normalize(nodes)) {
+            values.put(node.getId(), InstallationSnapshotPayload.RuntimeConfiguration.from(
+                    settings.runtimeSettings(cluster, node)));
+        }
+        return payload.withRuntimeSettings(values);
+    }
+
+    @Transactional(readOnly = true)
+    public InstallationSnapshotPayload payloadForJob(long jobId) {
+        InstallationSnapshot snapshot = snapshots.findByJobId(jobId)
+                .orElseThrow(() -> new InstallResumeException(
+                        "RESUME_SNAPSHOT_MISMATCH", "来源任务没有完整安装快照"));
+        return readPayload(snapshot);
+    }
+
+    @Transactional
+    public void copyForResume(long sourceJobId, long targetJobId) {
+        InstallationSnapshot source = snapshots.findByJobId(sourceJobId)
+                .orElseThrow(() -> new InstallResumeException(
+                        "RESUME_SNAPSHOT_MISMATCH", "来源任务没有完整安装快照"));
+        Job target = jobs.findById(targetJobId)
+                .orElseThrow(() -> new IllegalArgumentException("续跑任务不存在: " + targetJobId));
+        if (!source.getCluster().getId().equals(target.getCluster().getId())) {
+            throw new InstallResumeException(
+                    "RESUME_SOURCE_NOT_SUPPORTED", "来源任务不属于当前集群");
+        }
+        snapshots.save(new InstallationSnapshot(
+                target, target.getCluster(), source.getSnapshotJson()));
     }
 
     private java.util.Map<String, Object> parseConfig(ClusterComponent component) {
@@ -107,7 +157,9 @@ public class InstallationSnapshotService {
                 installPayload.componentConfigurationVersion(),
                 installPayload.componentGroups(),
                 installPayload.componentPlanVersion(),
-                mediaChecksums);
+                mediaChecksums,
+                installPayload.clusterConfiguration(),
+                installPayload.runtimeSettings());
     }
 
     private InstallationSnapshotPayload readPayload(InstallationSnapshot snapshot) {

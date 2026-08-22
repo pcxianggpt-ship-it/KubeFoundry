@@ -34,7 +34,9 @@ public class ComponentInstallationStateService {
         for (String groupKey : new LinkedHashSet<>(groupKeys)) {
             ClusterComponentState state = requireState(job, groupKey);
             if (!ClusterComponentState.NOT_INSTALLED.equals(state.getStatus())
-                    && !ClusterComponentState.FAILED.equals(state.getStatus())) {
+                    && !ClusterComponentState.FAILED.equals(state.getStatus())
+                    && !("resume".equals(job.getRunMode())
+                            && ClusterComponentState.INSTALLED.equals(state.getStatus()))) {
                 throw new IllegalStateException("组件组当前不可安装: " + groupKey);
             }
             state.markInstalling(job.getId());

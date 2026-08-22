@@ -96,6 +96,24 @@ public class ComponentMediaService {
         return Map.copyOf(checksums);
     }
 
+    /** Binds immutable source-snapshot checksums without reading large media before preverification. */
+    public InstallPlan applySnapshotChecksums(
+            InstallPlan plan, InstallationSnapshotPayload snapshot) {
+        List<InstallStep> steps = plan.steps().stream().map(step -> step.withResources(
+                step.resources().stream().map(resource -> {
+                    if (resource.localPath() == null) return resource;
+                    String key = relativeKey(resource.localPath());
+                    String checksum = snapshot.mediaChecksums().get(key);
+                    if (checksum == null) {
+                        throw new InstallResumeException(
+                                "RESUME_SNAPSHOT_MISMATCH",
+                                "来源快照缺少安装介质校验信息: " + key);
+                    }
+                    return resource.withChecksum(checksum);
+                }).toList())).toList();
+        return new InstallPlan(steps);
+    }
+
     private InstallStep.Resource verifyAndChecksum(InstallStep.Resource resource) {
         if (resource.localPath() == null) return resource;
         Path source = resource.localPath();

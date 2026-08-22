@@ -3,6 +3,10 @@ package io.kubefoundry.installer;
 import io.kubefoundry.cluster.Cluster;
 import io.kubefoundry.cluster.KubemateComponentCatalog;
 import io.kubefoundry.cluster.Node;
+import io.kubefoundry.credential.EncryptedCredential;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -22,9 +26,11 @@ public record InstallationSnapshotPayload(
         long componentConfigurationVersion,
         List<ComponentGroup> componentGroups,
         String componentPlanVersion,
-        Map<String, String> mediaChecksums) {
+        Map<String, String> mediaChecksums,
+        ClusterTarget clusterConfiguration,
+        Map<Long, RuntimeConfiguration> runtimeSettings) {
 
-    public static final String COMPONENT_PLAN_VERSION = "v0.3.1";
+    public static final String COMPONENT_PLAN_VERSION = "v0.3.2";
 
     public InstallationSnapshotPayload {
         clusterName = nonBlank(clusterName, "集群名称");
@@ -35,6 +41,24 @@ public record InstallationSnapshotPayload(
         componentGroups = componentGroups == null ? List.of() : List.copyOf(componentGroups);
         componentPlanVersion = nonBlank(valueOrDefault(componentPlanVersion, COMPONENT_PLAN_VERSION), "组件计划版本");
         mediaChecksums = normalizeChecksums(mediaChecksums);
+        runtimeSettings = runtimeSettings == null ? Map.of() : Map.copyOf(new TreeMap<>(runtimeSettings));
+    }
+
+    /** Compatibility constructor for historical snapshots, which are intentionally not resumable. */
+    public InstallationSnapshotPayload(
+            long clusterId,
+            String clusterName,
+            String kubernetesVersion,
+            String kubernetesWorkDir,
+            String imageRegistryType,
+            List<NodeTarget> nodes,
+            long componentConfigurationVersion,
+            List<ComponentGroup> componentGroups,
+            String componentPlanVersion,
+            Map<String, String> mediaChecksums) {
+        this(clusterId, clusterName, kubernetesVersion, kubernetesWorkDir, imageRegistryType,
+                nodes, componentConfigurationVersion, componentGroups, componentPlanVersion,
+                mediaChecksums, null, Map.of());
     }
 
     public static InstallationSnapshotPayload capture(Cluster cluster, List<Node> configuredNodes) {
@@ -63,7 +87,59 @@ public record InstallationSnapshotPayload(
                 cluster.getComponentConfigVersion(),
                 componentGroups,
                 COMPONENT_PLAN_VERSION,
-                mediaChecksums);
+                mediaChecksums,
+                ClusterTarget.from(cluster),
+                Map.of());
+    }
+
+    public InstallationSnapshotPayload withRuntimeSettings(Map<Long, RuntimeConfiguration> values) {
+        return new InstallationSnapshotPayload(
+                clusterId, clusterName, kubernetesVersion, kubernetesWorkDir, imageRegistryType,
+                nodes, componentConfigurationVersion, componentGroups, componentPlanVersion,
+                mediaChecksums, clusterConfiguration, values);
+    }
+
+    public record ClusterTarget(
+            String podSubnet,
+            String serviceSubnet,
+            String registryHostname,
+            String registryIp,
+            int registryPort,
+            boolean kubemateEnabled) {
+        public ClusterTarget {
+            podSubnet = valueOrEmpty(podSubnet);
+            serviceSubnet = valueOrEmpty(serviceSubnet);
+            registryHostname = valueOrEmpty(registryHostname);
+            registryIp = valueOrEmpty(registryIp);
+            if (registryPort < 1 || registryPort > 65535) {
+                throw new IllegalArgumentException("镜像仓库端口不合法");
+            }
+        }
+
+        static ClusterTarget from(Cluster cluster) {
+            return new ClusterTarget(
+                    cluster.getPodSubnet(), cluster.getServiceSubnet(), cluster.getRegistryHostname(),
+                    cluster.getRegistryIp(), cluster.getRegistryPort(), cluster.isKubemateEnabled());
+        }
+    }
+
+    public record RuntimeConfiguration(
+            Map<String, String> paths,
+            Map<String, String> env,
+            Map<String, Object> advanced) {
+        public RuntimeConfiguration {
+            paths = paths == null ? Map.of() : Map.copyOf(new TreeMap<>(paths));
+            env = env == null ? Map.of() : Map.copyOf(new TreeMap<>(env));
+            advanced = advanced == null ? Map.of() : Map.copyOf(new TreeMap<>(advanced));
+        }
+
+        static RuntimeConfiguration from(RuntimeSettings settings) {
+            return new RuntimeConfiguration(settings.paths(), settings.env(), settings.advanced());
+        }
+
+        RuntimeSettings toRuntimeSettings() {
+            return new RuntimeSettings(paths, env, advanced);
+        }
     }
 
     public record ComponentGroup(String key, boolean enabled, Map<String, Object> config) {
@@ -83,7 +159,9 @@ public record InstallationSnapshotPayload(
             String sshUser,
             int sshPort,
             Set<String> roles,
-            String architecture) {
+            String architecture,
+            String hostFingerprint,
+            String authenticationFingerprint) {
 
         public NodeTarget {
             hostname = nonBlank(hostname, "节点主机名");
@@ -94,6 +172,8 @@ public record InstallationSnapshotPayload(
             }
             roles = roles == null ? Set.of() : Set.copyOf(roles);
             architecture = architecture == null || architecture.isBlank() ? "amd64" : architecture.trim();
+            hostFingerprint = valueOrEmpty(hostFingerprint);
+            authenticationFingerprint = valueOrEmpty(authenticationFingerprint);
             if (roles.isEmpty()) throw new IllegalArgumentException("节点角色不能为空");
         }
 
@@ -107,7 +187,19 @@ public record InstallationSnapshotPayload(
             }
             return new NodeTarget(
                     node.getId(), node.getHostname(), node.getIp(), node.getSshUser(),
-                    node.getSshPort(), roles, node.getArchitecture());
+                    node.getSshPort(), roles, node.getArchitecture(), node.getHostFingerprint(),
+                    fingerprintCredential(node.encryptedPassword()));
+        }
+    }
+
+    private static String fingerprintCredential(EncryptedCredential credential) {
+        if (credential == null) return "none";
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            String value = credential.version() + "\u0000" + credential.iv() + "\u0000" + credential.ciphertext();
+            return java.util.HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("无法生成节点凭据指纹", exception);
         }
     }
 
