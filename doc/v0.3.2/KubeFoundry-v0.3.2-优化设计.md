@@ -18,7 +18,7 @@ v0.3.2 包含以下九项需求：
 1. 安装任务失败重跑与续跑，并在步骤执行前后运行验证脚本。
 2. 修复本地 YUM 仓库 HTTP 403。
 3. 安装计划和安装进度按部署单元分组。
-4. 为 MinIO 增加 PVC、CPU 和内存配置，并要求至少 4 个工作节点才能启用。
+4. 为 MinIO 增加 PVC、CPU 和内存配置，并在安装开始时校验至少配置 4 个正式工作节点。
 5. 在全部安装任务末尾增加 etcd 备份单元。
 6. 安装范围确认页的节点清单显示 IP。
 7. 重置流程不依赖尚未安装的 Helm。
@@ -280,19 +280,19 @@ exit_code=0
 
 ### 8.1 工作节点数量门禁
 
-MinIO 使用当前四节点 Tenant 拓扑，因此启用条件固定为工作节点数大于等于 4。这里的“工作节点”是当前集群内 `is_draft=false` 且角色包含 `worker` 的正式节点，不把仅有 `control_plane` 或 `registry` 角色的节点计入数量。
+MinIO 使用当前四节点 Tenant 拓扑，因此安装条件固定为工作节点数大于等于 4。这里的“工作节点”是当前集群配置内 `is_draft=false` 且角色包含 `worker` 的正式节点，不把仅有 `control_plane` 或 `registry` 角色的节点计入数量。
 
-校验分三层执行：
+采用安装开始时的统一准入校验：
 
-1. Kubemate 组件页面同时加载节点列表；工作节点少于 4 个时，包含 MinIO 的 `storage_observability` 组开关保持关闭且不可开启，并提示“MinIO 至少需要 4 个工作节点，当前 N 个”。
-2. `PUT /api/clusters/{clusterId}/components` 在从关闭变为启用或保存已启用配置时重新查询正式节点数量；不足时返回 `409 MINIO_WORKER_COUNT_INSUFFICIENT`，`details` 包含 `required_workers=4` 和 `actual_workers=N`。
-3. 组件预检和安装准入再次基于不可变安装快照校验至少 4 个正式 Worker。
+1. Kubemate 组件页面负责 MinIO 参数编辑和保存，不根据 Worker 数量禁用组件开关，也不因 Worker 数量阻止保存。
+2. 创建安装或组件补装任务时，按本次安装快照中的集群配置统计正式 Worker 数量；MinIO 已启用且数量不足 4 个时，不创建执行任务，不运行任何安装步骤。
+3. 准入失败返回 `409 MINIO_WORKER_COUNT_INSUFFICIENT`，`details` 包含 `required_workers=4` 和 `actual_workers=N`。
 
 不增加“至少 4 个 Worker 为 Ready”或“至少 4 个 Worker 可调度”的专项预检。安装过程继续使用现有通用就绪验证检查 MinIO Tenant、Pod 和 PVC；若实际集群资源或节点状态导致工作负载无法就绪，则由 MinIO 安装步骤按通用超时和诊断规则失败，而不是由 Worker Ready 数量门禁提前拒绝。
 
 当前组件模型中 MinIO 固定属于 `storage_observability` 组，因此开启该组即视为启用 MinIO。若后续拆分独立 MinIO 开关，同一门禁应迁移到 MinIO 开关，不得继续无条件限制组内其他组件。
 
-已启用 MinIO 后如果删除或修改节点导致 Worker 少于 4 个，不自动关闭或丢弃已有配置；页面显示配置失效提示，预检和安装准入拒绝继续，直到恢复至少 4 个正式 Worker。
+已启用 MinIO 后如果删除或修改节点导致 Worker 少于 4 个，不自动关闭或丢弃已有配置；下次开始安装或组件补装时拒绝继续，直到集群配置恢复至少 4 个正式 Worker。
 
 ### 8.2 参数传递与渲染
 
@@ -434,7 +434,7 @@ kube-media/03.setup_file/v1.30.14/helmapp/redis/
 | `GET /api/jobs/{jobId}` | 增加 `source_job_id`、`run_mode` |
 | `GET /api/jobs/{jobId}/steps` | 增加步骤键和部署单元字段 |
 | `GET /api/clusters/{clusterId}/install-plan` | 增加步骤键、部署单元及组内顺序 |
-| `GET/PUT /api/clusters/{clusterId}/components` | `storage_observability.config` 增加 MinIO 资源字段 |
+| `GET/PUT /api/clusters/{clusterId}/components` | `storage_observability.config` 增加 MinIO 资源字段；保存时不校验 Worker 数量 |
 
 稳定状态原因码新增：
 
@@ -465,8 +465,8 @@ MINIO_WORKER_COUNT_INSUFFICIENT
 - 缺少验证脚本、验证脚本为符号链接或 CRLF 时计划/发布校验失败。
 - 部署单元元数据持久化和历史任务兼容迁移。
 - MinIO Quantity、request/limit 关系、未知字段和快照环境变量测试。
-- MinIO 在 0～3 个正式 Worker 时前端不可开启、后端保存返回稳定错误；4 个 Worker 时允许启用。
-- 已启用后 Worker 数降至 3 个时，预检和安装准入均拒绝执行且不静默修改配置。
+- MinIO 参数保存不受 Worker 数量限制；安装开始时，0～3 个正式 Worker 返回稳定错误，4 个及以上允许进入安装。
+- 已启用后 Worker 数降至 3 个时，下次安装或组件补装准入拒绝执行且不静默修改配置。
 - 第二阶段失败、无 Helm、有 Helm release 证据三类重置计划测试。
 
 ### 14.2 Vue
@@ -476,7 +476,7 @@ MINIO_WORKER_COUNT_INSUFFICIENT
 - 部署单元默认折叠、当前/失败自动展开、内部步骤状态与进度正确。
 - `PREVERIFY_SATISFIED` 显示“已验证并跳过”，不与依赖阻塞混淆。
 - MinIO 配置默认值、单位校验、只读锁定和后端错误回填。
-- MinIO 工作节点不足提示、开关禁用和后端绕过校验。
+- MinIO 参数保存、安装开始时工作节点不足提示和后端准入校验。
 - 安装确认页桌面和窄屏均显示节点 IP。
 
 ### 14.3 Bash 与真实环境
@@ -490,7 +490,7 @@ MINIO_WORKER_COUNT_INSUFFICIENT
 - 用户修改过的共享配置不会被重置脚本静默覆盖。
 - Redis 在断网环境完成安装、Sentinel quorum 验证和受控故障切换。
 - MinIO 配置值真实反映在 Tenant、PVC 和 Pod resources 中。
-- 恰好 4 个正式 Worker 时可启用 MinIO；不因 Ready Worker 数量单独拒绝安装，实际工作负载仍必须通过 Tenant、Pod 和 PVC 通用就绪验证。
+- 恰好 4 个正式 Worker 时允许开始 MinIO 安装；不因 Ready Worker 数量单独拒绝安装，实际工作负载仍必须通过 Tenant、Pod 和 PVC 通用就绪验证。
 
 ## 15. 实施顺序
 
@@ -544,7 +544,7 @@ MINIO_WORKER_COUNT_INSUFFICIENT
 2. Redis Sentinel 的固定 Chart 版本、Pod 数量、StorageClass 和密码交付方式。
 3. v0.3.1 已安装集群缺少配置基线备份时，重置允许清理到何种边界。
 4. 历史 v0.3.1 失败任务是否完全禁止续跑，还是提供一次只读迁移工具生成 v0.3.2 快照。
-5. MinIO 默认资源值是否继续采用当前清单的 `10Gi/250m/2/512Mi/4Gi`；至少 4 个工作节点的启用门禁已经确定，不再作为待评审项。
+5. MinIO 默认资源值是否继续采用当前清单的 `10Gi/250m/2/512Mi/4Gi`；安装开始时至少 4 个正式工作节点的准入规则已经确定，不再作为待评审项。
 
 ## 18. 完成定义
 
@@ -554,7 +554,7 @@ MINIO_WORKER_COUNT_INSUFFICIENT
 - YUM 仓库在 SELinux Enforcing 环境中通过本机与远程 HTTP 200 验收。
 - 安装进度按部署单元展示，状态与叶子步骤一致。
 - MinIO PVC、CPU 和内存配置经过前后端校验并真实应用。
-- MinIO 少于 4 个正式工作节点时无法启用；不设置 Ready Worker 数量门禁，实际部署仍需通过通用就绪验证。
+- MinIO 少于 4 个正式工作节点时无法开始安装；不设置 Ready Worker 数量门禁，实际部署仍需通过通用就绪验证。
 - etcd 备份是完整安装计划最后一个单元，并产生经过完整性验证的快照。
 - 安装确认节点清单展示 IP。
 - 安装失败且未安装 Helm 时仍可安全重置；重置不遗留 KubeFoundry 受管参数配置，也不覆盖用户改动。
