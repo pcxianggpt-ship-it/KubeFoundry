@@ -91,12 +91,43 @@ vf_verify_base() {
     local key="$1" value container_cmd
     case "${key}" in
         10-setup-yum-source)
-            [ -r /etc/yum.repos.d/k8s.repo ] || vf_missing "Kubernetes YUM 源未配置"
-            [ -d /var/www/html/repo ] || vf_missing "Kubernetes YUM 仓库目录不存在"
+            local web_root="${KF_YUM_WEB_ROOT:-/var/www/html}"
+            local repo_root="${web_root}/repo"
+            local metadata_file="${repo_root}/repodata/repomd.xml"
+            local repo_config="${KF_YUM_LOCAL_REPO_CONFIG:-/etc/yum.repos.d/k8s.repo}"
+            local metadata_url="${KF_YUM_LOCAL_METADATA_URL:-http://127.0.0.1/repo/repodata/repomd.xml}"
+            local httpd_user selinux_mode repo_context
+            [ -r "${repo_config}" ] || vf_missing "Kubernetes YUM 源未配置"
+            grep -qF '# Managed by KubeFoundry v0.3.2' "${repo_config}" \
+                || vf_missing "Kubernetes YUM 源不是 KubeFoundry 受管配置"
+            [ -f "${metadata_file}" ] || vf_missing "Kubernetes YUM 仓库元数据不存在"
             vf_systemctl_active httpd || vf_missing "httpd 未运行"
+            vf_systemctl_enabled httpd || vf_missing "httpd 未设为开机启动"
+            vf_require_tool ps
+            vf_require_tool awk
+            httpd_user=$(ps -eo user=,comm= 2>/dev/null \
+                | awk '$2 == "httpd" && $1 != "root" { print $1; exit }')
+            [ -n "${httpd_user}" ] || vf_error "无法确认 httpd 实际运行账户"
+            vf_require_tool runuser
+            vf_run "${KF_VERIFY_COMMAND_TIMEOUT:-30s}" runuser -u "${httpd_user}" -- \
+                test -r "${metadata_file}" || vf_missing "httpd 账户无法读取仓库元数据"
+            if command -v getenforce >/dev/null 2>&1; then
+                selinux_mode=$(getenforce 2>/dev/null) || vf_error "无法读取 SELinux 状态"
+                if [ "${selinux_mode}" != "Disabled" ]; then
+                    repo_context=$(stat -Lc '%C' "${metadata_file}" 2>/dev/null) \
+                        || vf_error "无法读取仓库 SELinux 标签"
+                    [[ "${repo_context}" == *:httpd_sys_content_t:* ]] \
+                        || vf_missing "仓库 SELinux 标签不是 httpd_sys_content_t"
+                fi
+            fi
+            vf_require_tool curl
+            vf_run "${KF_VERIFY_COMMAND_TIMEOUT:-30s}" curl --fail --silent --show-error \
+                --max-time 10 --output /dev/null "${metadata_url}" \
+                || vf_missing "本机访问 Kubernetes YUM 仓库未返回 HTTP 200"
             vf_require_tool yum
-            vf_run "${KF_VERIFY_COMMAND_TIMEOUT:-30s}" yum -q repolist >/dev/null 2>&1 \
-                || vf_error "YUM 仓库查询失败"
+            vf_run "${KF_VERIFY_COMMAND_TIMEOUT:-30s}" yum -q --disablerepo='*' \
+                --enablerepo='k8s-yum' makecache >/dev/null 2>&1 \
+                || vf_missing "Kubernetes 本地 YUM 仓库缓存创建失败"
             vf_satisfied "Kubernetes YUM 源已就绪"
             ;;
         11b-setup-hostname)
@@ -110,12 +141,24 @@ vf_verify_base() {
             vf_satisfied "当前节点主机名和 hosts 已就绪"
             ;;
         12-setup-k8s-repo)
-            [ -r /etc/yum.repos.d/k8s-http.repo ] || vf_missing "Kubernetes HTTP Repo 未配置"
-            grep -Eq '^enabled[[:space:]]*=[[:space:]]*1' /etc/yum.repos.d/k8s-http.repo \
+            local repo_config="${KF_YUM_HTTP_REPO_CONFIG:-/etc/yum.repos.d/k8s-http.repo}"
+            local primary_hostname="${PRIMARY_CONTROL_HOSTNAME:-k8sc1}"
+            local metadata_url="http://${primary_hostname}/repo/repodata/repomd.xml"
+            [ -r "${repo_config}" ] || vf_missing "Kubernetes HTTP Repo 未配置"
+            grep -qF '# Managed by KubeFoundry v0.3.2' "${repo_config}" \
+                || vf_missing "Kubernetes HTTP Repo 不是 KubeFoundry 受管配置"
+            grep -Eq '^enabled[[:space:]]*=[[:space:]]*1' "${repo_config}" \
                 || vf_missing "Kubernetes HTTP Repo 未启用"
+            grep -qF "baseurl=http://${primary_hostname}/repo" "${repo_config}" \
+                || vf_missing "Kubernetes HTTP Repo 地址不匹配"
+            vf_require_tool curl
+            vf_run "${KF_VERIFY_COMMAND_TIMEOUT:-30s}" curl --fail --silent --show-error \
+                --max-time 10 --output /dev/null "${metadata_url}" \
+                || vf_missing "远程访问 Kubernetes YUM 仓库未返回 HTTP 200"
             vf_require_tool yum
-            vf_run "${KF_VERIFY_COMMAND_TIMEOUT:-30s}" yum -q repolist >/dev/null 2>&1 \
-                || vf_error "Kubernetes HTTP Repo 查询失败"
+            vf_run "${KF_VERIFY_COMMAND_TIMEOUT:-30s}" yum -q --disablerepo='*' \
+                --enablerepo='k8s-repo' makecache >/dev/null 2>&1 \
+                || vf_missing "Kubernetes HTTP YUM 仓库缓存创建失败"
             vf_satisfied "Kubernetes HTTP Repo 已就绪"
             ;;
         13-install-k8s-deps)

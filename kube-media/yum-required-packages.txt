@@ -1,0 +1,10 @@
+# KubeFoundry v0.3.2 YUM HTTP 仓库必需包
+# 前四项和 sshpass 必须放入离线 RPM 仓库并生成 repodata。
+httpd
+acl
+curl
+policycoreutils
+# semanage 工具按目标发行版选择其一：RHEL 8/9 使用前者，RHEL 7 使用后者。
+policycoreutils-python-utils
+policycoreutils-python
+sshpass

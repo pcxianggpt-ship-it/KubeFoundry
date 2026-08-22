@@ -5,3 +5,5 @@
 发布包仅携带运行时必需的双架构 Helm 二进制：`${APP_DIR}/tools/helm-amd` 与 `${APP_DIR}/tools/helm-arm`。组件安装时，系统会按主控制节点架构选择对应文件，校验 SHA-256 后分发到主控制节点，再在该节点使用 `kubectl` 或 Helm 执行操作。
 
 预检查会按当前节点架构和启用组件校验实际介质；本说明文件不构成可安装介质。
+
+Kubernetes RPM 仓库包还必须包含 [YUM 仓库必需包清单](./yum-required-packages.txt) 中的 HTTP、ACL、SELinux 和客户端工具。重新制作离线仓库后，应确认这些包及其依赖能通过 `k8s-yum` 仓库安装。

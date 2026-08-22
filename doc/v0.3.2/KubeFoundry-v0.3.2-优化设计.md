@@ -236,6 +236,17 @@ exit_code=0
 
 验收至少覆盖仓库节点本机和一个远程节点，并确认 httpd error log 不再出现路径搜索权限错误。
 
+### 6.3 实现记录
+
+v0.3.2 实现已使用 `# Managed by KubeFoundry v0.3.2` 标识本地与 HTTP Repo 文件，并冻结以下安全边界：
+
+- httpd 运行账户从已启动的工作进程确认，无法确认时安装安全失败。
+- 父目录只增加该账户的搜索 ACL；仓库目录和文件只增加该账户的只读 ACL，不改变所有权和基础模式。
+- SELinux 启用时登记并恢复 `httpd_sys_content_t`，实际标签不匹配时安装失败。
+- firewalld 正在运行时只开放 HTTP 服务，不因仓库配置步骤直接停用防火墙。
+- 两端验证均使用目标 Repo 执行 `makecache`，不再以全局 `yum repolist` 代替可用性验证。
+- 离线 RPM 仓库必须包含 `kube-media/yum-required-packages.txt` 声明的 HTTP、ACL、SELinux 和客户端工具。
+
 ## 7. 安装进度部署单元分组
 
 ### 7.1 分组定义
