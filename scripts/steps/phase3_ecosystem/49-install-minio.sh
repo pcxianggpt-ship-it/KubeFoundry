@@ -41,9 +41,9 @@ kubectl wait --for=condition=Established crd/tenants.minio.min.io --timeout=120s
 
 mapfile -t minio_nodes < <(kubectl get nodes \
     --selector='!node-role.kubernetes.io/control-plane,!node-role.kubernetes.io/master' \
-    --no-headers 2>/dev/null | awk '$2 == "Ready" { print $1 }')
+    --no-headers 2>/dev/null | awk '{ print $1 }')
 [ "${#minio_nodes[@]}" -ge 4 ] || {
-    log_error "MinIO 四节点 Tenant 至少需要 4 个 Ready Worker，当前: ${#minio_nodes[@]}"
+    log_error "MinIO 四节点 Tenant 至少需要 4 个 Worker，当前: ${#minio_nodes[@]}"
     exit 1
 }
 kubectl get storageclass openebs-hostpath >/dev/null 2>&1 || {

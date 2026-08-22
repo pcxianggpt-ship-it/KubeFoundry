@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class ComponentPlanFactory {
     private final Path scripts;
+    private final Path verifyScripts;
     private final ComponentMediaService media;
 
     public ComponentPlanFactory(Path projectRoot) {
@@ -22,6 +23,7 @@ public class ComponentPlanFactory {
     public ComponentPlanFactory(ComponentMediaService media) {
         this.media = media;
         this.scripts = media.projectRoot().resolve("scripts/steps/phase3_ecosystem");
+        this.verifyScripts = media.projectRoot().resolve("scripts/verify/phase3_ecosystem");
     }
 
     public InstallPlan create(InstallationSnapshotPayload snapshot) {
@@ -89,7 +91,8 @@ public class ComponentPlanFactory {
                 : requiresComponentMedia(key)
                         ? List.of(media.componentResource(snapshot, groupKey, key)) : List.of();
         return new InstallStep(key, name, "kubemate_component", scope, scripts.resolve(key + ".sh"), null,
-                mode, maxWorkers, failFast, resources, List.of(), List.of(), "", groupKey);
+                mode, maxWorkers, failFast, resources, List.of(), List.of(), "", groupKey)
+                .withVerification(verifyScripts.resolve("verify-" + key + ".sh"));
     }
 
     private static boolean requiresComponentMedia(String key) {

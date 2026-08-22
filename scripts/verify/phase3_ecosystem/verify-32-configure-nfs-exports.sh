@@ -1,4 +1,4 @@
 #!/bin/bash
 set -o nounset -o pipefail
 source ./verify-lib.sh
-verify_step "18-init-k8s-cluster"
+verify_step "32-configure-nfs-exports"

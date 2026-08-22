@@ -19,7 +19,8 @@ public record InstallStep(
         String verifyCommand,
         String componentGroupKey,
         StepType type,
-        Path verifyScript) {
+        Path verifyScript,
+        Path recoveryScript) {
 
     public enum StepType { INSTALL, VALIDATION, MAINTENANCE }
 
@@ -38,6 +39,7 @@ public record InstallStep(
                 ? null : componentGroupKey.trim();
         type = type == null ? StepType.INSTALL : type;
         verifyScript = verifyScript == null ? null : verifyScript.toAbsolutePath().normalize();
+        recoveryScript = recoveryScript == null ? null : recoveryScript.toAbsolutePath().normalize();
     }
 
     public InstallStep(
@@ -47,7 +49,8 @@ public record InstallStep(
             String componentGroupKey) {
         this(key, name, phase, targetScope, script, builtin, mode, maxWorkers, failFast,
                 resources, arguments, outputs, verifyCommand, componentGroupKey,
-                "cluster_health".equals(builtin) ? StepType.VALIDATION : StepType.INSTALL, null);
+                "cluster_health".equals(builtin) ? StepType.VALIDATION : StepType.INSTALL,
+                null, null);
     }
 
     public static InstallStep script(
@@ -75,13 +78,20 @@ public record InstallStep(
     public InstallStep withResources(List<Resource> updatedResources) {
         return new InstallStep(key, name, phase, targetScope, script, builtin, mode, maxWorkers,
                 failFast, updatedResources, arguments, outputs, verifyCommand, componentGroupKey,
-                type, verifyScript);
+                type, verifyScript, recoveryScript);
     }
 
     public InstallStep withVerification(Path updatedVerifyScript) {
         return new InstallStep(key, name, phase, targetScope, script, builtin, mode, maxWorkers,
                 failFast, resources, arguments, outputs, verifyCommand, componentGroupKey,
-                type, updatedVerifyScript);
+                type, updatedVerifyScript, recoveryScript);
+    }
+
+    public InstallStep withVerificationAndRecovery(
+            Path updatedVerifyScript, Path updatedRecoveryScript) {
+        return new InstallStep(key, name, phase, targetScope, script, builtin, mode, maxWorkers,
+                failFast, resources, arguments, outputs, verifyCommand, componentGroupKey,
+                type, updatedVerifyScript, updatedRecoveryScript);
     }
 
     public record Resource(

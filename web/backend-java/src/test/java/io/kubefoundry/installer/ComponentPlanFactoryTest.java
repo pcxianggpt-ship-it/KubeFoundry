@@ -27,6 +27,11 @@ class ComponentPlanFactoryTest {
                 "29-install-helm", "30-create-namespace", "36-install-traefik");
         assertThat(plan.require("36-install-traefik").componentGroupKey()).isEqualTo("traefik");
         assertThat(plan.require("29-install-helm").componentGroupKey()).isNull();
+        assertThat(plan.steps()).allSatisfy(step -> {
+            assertThat(step.type()).isEqualTo(InstallStep.StepType.INSTALL);
+            assertThat(step.verifyScript()).isEqualTo(temporaryDirectory.resolve(
+                    "scripts/verify/phase3_ecosystem/verify-" + step.key() + ".sh").toAbsolutePath());
+        });
     }
 
     @Test

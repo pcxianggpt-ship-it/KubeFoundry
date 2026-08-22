@@ -63,6 +63,11 @@ class InstallPlanFactoryTest {
         assertThat(initialize.maxWorkers()).isEqualTo(1);
         assertThat(initialize.outputs()).extracting(InstallStep.Output::key)
                 .containsExactly("control_join", "worker_join");
+        assertThat(initialize.verifyScript()).isEqualTo(temporaryDirectory.resolve(
+                "scripts/verify/phase2_k8s_base/verify-18-init-k8s-cluster.sh").toAbsolutePath());
+        assertThat(initialize.recoveryScript()).isEqualTo(temporaryDirectory.resolve(
+                "scripts/recovery/phase2_k8s_base/recover-18-init-k8s-cluster-outputs.sh")
+                .toAbsolutePath());
         assertThat(joinControls.mode()).isEqualTo("serial");
         assertThat(joinControls.maxWorkers()).isEqualTo(1);
         assertThat(joinControls.resources()).extracting(InstallStep.Resource::artifactKey)
@@ -82,11 +87,15 @@ class InstallPlanFactoryTest {
         assertThat(plan.require("10-setup-yum-source").arguments())
                 .containsExactly(new InstallStep.Argument("/tmp/k8s/k8s-repo-source.tar.gz", null));
         assertThat(plan.require("11b-setup-hostname").builtin()).isEqualTo("setup_hostname");
-        assertThat(plan.require("22-install-cni-flannel").verifyCommand())
-                .contains("kubectl get pods -A");
-        assertThat(plan.require("23-configure-coredns-affinity").verifyCommand())
-                .contains("coredns-anti-affinity")
-                .endsWith("grep -qx v2");
+        assertThat(plan.steps().subList(0, 14))
+                .allSatisfy(step -> {
+                    assertThat(step.type()).isEqualTo(InstallStep.StepType.INSTALL);
+                    assertThat(step.verifyScript()).isNotNull();
+                    assertThat(step.verifyCommand()).isBlank();
+                });
+        assertThat(plan.require("web-verify-cluster-health").type())
+                .isEqualTo(InstallStep.StepType.VALIDATION);
+        assertThat(plan.require("web-verify-cluster-health").verifyScript()).isNull();
     }
 
     @Test

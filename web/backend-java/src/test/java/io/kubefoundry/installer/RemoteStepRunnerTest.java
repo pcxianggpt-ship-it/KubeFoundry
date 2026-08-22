@@ -152,6 +152,35 @@ class RemoteStepRunnerTest {
     }
 
     @Test
+    void recoversRequiredOutputsWhenInitializationIsPreverified() throws Exception {
+        Path script = temporaryDirectory.resolve("recover-init-step.sh");
+        Path verify = temporaryDirectory.resolve("recover-init-verify.sh");
+        Path recovery = temporaryDirectory.resolve("recover-init-outputs.sh");
+        Files.writeString(script, "#!/bin/bash\n", StandardCharsets.UTF_8);
+        Files.writeString(verify, "#!/bin/bash\nexit 0\n", StandardCharsets.UTF_8);
+        Files.writeString(recovery, "#!/bin/bash\nexit 0\n", StandardCharsets.UTF_8);
+        InstallStep step = InstallStep.script(
+                "recover-init", "恢复 Join 产物", "test", "primary_control_plane", script,
+                "serial", 1, true, List.of(), List.of(),
+                List.of(new InstallStep.Output("control_join", "/tmp/k8s/kube_join_master"),
+                        new InstallStep.Output("worker_join", "/tmp/k8s/kube_join_nodes")), "")
+                .withVerificationAndRecovery(verify, recovery);
+
+        JobService.NodeOutcome outcome = runner().run(42L, cluster, List.of(node), node, step);
+
+        assertThat(outcome.status()).isEqualTo("skipped");
+        assertThat(commands).anyMatch(command -> command.contains("bash ./recovery.sh"));
+        assertThat(commands).noneMatch(command -> command.contains("bash ./step.sh"));
+        Path artifacts = temporaryDirectory.resolve("data/jobs/42/artifacts");
+        assertThat(artifacts.resolve("control_join")).hasContent("control-command");
+        assertThat(artifacts.resolve("worker_join")).hasContent("worker-command");
+        Path evidence = temporaryDirectory.resolve("data/jobs/42/evidence/recover-init/cp-a");
+        assertThat(evidence.resolve("recovery.properties")).hasContent("exit_code=0\n");
+        assertThat(evidence.resolve("outputs/control_join")).hasContent("control-command");
+        assertThat(evidence.resolve("outputs/worker_join")).hasContent("worker-command");
+    }
+
+    @Test
     void installsOnlyAfterExitTenAndRequiresSuccessfulPostVerification() throws Exception {
         Path script = temporaryDirectory.resolve("strict-install-step.sh");
         Path verify = temporaryDirectory.resolve("strict-install-verify.sh");
@@ -556,6 +585,15 @@ class RemoteStepRunnerTest {
                     int attempt = verificationCalls.computeIfAbsent(
                             "strict-post-fail", ignored -> new AtomicInteger()).getAndIncrement();
                     onExit(attempt == 0 ? 10 : 20);
+                } else if (getCommand().contains("/recover-init/")
+                        && getCommand().contains("bash ./recovery.sh")) {
+                    Path outputDirectory = remoteRoot.resolve("tmp/k8s");
+                    Files.createDirectories(outputDirectory);
+                    Files.writeString(outputDirectory.resolve("kube_join_master"),
+                            "control-command\n", StandardCharsets.UTF_8);
+                    Files.writeString(outputDirectory.resolve("kube_join_nodes"),
+                            "worker-command\n", StandardCharsets.UTF_8);
+                    onExit(0);
                 } else if (getCommand().contains("/tmp/kubefoundry/jobs/7/steps/")
                         && getCommand().contains("bash ./step.sh")) {
                     getErrorStream().write("failed\n".getBytes(StandardCharsets.UTF_8));
