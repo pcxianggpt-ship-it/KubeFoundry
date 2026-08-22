@@ -18,6 +18,7 @@ import {
   getPrecheckResults,
   listJobs,
   listNodes,
+  resumeInstallJob,
   startComponentInstall,
   startInstall,
   startPrecheck
@@ -33,6 +34,7 @@ vi.mock('../api/client', () => ({
   getPrecheckResults: vi.fn(),
   listJobs: vi.fn(),
   listNodes: vi.fn(),
+  resumeInstallJob: vi.fn(),
   startComponentInstall: vi.fn(),
   startInstall: vi.fn(),
   startPrecheck: vi.fn()
@@ -208,6 +210,95 @@ describe('安装流程', () => {
     expect(wrapper.get('[data-testid="job-stage-20"]').classes()).toContain('is-selected');
     expect(wrapper.get('[data-testid="job-node-201"]').classes()).toContain('is-selected');
     expect(wrapper.text()).toContain('软件包校验失败');
+  });
+
+  it('失败安装仅提交一次续跑请求并跳转到新任务', async () => {
+    getJob.mockResolvedValue({ id: 100, cluster_id: 42, job_type: 'install', status: 'failed', run_mode: 'normal' });
+    getCluster.mockResolvedValue({ id: 42, name: '生产集群', k8s_version: '1.30.14' });
+    getJobSteps.mockResolvedValue({ items: [] });
+    getJobLogs.mockResolvedValue({ items: [] });
+    let acceptResume;
+    resumeInstallJob.mockReturnValue(new Promise((resolve) => { acceptResume = resolve; }));
+    const { router, wrapper } = await mountAt(JobExecutionView, '/cluster-install/42/jobs/100');
+
+    const button = wrapper.get('[data-testid="resume-install-job"]');
+    await button.trigger('click');
+    await button.trigger('click');
+    expect(resumeInstallJob).toHaveBeenCalledTimes(1);
+    expect(resumeInstallJob).toHaveBeenCalledWith(42, 100);
+
+    acceptResume({ job_id: 101, source_job_id: 100, run_mode: 'resume' });
+    await flushPromises();
+    expect(router.currentRoute.value.fullPath).toBe('/cluster-install/42/jobs/101');
+  });
+
+  it('续跑失败时停留在来源任务并显示安全错误', async () => {
+    getJob.mockResolvedValue({ id: 100, cluster_id: 42, job_type: 'component_install', status: 'partial_success' });
+    getCluster.mockResolvedValue({ id: 42, name: '生产集群' });
+    getJobSteps.mockResolvedValue({ items: [] });
+    getJobLogs.mockResolvedValue({ items: [] });
+    resumeInstallJob.mockRejectedValue(new Error('来源快照不匹配'));
+    const { router, wrapper } = await mountAt(JobExecutionView, '/cluster-install/42/jobs/100');
+
+    await wrapper.get('[data-testid="resume-install-job"]').trigger('click');
+    await flushPromises();
+
+    expect(router.currentRoute.value.fullPath).toBe('/cluster-install/42/jobs/100');
+    expect(wrapper.get('[data-testid="resume-error"]').text()).toContain('来源快照不匹配');
+  });
+
+  it('成功任务不提供续跑入口，续跑任务可返回来源任务', async () => {
+    getJob.mockResolvedValue({
+      id: 101, cluster_id: 42, job_type: 'install', status: 'success',
+      run_mode: 'resume', source_job_id: 100
+    });
+    getCluster.mockResolvedValue({ id: 42, name: '生产集群' });
+    getJobSteps.mockResolvedValue({ items: [] });
+    getJobLogs.mockResolvedValue({ items: [] });
+    const { wrapper } = await mountAt(JobExecutionView, '/cluster-install/42/jobs/101');
+
+    expect(wrapper.find('[data-testid="resume-install-job"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain('此任务由任务 #100 续跑创建');
+    expect(wrapper.get('.job-lineage a').attributes('href')).toBe('/cluster-install/42/jobs/100');
+  });
+
+  it('区分前置验证跳过和依赖跳过，并显示安全阶段消息', async () => {
+    getJob.mockResolvedValue({ id: 102, cluster_id: 42, job_type: 'install', status: 'failed' });
+    getCluster.mockResolvedValue({ id: 42, name: '生产集群' });
+    getJobSteps.mockResolvedValue({ items: [
+      { id: 10, name: '镜像仓库', order: 1, status: 'skipped', status_reason: 'PREVERIFY_SATISFIED', nodes: [
+        { id: 100, node_id: 1, hostname: 'cp-1', status: 'skipped', message: 'PREVERIFY_SATISFIED' }
+      ] },
+      { id: 20, name: '工作节点加入', order: 2, status: 'skipped', status_reason: 'JOB_ABORTED', nodes: [] }
+    ] });
+    getJobLogs.mockResolvedValue({ items: [] });
+    const { wrapper } = await mountAt(JobExecutionView, '/cluster-install/42/jobs/102');
+
+    expect(wrapper.text()).toContain('已验证并跳过');
+    expect(wrapper.text()).toContain('执行前验证通过，已安全跳过安装');
+    expect(wrapper.text()).toContain('因依赖跳过');
+  });
+
+  it('任务切换后忽略旧任务迟到的 SSE 事件', async () => {
+    getJob.mockImplementation(async (jobId) => ({
+      id: Number(jobId), cluster_id: 42, job_type: 'install', status: 'running'
+    }));
+    getCluster.mockResolvedValue({ id: 42, name: '生产集群' });
+    getJobSteps.mockResolvedValue({ items: [{
+      id: 10, name: '安装依赖', order: 1, status: 'running',
+      nodes: [{ id: 100, node_id: 1, hostname: 'cp-1', status: 'running', message: '执行中' }]
+    }] });
+    getJobLogs.mockResolvedValue({ items: [] });
+    const { router, wrapper } = await mountAt(JobExecutionView, '/cluster-install/42/jobs/103');
+    const oldStream = FakeEventSource.instances[0];
+
+    await router.push('/cluster-install/42/jobs/104');
+    await flushPromises();
+    oldStream.emit('node.status', { payload: { node_id: 1, status: 'failed', message: '旧任务迟到事件' } });
+    await flushPromises();
+
+    expect(wrapper.text()).not.toContain('旧任务迟到事件');
+    expect(wrapper.text()).toContain('执行中');
   });
 
   it('旧任务地址加载任务后重定向到包含集群 ID 的规范地址', async () => {

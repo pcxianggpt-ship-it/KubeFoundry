@@ -9,15 +9,15 @@
         @click="$emit('select', stage.id)"
       >
         <span class="job-stage-index">{{ String(index + 1).padStart(2, '0') }}</span>
-        <span class="job-stage-copy"><strong>{{ stage.name }}</strong><small>{{ jobStatusLabel(stage.status) }}</small></span>
-        <el-tag :type="jobStatusTone(stage.status)" size="small">{{ stageProgress(stage) }}</el-tag>
+        <span class="job-stage-copy"><strong>{{ stage.name }}</strong><small>{{ stepStatusLabel(stage.status, stage.status_reason) }}</small></span>
+        <el-tag :type="stepStatusTone(stage.status, stage.status_reason)" size="small">{{ stageProgress(stage) }}</el-tag>
       </button>
     </li>
   </ol>
 </template>
 
 <script setup>
-import { jobStatusLabel, jobStatusTone } from './jobStatus';
+import { stepStatusLabel, stepStatusTone } from './jobStatus';
 
 defineProps({
   stages: { type: Array, default: () => [] },
@@ -27,7 +27,7 @@ defineEmits(['select']);
 
 function stageProgress(stage) {
   const nodes = stage.nodes || [];
-  if (!nodes.length) return jobStatusLabel(stage.status);
+  if (!nodes.length) return stepStatusLabel(stage.status, stage.status_reason);
   const complete = nodes.filter((node) => ['success', 'failed', 'skipped'].includes(node.status)).length;
   return `${complete}/${nodes.length}`;
 }

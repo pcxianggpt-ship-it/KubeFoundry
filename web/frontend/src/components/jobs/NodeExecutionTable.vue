@@ -5,9 +5,9 @@
       <tbody>
         <tr v-for="node in nodes" :key="node.id" :data-testid="`job-node-${node.id}`" :class="{ 'is-selected': node.node_id === selectedNodeId }">
           <td><strong>{{ node.hostname }}</strong><small>节点编号 {{ node.node_id }}</small></td>
-          <td><el-tag :type="jobStatusTone(node.status)" size="small">{{ jobStatusLabel(node.status) }}</el-tag></td>
+          <td><el-tag :type="stepStatusTone(node.status, node.message)" size="small">{{ stepStatusLabel(node.status, node.message) }}</el-tag></td>
           <td>{{ node.exit_code ?? '-' }}</td>
-          <td class="node-diagnostic">{{ node.message || '-' }}</td>
+          <td class="node-diagnostic">{{ verificationMessage(node.message) || '-' }}</td>
           <td><el-button link type="primary" @click="$emit('select', node.node_id)">查看日志</el-button></td>
         </tr>
       </tbody>
@@ -16,7 +16,7 @@
 </template>
 
 <script setup>
-import { jobStatusLabel, jobStatusTone } from './jobStatus';
+import { stepStatusLabel, stepStatusTone, verificationMessage } from './jobStatus';
 
 defineProps({
   nodes: { type: Array, default: () => [] },

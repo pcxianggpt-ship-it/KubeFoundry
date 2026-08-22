@@ -2,7 +2,10 @@
   <section class="page-view job-execution-view">
     <header class="workspace-header execution-header">
       <div><RouterLink v-if="job.cluster_id" class="back-link" :to="clusterRoute"><ArrowLeft />返回安装概览</RouterLink><p class="page-eyebrow">{{ jobTypeLabel }}任务 #{{ job.id || route.params.jobId }}</p><h1>{{ cluster.name || '集群任务进度' }}</h1></div>
-      <span class="status-label" :class="`status-label--${statusTone}`"><component :is="statusIcon" />{{ jobStatusLabel(job.status) }}</span>
+      <div class="execution-header-actions">
+        <el-button v-if="resumeAvailable" data-testid="resume-install-job" type="primary" :loading="resuming" :disabled="resuming" @click="resumeJob">续跑任务</el-button>
+        <span class="status-label" :class="`status-label--${statusTone}`"><component :is="statusIcon" />{{ jobStatusLabel(job.status) }}</span>
+      </div>
     </header>
     <el-skeleton v-if="loading" :rows="9" animated aria-label="正在恢复安装任务" />
     <section v-else-if="errorMessage" class="state-panel state-panel--error" role="alert">
@@ -12,7 +15,12 @@
       <section class="execution-overview">
         <div class="progress-copy"><span>整体进度</span><strong>{{ completedStages }}/{{ stages.length }} 个阶段</strong></div>
         <el-progress :percentage="progress" :status="job.status === 'failed' ? 'exception' : ['success', 'partial_success'].includes(job.status) ? 'success' : undefined" />
-        <div class="execution-meta"><span>Kubernetes {{ cluster.k8s_version || '-' }}</span><span>{{ connected ? '实时连接中' : terminal ? '任务已结束' : '实时连接已中断' }}</span></div>
+        <div class="execution-meta"><span>Kubernetes {{ cluster.k8s_version || '-' }}</span><span>{{ runModeLabel }}</span><span>{{ connected ? '实时连接中' : terminal ? '任务已结束' : '实时连接已中断' }}</span></div>
+      </section>
+      <el-alert v-if="resumeError" data-testid="resume-error" :title="resumeError" type="error" show-icon :closable="false" />
+      <section v-if="job.source_job_id" class="job-lineage" aria-label="续跑任务来源">
+        <div><strong>此任务由任务 #{{ job.source_job_id }} 续跑创建</strong><p>来源任务保持只读，可返回查看原失败现场。</p></div>
+        <RouterLink class="el-button" :to="sourceJobRoute">查看来源任务</RouterLink>
       </section>
       <el-alert v-if="job.status === 'failed'" :title="`${jobTypeLabel}任务失败，可定位首个失败节点查看诊断和日志。`" type="error" show-icon :closable="false">
         <template #default><el-button data-testid="locate-failure" link type="primary" @click="locateFailure">定位失败位置</el-button></template>
@@ -40,14 +48,15 @@ import { RouterLink, useRoute, useRouter } from 'vue-router';
 import JobStageList from '../components/jobs/JobStageList.vue';
 import NodeExecutionTable from '../components/jobs/NodeExecutionTable.vue';
 import LiveLogViewer from '../components/jobs/LiveLogViewer.vue';
-import { isTerminalJob, jobStatusLabel } from '../components/jobs/jobStatus';
-import { getCluster, getClusterJob, getJob, getJobLogs, getJobSteps } from '../api/client';
+import { canResumeJob, isTerminalJob, jobStatusLabel } from '../components/jobs/jobStatus';
+import { getCluster, getClusterJob, getJob, getJobLogs, getJobSteps, resumeInstallJob } from '../api/client';
 import { safeErrorMessage } from '../utils/redaction';
 
 const route = useRoute();
 const router = useRouter();
 const job = ref({}); const cluster = ref({}); const stages = ref([]); const logs = ref([]);
 const loading = ref(true); const connected = ref(false); const errorMessage = ref('');
+const resuming = ref(false); const resumeError = ref('');
 const selectedStageId = ref(''); const selectedNodeId = ref('');
 let eventSource; let logId = 0; let loadSequence = 0;
 
@@ -57,6 +66,13 @@ const progress = computed(() => stages.value.length ? Math.round(completedStages
 const statusTone = computed(() => ['success', 'partial_success'].includes(job.value.status) ? 'success' : terminal.value ? 'error' : 'running');
 const statusIcon = computed(() => ['success', 'partial_success'].includes(job.value.status) ? CircleCheckFilled : terminal.value ? WarningFilled : Clock);
 const clusterRoute = computed(() => ({ name: 'install-overview', params: { clusterId: String(job.value.cluster_id) } }));
+const sourceJobRoute = computed(() => ({ name: 'cluster-job-execution', params: {
+  clusterId: String(job.value.cluster_id), jobId: String(job.value.source_job_id)
+} }));
+const resumeAvailable = computed(() => canResumeJob(job.value));
+const runModeLabel = computed(() => job.value.run_mode === 'resume'
+  ? `续跑任务${job.value.source_job_id ? ` · 来源 #${job.value.source_job_id}` : ''}`
+  : '正常执行');
 const jobTypeLabel = computed(() => ({ install: '安装', component_install: '组件补装', reset: '重置', precheck: '预检查' }[job.value.job_type] || '集群'));
 const selectedStage = computed(() => stages.value.find((stage) => stage.id === selectedStageId.value));
 const visibleNodes = computed(() => selectedStage.value?.nodes || stages.value.flatMap((stage) => stage.nodes || []));
@@ -76,6 +92,7 @@ watch(() => route.params.jobId, () => {
   stages.value = [];
   logs.value = [];
   job.value = {};
+  resumeError.value = '';
   loadSnapshot(true);
 });
 onBeforeUnmount(disconnect);
@@ -131,12 +148,16 @@ function normalizeStages(values) {
 }
 function connect() {
   disconnect();
-  eventSource = new EventSource(`/api/jobs/${route.params.jobId}/events`); connected.value = true;
+  const subscribedJobId = String(route.params.jobId);
+  eventSource = new EventSource(`/api/jobs/${subscribedJobId}/events`); connected.value = true;
   eventSource.onopen = () => { connected.value = true; };
-  ['job.status', 'step.status', 'node.status', 'log'].forEach((type) => eventSource.addEventListener(type, (event) => handleEvent(type, event)));
+  ['job.status', 'step.status', 'node.status', 'log'].forEach((type) => eventSource.addEventListener(
+    type, (event) => handleEvent(type, event, subscribedJobId)
+  ));
   eventSource.onerror = () => { connected.value = false; };
 }
-async function handleEvent(type, event) {
+async function handleEvent(type, event, subscribedJobId) {
+  if (subscribedJobId !== String(route.params.jobId)) return;
   const payload = parseEvent(event);
   appendEventLog(type, payload);
   if (type === 'job.status') job.value.status = payload.status || job.value.status;
@@ -162,5 +183,22 @@ function locateFailure() {
   const stage = stages.value.find((item) => item.status === 'failed' || (item.nodes || []).some((node) => node.status === 'failed'));
   if (!stage) return; selectedStageId.value = stage.id;
   const node = (stage.nodes || []).find((item) => item.status === 'failed'); selectedNodeId.value = node?.node_id || '';
+}
+async function resumeJob() {
+  if (!resumeAvailable.value || resuming.value) return;
+  resuming.value = true;
+  resumeError.value = '';
+  try {
+    const accepted = await resumeInstallJob(job.value.cluster_id, job.value.id);
+    const newJobId = accepted?.job_id || accepted?.id;
+    if (!newJobId) throw new Error('续跑请求已接受，但未返回新任务编号。');
+    await router.push({ name: 'cluster-job-execution', params: {
+      clusterId: String(job.value.cluster_id), jobId: String(newJobId)
+    } });
+  } catch (error) {
+    resumeError.value = safeErrorMessage(error, '续跑任务创建失败，请核对任务状态和集群配置。');
+  } finally {
+    resuming.value = false;
+  }
 }
 </script>

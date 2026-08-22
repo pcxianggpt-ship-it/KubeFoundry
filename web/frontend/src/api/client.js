@@ -165,6 +165,12 @@ export function getClusterJob(clusterId, jobId) {
   return request(`/api/clusters/${clusterId}/jobs/${jobId}`);
 }
 
+export function resumeInstallJob(clusterId, jobId) {
+  return request(`/api/clusters/${clusterId}/jobs/${jobId}/resume`, {
+    method: 'POST'
+  });
+}
+
 export function getJobSteps(jobId) {
   return request(`/api/jobs/${jobId}/steps`);
 }

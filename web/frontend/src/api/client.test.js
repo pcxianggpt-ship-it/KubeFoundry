@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { copyNodes, getJob, resetCluster, startInstall, startNodeTest, updateComponents } from './client';
+import { copyNodes, getJob, resetCluster, resumeInstallJob, startInstall, startNodeTest, updateComponents } from './client';
 
 
 describe('API client', () => {
@@ -79,6 +79,22 @@ describe('API client', () => {
       method: 'POST',
       body: JSON.stringify({ acknowledged: true, confirmation_phrase: 'RESET production' })
     }));
+  });
+
+  it('creates a resume job without client-controlled start step', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      text: async () => JSON.stringify({ job_id: 18, source_job_id: 11, run_mode: 'resume' })
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await resumeInstallJob(7, 11);
+
+    expect(fetch).toHaveBeenCalledWith('/api/clusters/7/jobs/11/resume', expect.objectContaining({
+      method: 'POST'
+    }));
+    expect(fetch.mock.calls[0][1].body).toBeUndefined();
   });
 
   it('sends the Kubemate component aggregate unchanged', async () => {

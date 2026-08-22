@@ -58,10 +58,10 @@
         </div>
         <div v-if="installJobs.length" class="cluster-table-wrap">
           <table class="cluster-table">
-            <thead><tr><th scope="col">任务 ID</th><th scope="col">类型</th><th scope="col">状态</th><th scope="col">创建时间</th><th scope="col">开始时间</th><th scope="col">结束时间</th><th scope="col"><span class="visually-hidden">操作</span></th></tr></thead>
+            <thead><tr><th scope="col">任务 ID</th><th scope="col">类型</th><th scope="col">运行方式</th><th scope="col">状态</th><th scope="col">创建时间</th><th scope="col">开始时间</th><th scope="col">结束时间</th><th scope="col"><span class="visually-hidden">操作</span></th></tr></thead>
             <tbody>
               <tr v-for="item in installJobs" :key="item.id" data-testid="install-history-row">
-                <td>#{{ item.id }}</td><td>{{ jobTypeLabel(item.job_type) }}</td><td>{{ statusLabel(item.status) }}</td>
+                <td>#{{ item.id }}</td><td>{{ jobTypeLabel(item.job_type) }}</td><td>{{ runModeLabel(item) }}</td><td>{{ statusLabel(item.status) }}</td>
                 <td>{{ formatTime(item.created_at) }}</td><td>{{ formatTime(item.started_at) }}</td><td>{{ formatTime(item.finished_at) }}</td>
                 <td><RouterLink class="cluster-row__action" :to="jobRoute(item)">查看进度</RouterLink></td>
               </tr>
@@ -112,6 +112,7 @@ function latest(type) { return jobs.value.filter((job) => job.job_type === type)
 function jobLabel(job) { return job ? `${jobTypeLabel(job.job_type)}${statusLabel(job.status)}` : '暂无任务'; }
 function jobTypeLabel(type) { return { precheck: '预检查', install: '安装', component_install: '组件补装', reset: '重置' }[type] || '任务'; }
 function statusLabel(status) { return { pending: '等待中', running: '执行中', success: '成功', partial_success: '部分成功', failed: '失败', interrupted: '已中断' }[status] || '未完成'; }
+function runModeLabel(job) { return job.run_mode === 'resume' ? `续跑自 #${job.source_job_id}` : '正常执行'; }
 function jobRoute(job) { return { name: 'cluster-job-execution', params: { clusterId: clusterId.value, jobId: String(job.id) } }; }
 function formatTime(value) { return value ? new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'medium', hour12: false }).format(new Date(value)) : '-'; }
 function goToPrecheck() { if (installAvailable.value) router.push(precheckRoute.value); }

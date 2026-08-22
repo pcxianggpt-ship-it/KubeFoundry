@@ -724,6 +724,36 @@ a:focus-visible {
   border-radius: 6px;
 }
 
+.execution-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.job-lineage {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 14px 0;
+  padding: 14px 16px;
+  background: var(--kf-surface);
+  border: 1px solid var(--kf-border);
+  border-left: 3px solid var(--kf-primary);
+  border-radius: 6px;
+}
+
+.job-lineage strong,
+.job-lineage p {
+  margin: 0;
+}
+
+.job-lineage p {
+  margin-top: 4px;
+  color: var(--kf-muted);
+  font-size: 13px;
+}
+
 .progress-copy,
 .execution-meta,
 .panel-heading,
@@ -1609,6 +1639,12 @@ a.pipeline-stage:hover {
   .execution-filters .el-button {
     width: 100%;
     margin: 0;
+  }
+
+  .execution-header-actions,
+  .job-lineage {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .live-log-viewer li {
