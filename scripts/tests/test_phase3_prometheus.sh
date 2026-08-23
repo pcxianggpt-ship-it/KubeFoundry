@@ -17,6 +17,7 @@ if [ "${1:-}" = 'apply' ] && [ "${2:-}" = '-f' ] && [ -f "${3:-}" ] \
 fi
 case "$*" in
   "get nodes -l "*) printf 'node/k8sw1\nnode/k8sw2\n' ;;
+  *"get prometheus k8s -n kubemate-system -o jsonpath="*) printf '2:2' ;;
 esac
 EOF
 chmod +x "${BIN}/kubectl"
@@ -69,5 +70,16 @@ done
 test -f "${KF_PROM_RENDERED_OK}"
 ! grep -Eq 'phase3_apply_managed|rollout|additional-scrape|server-side|dry-run' \
     "${ROOT}/scripts/steps/phase3_ecosystem/38-install-prometheus.sh"
+
+export KF_KUBECONFIG="${TMP}/admin.conf"
+export KF_VERIFY_COMMAND_TIMEOUT=30s
+export KF_VERIFY_ROLLOUT_TIMEOUT=180s
+: > "${KF_KUBECONFIG}"
+bash "${ROOT}/scripts/verify/phase3_ecosystem/verify-38-install-prometheus.sh"
+
+grep -Fq -- 'rollout status deployment/prometheus-operator --namespace kubemate-system --timeout=180s' "${KF_PROM_KUBECTL_LOG}"
+grep -Fq -- 'rollout status statefulset/prometheus-k8s --namespace kubemate-system --timeout=180s' "${KF_PROM_KUBECTL_LOG}"
+grep -Fq -- 'rollout status daemonset/node-exporter --namespace kubemate-system --timeout=180s' "${KF_PROM_KUBECTL_LOG}"
+grep -Fq -- 'rollout status deployment/metrics-server --namespace kube-system --timeout=180s' "${KF_PROM_KUBECTL_LOG}"
 
 printf 'phase3 Prometheus tests passed\n'

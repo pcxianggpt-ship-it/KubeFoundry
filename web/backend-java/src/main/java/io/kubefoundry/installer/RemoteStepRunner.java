@@ -32,7 +32,7 @@ public class RemoteStepRunner {
 
     private static final Duration DIRECTORY_TIMEOUT = Duration.ofSeconds(60);
     private static final Duration STEP_TIMEOUT = Duration.ofHours(1);
-    private static final Duration VERIFICATION_TIMEOUT = Duration.ofMinutes(2);
+    private static final Duration VERIFICATION_TIMEOUT = Duration.ofMinutes(4);
 
     private final SshService ssh;
     private final RemoteSessionProvider sessions;
