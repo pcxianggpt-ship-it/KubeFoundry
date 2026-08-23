@@ -28,14 +28,18 @@ while IFS= read -r port; do
 done <<< "${nodeports}"
 
 phase3_apply_managed "${manifest_dir}"
-deployments=$(kubectl get deployment --all-namespaces --no-headers 2>/dev/null \
+daemonsets=$(kubectl get daemonset --all-namespaces --no-headers 2>/dev/null \
     | awk '$2 ~ /^traefik($|-)/ { print $1 "/" $2 }')
+[ -n "${daemonsets}" ] || {
+    log_error "Traefik DaemonSet 未创建"
+    exit 1
+}
 while IFS= read -r target; do
     [ -z "${target}" ] && continue
     namespace=${target%%/*}
     name=${target#*/}
-    phase3_wait_rollout deployment "${name}" "${namespace}"
-done <<< "${deployments}"
+    phase3_wait_rollout daemonset "${name}" "${namespace}"
+done <<< "${daemonsets}"
 
 services=$(kubectl get service --all-namespaces --no-headers 2>/dev/null \
     | awk '$2 ~ /^traefik($|-)/ { print $1 "/" $2 }')

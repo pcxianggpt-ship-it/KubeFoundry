@@ -57,6 +57,15 @@ fi
 if grep -Eq '(^|[;&|[:space:]])(mkdir|rm|mv|cp|install|mount|umount|sed[[:space:]]+-i|kubectl[[:space:]]+(apply|create|delete|label|patch|annotate))[[:space:]]' "${library}"; then
     fail "验证公共库包含修改目标状态的命令"
 fi
+grep -Fq 'vf_rollout deployment kubemate-appx kubemate-system' "${library}" \
+    || fail "Kubemate 验证未只等待自身 Deployment"
+grep -Fq 'vf_capture_kubectl get daemonset -A' "${library}" \
+    || fail "Traefik 验证未查询 DaemonSet"
+grep -Fq 'vf_rollout daemonset "${name}" "${namespace}"' "${library}" \
+    || fail "Traefik 验证未等待 DaemonSet rollout"
+if grep -Fq 'deployment --all -n kubemate-system' "${library}"; then
+    fail "Kubemate 验证仍等待命名空间内全部 Deployment"
+fi
 if grep -E 'exit[[:space:]]+[0-9]+' "${library}" | grep -Ev 'exit[[:space:]]+(0|10|20|21)([;[:space:]]|$)' >/dev/null; then
     fail "验证公共库包含非法退出码"
 fi

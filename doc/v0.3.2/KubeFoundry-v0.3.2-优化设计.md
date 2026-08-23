@@ -160,6 +160,8 @@ job_steps.step_order_in_stage INTEGER NOT NULL
 - 不修改系统、刷新 Token、创建资源或写入用户配置。
 - 输出中文检查摘要，不输出密码、Token、Secret、kubeconfig 内容或完整敏感命令。
 - 所有网络、systemd、kubectl、helm 等检查都设置超时。
+- rollout 验证使用独立的 `KF_VERIFY_ROLLOUT_TIMEOUT`，不得被普通命令的 30 秒超时提前截断。
+- 工作负载验证必须匹配实际资源类型和名称：Kubemate 只验证 `deployment/kubemate-appx`，Traefik 验证 `daemonset/traefik`，不得等待同命名空间内无关工作负载。
 - 同一环境连续运行两次应得到相同结论。
 
 计划构建时进行完整性校验：每个 `INSTALL` 步骤必须存在普通文件形式的验证脚本。缺失、符号链接、CRLF 或不可识别退出码均阻止发布包验收。

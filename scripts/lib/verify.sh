@@ -83,8 +83,13 @@ vf_helm_release() {
 }
 
 vf_rollout() {
-    vf_kubectl rollout status "$1/$2" --namespace "$3" \
-        --timeout="${KF_VERIFY_ROLLOUT_TIMEOUT:-180s}" >/dev/null 2>&1
+    local rollout_timeout="${KF_VERIFY_ROLLOUT_TIMEOUT:-180s}"
+    vf_require_tool kubectl
+    vf_require_runtime KF_KUBECONFIG
+    [ -r "${KF_KUBECONFIG}" ] || vf_error "Kubernetes 管理配置不可读"
+    vf_run "${rollout_timeout}" env KUBECONFIG="${KF_KUBECONFIG}" \
+        kubectl --request-timeout="${rollout_timeout}" rollout status "$1/$2" --namespace "$3" \
+        --timeout="${rollout_timeout}" >/dev/null 2>&1
 }
 
 vf_verify_base() {
@@ -346,22 +351,29 @@ vf_verify_component() {
             vf_kube_api_ready
             vf_kubectl get configmap kubemate-etc -n kubemate-system >/dev/null 2>&1 \
                 || vf_missing "Kubemate ConfigMap 不存在"
-            vf_capture_kubectl get deployment -n kubemate-system --no-headers 2>/dev/null \
+            vf_kubectl get deployment kubemate-appx -n kubemate-system >/dev/null 2>&1 \
                 || vf_missing "Kubemate Deployment 不存在"
-            rows=${VF_OUTPUT}
-            printf '%s\n' "${rows}" | grep -q kubemate || vf_missing "Kubemate Deployment 不存在"
-            vf_kubectl wait --for=condition=available deployment --all -n kubemate-system \
-                --timeout="${KF_VERIFY_ROLLOUT_TIMEOUT:-180s}" >/dev/null 2>&1 \
+            vf_rollout deployment kubemate-appx kubemate-system \
                 || vf_missing "Kubemate Deployment 未就绪"
+            vf_kubectl get service kubemate-app -n kubemate-system >/dev/null 2>&1 \
+                || vf_missing "Kubemate Service 不存在"
             vf_satisfied "Kubemate 管理组件已就绪"
             ;;
         36-install-traefik)
             vf_kube_api_ready
-            vf_capture_kubectl get deployment -A --no-headers 2>/dev/null \
-                || vf_error "Traefik Deployment 查询失败"
+            vf_capture_kubectl get daemonset -A \
+                -o custom-columns='NAMESPACE:.metadata.namespace,NAME:.metadata.name,DESIRED:.status.desiredNumberScheduled,READY:.status.numberReady' \
+                --no-headers 2>/dev/null || vf_error "Traefik DaemonSet 查询失败"
             rows=${VF_OUTPUT}
-            printf '%s\n' "${rows}" | awk '$2 ~ /^traefik($|-)/ { found=1 } END { exit !found }' \
-                || vf_missing "Traefik Deployment 不存在"
+            printf '%s\n' "${rows}" | awk '$2 ~ /^traefik($|-)/ && $3 > 0 && $4 == $3 { found=1 } END { exit !found }' \
+                || vf_missing "Traefik DaemonSet 未就绪"
+            while read -r namespace name desired ready; do
+                [ -n "${namespace}" ] || continue
+                case "${name}" in
+                    traefik|traefik-*) vf_rollout daemonset "${name}" "${namespace}" \
+                        || vf_missing "Traefik DaemonSet 未就绪" ;;
+                esac
+            done <<< "${rows}"
             vf_capture_kubectl get service -A --no-headers 2>/dev/null \
                 || vf_error "Traefik Service 查询失败"
             rows=${VF_OUTPUT}
