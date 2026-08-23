@@ -127,7 +127,6 @@ public class RemoteStepRunner {
             Path runtimeFile = workDirectory.resolve("runtime.env");
             Path scriptFile = workDirectory.resolve("step.sh");
             Path verifyFile = workDirectory.resolve("verify.sh");
-            Path verifyLibrary = workDirectory.resolve("verify-lib.sh");
             Path recoveryFile = workDirectory.resolve("recovery.sh");
             Path phase3Library = workDirectory.resolve("phase3.sh");
             Files.writeString(runtimeFile, runtimeRenderer.render(cluster, normalizedNodes, node, settings,
@@ -138,7 +137,6 @@ public class RemoteStepRunner {
 
             if (usesStrictVerification(step)) {
                 writeVerifyScript(verifyFile, step);
-                writeVerifyLibrary(verifyLibrary, step);
                 writeRecoveryScript(recoveryFile, step);
                 createEvidenceSnapshot(jobId, step, node, workDirectory, List.of());
                 activeVerificationPhase.set("before");
@@ -146,12 +144,8 @@ public class RemoteStepRunner {
                     createRemoteDirectories(session, remoteDirectory, List.of());
                     ssh.upload(session, runtimeFile, remoteDirectory + "runtime.env");
                     ssh.upload(session, verifyFile, remoteDirectory + "verify.sh");
-                    ssh.upload(session, verifyLibrary, remoteDirectory + "verify-lib.sh");
-                    if (Files.exists(phase3Library)) {
-                        ssh.upload(session, phase3Library, remoteDirectory + "phase3.sh");
-                    }
                     restrictRemoteJobDirectory(session, jobId);
-                    return ssh.execute(session, buildVerificationCommand(remoteDirectory, step),
+                    return ssh.execute(session, buildVerificationCommand(remoteDirectory),
                             VERIFICATION_TIMEOUT);
                 });
                 activeVerificationPhase.set(null);
@@ -217,7 +211,6 @@ public class RemoteStepRunner {
                 ssh.upload(session, scriptFile, remoteDirectory + "step.sh");
                 if (Files.exists(verifyFile)) {
                     ssh.upload(session, verifyFile, remoteDirectory + "verify.sh");
-                    ssh.upload(session, verifyLibrary, remoteDirectory + "verify-lib.sh");
                 }
                 if (Files.exists(phase3Library)) {
                     ssh.upload(session, phase3Library, remoteDirectory + "phase3.sh");
@@ -241,7 +234,7 @@ public class RemoteStepRunner {
                 postVerification.set(true);
                 activeVerificationPhase.set("after");
                 SshCommandResult verified = ssh.execute(
-                        session, buildVerificationCommand(remoteDirectory, step), VERIFICATION_TIMEOUT);
+                        session, buildVerificationCommand(remoteDirectory), VERIFICATION_TIMEOUT);
                 activeVerificationPhase.set(null);
                 afterResult.set(verified);
                 if (verified.exitCode() == 0) collectOutputs(session, jobId, step);
@@ -407,10 +400,9 @@ public class RemoteStepRunner {
         return "bash -lc " + RuntimeEnvRenderer.shellQuote(inner.toString());
     }
 
-    private static String buildVerificationCommand(String remoteDirectory, InstallStep step) {
+    private static String buildVerificationCommand(String remoteDirectory) {
         String inner = "cd " + RuntimeEnvRenderer.shellQuote(remoteDirectory)
                 + " && chmod +x ./verify.sh && source ./runtime.env"
-                + ("kubemate_component".equals(step.phase()) ? " && source ./phase3.sh" : "")
                 + " && bash ./verify.sh";
         return "bash -lc " + RuntimeEnvRenderer.shellQuote(inner);
     }
@@ -542,26 +534,6 @@ public class RemoteStepRunner {
         Files.copy(step.verifyScript(), target, StandardCopyOption.REPLACE_EXISTING);
     }
 
-    private static void writeVerifyLibrary(Path target, InstallStep step) throws IOException {
-        Path library = null;
-        for (Path current = step.verifyScript().getParent(); current != null; current = current.getParent()) {
-            Path candidate = current.resolve("lib/verify.sh").normalize();
-            if (Files.isRegularFile(candidate) && !Files.isSymbolicLink(candidate)) {
-                library = candidate;
-                break;
-            }
-        }
-        if (library == null) {
-            Path projectRoot = BaseInstallPlanFactory.discoverProjectRoot(Path.of("").toAbsolutePath());
-            Path candidate = projectRoot.resolve("scripts/lib/verify.sh").normalize();
-            if (Files.isRegularFile(candidate) && !Files.isSymbolicLink(candidate)) library = candidate;
-        }
-        if (library == null) {
-            throw new IOException("验证公共库不可用: " + library);
-        }
-        Files.copy(library, target, StandardCopyOption.REPLACE_EXISTING);
-    }
-
     private static void writeRecoveryScript(Path target, InstallStep step) throws IOException {
         if (step.recoveryScript() == null) return;
         if (!Files.isRegularFile(step.recoveryScript()) || Files.isSymbolicLink(step.recoveryScript())) {
@@ -689,7 +661,6 @@ public class RemoteStepRunner {
         copyIfPresent(workDirectory.resolve("runtime.env"), evidence.resolve("runtime.env"));
         copyIfPresent(workDirectory.resolve("step.sh"), evidence.resolve("step.sh"));
         copyIfPresent(workDirectory.resolve("verify.sh"), evidence.resolve("verify.sh"));
-        copyIfPresent(workDirectory.resolve("verify-lib.sh"), evidence.resolve("verify-lib.sh"));
         copyIfPresent(workDirectory.resolve("recovery.sh"), evidence.resolve("recovery.sh"));
         copyIfPresent(workDirectory.resolve("phase3.sh"), evidence.resolve("phase3.sh"));
         Path resourceRoot = evidence.resolve("resources");

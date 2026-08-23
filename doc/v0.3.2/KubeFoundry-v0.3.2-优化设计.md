@@ -155,6 +155,7 @@ job_steps.step_order_in_stage INTEGER NOT NULL
 验证脚本规则：
 
 - 文件名为 `scripts/verify/<phase>/verify-<step-key>.sh`。
+- 每个文件直接包含该步骤的完整验证逻辑，不通过公共 `verify_step` 路由分发；执行器只上传当前步骤的验证脚本。
 - 在当前目标节点运行，不再嵌套 SSH 到其他节点。
 - 只读取 `runtime.env` 中的白名单变量，不依赖控制端 `PROJECT_ROOT` 或原始 `cluster.yaml`。
 - 不修改系统、刷新 Token、创建资源或写入用户配置。

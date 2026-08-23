@@ -75,7 +75,7 @@ check_environment() {
     for name in tar sha256sum; do
         command -v "${name}" >/dev/null 2>&1 || { log_error "缺少命令: ${name}"; return 1; }
     done
-    for path in web/backend-java/pom.xml web/frontend/package.json deploy.sh scripts/steps scripts/steps/phase2_k8s_base/18-recover-k8s-keys.sh scripts/lib/phase3.sh scripts/lib/verify.sh scripts/verify/reset/verify-reset-kubernetes-node.sh scripts/steps/reset/reset-kubemate-components.sh scripts/build/build-jre.sh tools/helm-amd tools/helm-arm; do
+    for path in web/backend-java/pom.xml web/frontend/package.json deploy.sh scripts/steps scripts/steps/phase2_k8s_base/18-recover-k8s-keys.sh scripts/lib/phase3.sh scripts/verify/reset/verify-reset-kubernetes-node.sh scripts/steps/reset/reset-kubemate-components.sh scripts/build/build-jre.sh tools/helm-amd tools/helm-arm; do
         [ -e "${PROJECT_ROOT}/${path}" ] || { log_error "项目文件缺失: ${path}"; return 1; }
     done
 }
@@ -116,7 +116,7 @@ build_application() {
     BACKEND_BUILD_ROOT="$(mktemp -d)"
     local backend_project_dir="${BACKEND_BUILD_ROOT}/project"
     local backend_build_dir="${backend_project_dir}/web/backend-java"
-    mkdir -p "${backend_build_dir}" "${backend_project_dir}/scripts/lib"
+    mkdir -p "${backend_build_dir}" "${backend_project_dir}/scripts"
     (
         cd "${PROJECT_ROOT}/web/backend-java"
         tar --exclude='./target' -cf - .
@@ -126,7 +126,6 @@ build_application() {
     )
     cp -a "${PROJECT_ROOT}/scripts/steps" "${backend_project_dir}/scripts/steps"
     cp -a "${PROJECT_ROOT}/scripts/verify" "${backend_project_dir}/scripts/verify"
-    cp "${PROJECT_ROOT}/scripts/lib/verify.sh" "${backend_project_dir}/scripts/lib/verify.sh"
     (cd "${backend_build_dir}" && mvn -q "${maven_args[@]}")
     log_info "构建并测试 Vue 前端..."
     # 在临时目录安装依赖，避免 WSL 与 Windows 共用 node_modules 时互相覆盖平台二进制文件。
@@ -183,7 +182,6 @@ create_archive() {
     cp -a "${PROJECT_ROOT}/scripts/steps" "${release_dir}/scripts/steps"
     mkdir -p "${release_dir}/scripts/lib"
     cp "${PROJECT_ROOT}/scripts/lib/phase3.sh" "${release_dir}/scripts/lib/phase3.sh"
-    cp "${PROJECT_ROOT}/scripts/lib/verify.sh" "${release_dir}/scripts/lib/verify.sh"
     cp -a "${PROJECT_ROOT}/scripts/verify" "${release_dir}/scripts/verify"
     cp -a "${PROJECT_ROOT}/templates" "${release_dir}/templates"
     cp "${PROJECT_ROOT}/deploy.sh" "${release_dir}/deploy.sh"

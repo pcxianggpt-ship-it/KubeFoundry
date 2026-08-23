@@ -21,72 +21,54 @@ component_steps=(
     48-install-alloy 37-prepare-prometheus-workers 38-install-prometheus
 )
 
-verify_wrapper() {
-    local directory="$1" key="$2" script
-    script="${directory}/verify-${key}.sh"
-    [ -f "${script}" ] || fail "缺少验证脚本: ${key}"
-    [ ! -L "${script}" ] || fail "验证脚本不能是符号链接: ${key}"
-    bash -n "${script}" || fail "验证脚本语法错误: ${key}"
-    grep -Fq "verify_step \"${key}\"" "${script}" || fail "验证脚本键不匹配: ${key}"
-    grep -Eq "(^|[|[:space:]])${key}([|)])" "${library}" 2>/dev/null \
-        || fail "验证公共库缺少步骤实现: ${key}"
-    if grep -Eq 'PROJECT_ROOT|config\.sh|ssh_exec|(^|[^[:alnum:]_])ssh[[:space:]]' "${script}"; then
-        fail "验证脚本含控制端依赖或嵌套 SSH: ${key}"
+verify_script() {
+    local script="$1"
+    [ -f "${script}" ] || fail "缺少验证脚本: ${script}"
+    [ ! -L "${script}" ] || fail "验证脚本不能是符号链接: ${script}"
+    bash -n "${script}" || fail "验证脚本语法错误: ${script}"
+    if LC_ALL=C grep -q $'\r' "${script}"; then fail "验证脚本不是 LF: ${script}"; fi
+    if grep -Eq 'verify-lib\.sh|verify_step|scripts/lib/verify\.sh' "${script}"; then
+        fail "验证脚本仍依赖公共验证库: ${script}"
     fi
-    if LC_ALL=C grep -q $'\r' "${script}"; then fail "验证脚本不是 LF: ${key}"; fi
+    if grep -Eq 'PROJECT_ROOT|config\.sh|ssh_exec|(^|[^[:alnum:]_])ssh[[:space:]]' "${script}"; then
+        fail "验证脚本含控制端依赖或嵌套 SSH: ${script}"
+    fi
     if grep -Eq '(^|[;&|[:space:]])(read|select)[[:space:]]' "${script}"; then
-        fail "验证脚本包含交互命令: ${key}"
+        fail "验证脚本包含交互命令: ${script}"
+    fi
+    if grep -Eq '(^|[;&|[:space:]])(mkdir|rm|mv|cp|install|mount|umount|sed[[:space:]]+-i|kubectl[[:space:]]+(apply|create|delete|label|patch|annotate))[[:space:]]' "${script}"; then
+        fail "验证脚本包含修改目标状态的命令: ${script}"
+    fi
+    if grep -E 'exit[[:space:]]+[0-9]+' "${script}" | grep -Ev 'exit[[:space:]]+(0|10|20|21)([;[:space:]]|$)' >/dev/null; then
+        fail "验证脚本包含非法退出码: ${script}"
     fi
 }
 
-library="${PROJECT_ROOT}/scripts/lib/verify.sh"
-[ -f "${library}" ] && [ ! -L "${library}" ] || fail "验证公共库不可用"
-
+[ ! -e "${PROJECT_ROOT}/scripts/lib/verify.sh" ] || fail "验证公共库尚未删除"
 for key in "${base_steps[@]}"; do
-    verify_wrapper "${PROJECT_ROOT}/scripts/verify/phase2_k8s_base" "${key}"
+    verify_script "${PROJECT_ROOT}/scripts/verify/phase2_k8s_base/verify-${key}.sh"
 done
 for key in "${component_steps[@]}"; do
-    verify_wrapper "${PROJECT_ROOT}/scripts/verify/phase3_ecosystem" "${key}"
+    verify_script "${PROJECT_ROOT}/scripts/verify/phase3_ecosystem/verify-${key}.sh"
 done
 
-bash -n "${library}" || fail "验证公共库语法错误"
-if LC_ALL=C grep -q $'\r' "${library}"; then fail "验证公共库不是 LF"; fi
-if grep -Eq 'PROJECT_ROOT|config\.sh|ssh_exec|(^|[^[:alnum:]_])ssh[[:space:]]' "${library}"; then
-    fail "验证公共库含控制端依赖或嵌套 SSH"
-fi
-if grep -Eq '(^|[;&|[:space:]])(mkdir|rm|mv|cp|install|mount|umount|sed[[:space:]]+-i|kubectl[[:space:]]+(apply|create|delete|label|patch|annotate))[[:space:]]' "${library}"; then
-    fail "验证公共库包含修改目标状态的命令"
-fi
-grep -Fq 'vf_rollout deployment kubemate-appx kubemate-system' "${library}" \
-    || fail "Kubemate 验证未只等待自身 Deployment"
-grep -Fq 'vf_capture_kubectl get daemonset -A' "${library}" \
-    || fail "Traefik 验证未查询 DaemonSet"
-grep -Fq 'vf_rollout daemonset "${name}" "${namespace}"' "${library}" \
-    || fail "Traefik 验证未等待 DaemonSet rollout"
-if grep -Fq 'deployment --all -n kubemate-system' "${library}"; then
-    fail "Kubemate 验证仍等待命名空间内全部 Deployment"
-fi
-if grep -E 'exit[[:space:]]+[0-9]+' "${library}" | grep -Ev 'exit[[:space:]]+(0|10|20|21)([;[:space:]]|$)' >/dev/null; then
-    fail "验证公共库包含非法退出码"
-fi
+grep -Fq 'deployment/kubemate-appx' "${PROJECT_ROOT}/scripts/verify/phase3_ecosystem/verify-31-install-kubemate-ui.sh" || fail "Kubemate 验证未只等待自身 Deployment"
+grep -Fq 'get daemonset -A' "${PROJECT_ROOT}/scripts/verify/phase3_ecosystem/verify-36-install-traefik.sh" || fail "Traefik 验证未查询 DaemonSet"
+grep -Fq 'rollout status "daemonset/${name}"' "${PROJECT_ROOT}/scripts/verify/phase3_ecosystem/verify-36-install-traefik.sh" || fail "Traefik 验证未等待 DaemonSet rollout"
 
-run_helper() {
-    local helper="$1"
-    set +e
-    bash -c 'log_info(){ :; }; log_success(){ :; }; log_error(){ :; }; source "$1"; "$2" test' \
-        bash "${library}" "${helper}" >/dev/null 2>&1
-    local status=$?
-    set -e
-    printf '%s\n' "${status}"
-}
-[ "$(run_helper vf_satisfied)" -eq 0 ] || fail "已满足退出码应为 0"
-[ "$(run_helper vf_missing)" -eq 10 ] || fail "未满足退出码应为 10"
-[ "$(run_helper vf_error)" -eq 20 ] || fail "验证异常退出码应为 20"
-[ "$(run_helper vf_timeout)" -eq 21 ] || fail "验证超时退出码应为 21"
-
-first_result=$(run_helper vf_missing)
-second_result=$(run_helper vf_missing)
-[ "${first_result}" = "${second_result}" ] || fail "同一模拟环境重复验证结果不一致"
+set +e
+env -u KF_NODE_HOSTNAME -u KF_NODE_IP bash "${PROJECT_ROOT}/scripts/verify/phase2_k8s_base/verify-11b-setup-hostname.sh" >/dev/null 2>&1
+[ "$?" -eq 20 ] || fail "缺少运行参数应返回 20"
+KF_YUM_LOCAL_REPO_CONFIG="${TEST_ROOT}/missing.repo" bash "${PROJECT_ROOT}/scripts/verify/phase2_k8s_base/verify-10-setup-yum-source.sh" >/dev/null 2>&1
+[ "$?" -eq 10 ] || fail "状态未满足应返回 10"
+mkdir -p "${TEST_ROOT}/data/prom_data" "${TEST_ROOT}/bin"
+KF_K8S_HOME="${TEST_ROOT}/data" bash "${PROJECT_ROOT}/scripts/verify/phase3_ecosystem/verify-37-prepare-prometheus-workers.sh" >/dev/null 2>&1
+[ "$?" -eq 0 ] || fail "状态满足应返回 0"
+printf '#!/bin/bash\nexit 124\n' > "${TEST_ROOT}/bin/timeout"
+chmod +x "${TEST_ROOT}/bin/timeout"
+PATH="${TEST_ROOT}/bin:${PATH}" KF_K8S_HOME="${TEST_ROOT}/data" bash "${PROJECT_ROOT}/scripts/verify/phase3_ecosystem/verify-37-prepare-prometheus-workers.sh" >/dev/null 2>&1
+[ "$?" -eq 21 ] || fail "验证超时应返回 21"
+set -e
 
 recovery="${PROJECT_ROOT}/scripts/steps/phase2_k8s_base/18-recover-k8s-keys.sh"
 [ -f "${recovery}" ] && [ ! -L "${recovery}" ] || fail "Join 产物恢复脚本不可用"

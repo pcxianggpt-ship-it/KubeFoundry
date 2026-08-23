@@ -50,7 +50,6 @@ for arch in x86_64 aarch64; do
         "${prefix}/scripts/steps/" \
         "${prefix}/scripts/steps/phase2_k8s_base/18-recover-k8s-keys.sh" \
         "${prefix}/scripts/lib/phase3.sh" \
-        "${prefix}/scripts/lib/verify.sh" \
         "${prefix}/scripts/verify/reset/verify-reset-kubernetes-node.sh" \
         "${prefix}/scripts/steps/reset/reset-kubemate-components.sh" \
         "${prefix}/templates/minio/kustomization.yaml" \
@@ -100,7 +99,7 @@ printf 'keep\n' > "${TEST_ROOT}/deployment/kube-media/keep.txt"
 [ -d "${TEST_ROOT}/deployment/scripts/steps" ] || fail "未安装步骤脚本"
 [ -f "${TEST_ROOT}/deployment/scripts/steps/phase2_k8s_base/18-recover-k8s-keys.sh" ] ||
     fail "未安装 Kubernetes Join 凭据恢复脚本"
-[ -f "${TEST_ROOT}/deployment/scripts/lib/verify.sh" ] || fail "未安装验证公共库"
+[ ! -e "${TEST_ROOT}/deployment/scripts/lib/verify.sh" ] || fail "部署目录不应包含已删除的验证公共库"
 [ -f "${TEST_ROOT}/deployment/templates/minio/tenant.yaml" ] || fail "未安装 MinIO 配置模板"
 [ -f "${TEST_ROOT}/deployment/scripts/verify/reset/verify-reset-kubernetes-node.sh" ] ||
     fail "未安装重置验证脚本"

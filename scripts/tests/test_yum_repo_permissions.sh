@@ -68,13 +68,11 @@ bash -c 'source "$1"; source "$2" "$3"' _ \
     "${PROJECT_ROOT}/scripts/lib/logger.sh" \
     "${PROJECT_ROOT}/scripts/steps/phase2_k8s_base/10-setup-yum-source.sh" \
     "${TEST_ROOT}/k8s-repo-source.tar.gz"
-bash -c 'source "$1"; vf_verify_base 10-setup-yum-source' _ \
-    "${PROJECT_ROOT}/scripts/lib/verify.sh"
+bash "${PROJECT_ROOT}/scripts/verify/phase2_k8s_base/verify-10-setup-yum-source.sh"
 
 bash -c 'source "$1"; source "$2"' _ \
     "${PROJECT_ROOT}/scripts/lib/logger.sh" \
     "${PROJECT_ROOT}/scripts/steps/phase2_k8s_base/12-setup-k8s-repo.sh"
-bash -c 'source "$1"; vf_verify_base 12-setup-k8s-repo' _ \
-    "${PROJECT_ROOT}/scripts/lib/verify.sh"
+bash "${PROJECT_ROOT}/scripts/verify/phase2_k8s_base/verify-12-setup-k8s-repo.sh"
 
 printf 'yum repository permission tests passed\n'
