@@ -46,6 +46,19 @@ class InstallPlanFactoryTest {
                 "23-configure-coredns-affinity",
                 "web-verify-cluster-health");
         assertThat(plan.steps()).hasSize(15);
+        assertThat(plan.steps()).allSatisfy(step -> {
+            assertThat(step.stageKey()).isNotBlank();
+            assertThat(step.stageName()).isNotBlank();
+            assertThat(step.stageOrder()).isPositive();
+            assertThat(step.stepOrderInStage()).isPositive();
+        });
+        assertThat(plan.steps().subList(0, 6)).extracting(InstallStep::stageKey)
+                .containsOnly("host_preparation");
+        assertThat(plan.require("16-install-containerd").stageKey()).isEqualTo("container_runtime");
+        assertThat(plan.require("16-install-containerd").stageName()).isEqualTo("部署容器运行时");
+        assertThat(plan.require("17-install-registry").stageKey()).isEqualTo("registry");
+        assertThat(plan.steps().subList(8, 15)).extracting(InstallStep::stageKey)
+                .containsOnly("kubernetes");
         assertThat(plan.require("web-verify-cluster-health").builtin())
                 .isEqualTo("cluster_health");
 

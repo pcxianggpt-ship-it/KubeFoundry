@@ -100,6 +100,15 @@ class ComponentPlanFactoryTest {
         assertThat(plan.steps()).extracting(InstallStep::key).containsExactly(
                 "29-install-helm", "30-create-namespace", "32-configure-nfs-exports",
                 "32-install-nfs", "32-mount-nfs-workers");
+        assertThat(plan.steps().subList(0, 2)).extracting(InstallStep::stageKey)
+                .containsOnly("component_prerequisite");
+        assertThat(plan.steps().subList(2, 5)).allSatisfy(step -> {
+            assertThat(step.stageKey()).isEqualTo("nfs");
+            assertThat(step.stageName()).isEqualTo("部署 NFS 组件");
+            assertThat(step.stageOrder()).isEqualTo(6);
+        });
+        assertThat(plan.steps().subList(2, 5)).extracting(InstallStep::stepOrderInStage)
+                .containsExactly(1, 2, 3);
         assertThat(plan.require("32-install-nfs").resources()).singleElement().satisfies(resource ->
                 assertThat(resource.localPath().toString().replace('\\', '/'))
                         .endsWith("kube-media/03.setup_file/vunknown/helmapp/nfs/nfs-subdir-external-provisioner"));

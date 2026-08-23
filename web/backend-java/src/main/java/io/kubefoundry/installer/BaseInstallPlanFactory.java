@@ -46,7 +46,8 @@ public class BaseInstallPlanFactory {
                 InstallStep.builtin("11b-setup-hostname", "配置主机名和 hosts", "k8s_base",
                         "all_nodes", "setup_hostname", "parallel", 5, false,
                         "")
-                        .withVerification(verifyScript("11b-setup-hostname")),
+                        .withVerification(verifyScript("11b-setup-hostname"))
+                        .withStage(InstallStage.HOST_PREPARATION, 2),
                 script("12-setup-k8s-repo", "配置 Kubernetes HTTP Repo", "non_primary_k8s_nodes",
                         "12-setup-k8s-repo.sh", "parallel", 5, false, List.of(), List.of(), List.of(),
                         ""),
@@ -101,7 +102,8 @@ public class BaseInstallPlanFactory {
                         ""),
                 InstallStep.builtin("web-verify-cluster-health", "验证 Kubernetes 集群健康",
                         "verify", "primary_control_plane", "cluster_health",
-                        "serial", 1, true, "")));
+                        "serial", 1, true, "")
+                        .withStage(InstallStage.KUBERNETES, 7)));
     }
 
     public InstallPlan select(List<String> selectedKeys) {
@@ -166,10 +168,31 @@ public class BaseInstallPlanFactory {
                 mode, maxWorkers, failFast, resources, arguments, outputs, verifyCommand);
         Path verify = verifyScript(key);
         if ("18-init-k8s-cluster".equals(key)) {
-            return step.withVerificationAndRecovery(verify, projectRoot.resolve(
+            step = step.withVerificationAndRecovery(verify, projectRoot.resolve(
                     "scripts/steps/phase2_k8s_base/18-recover-k8s-keys.sh"));
+        } else {
+            step = step.withVerification(verify);
         }
-        return step.withVerification(verify);
+        return withStage(step);
+    }
+
+    private static InstallStep withStage(InstallStep step) {
+        return switch (step.key()) {
+            case "10-setup-yum-source" -> step.withStage(InstallStage.HOST_PREPARATION, 1);
+            case "12-setup-k8s-repo" -> step.withStage(InstallStage.HOST_PREPARATION, 3);
+            case "13-install-k8s-deps" -> step.withStage(InstallStage.HOST_PREPARATION, 4);
+            case "14-replace-kubeadm" -> step.withStage(InstallStage.HOST_PREPARATION, 5);
+            case "15-environment-config" -> step.withStage(InstallStage.HOST_PREPARATION, 6);
+            case "16-install-containerd" -> step.withStage(InstallStage.CONTAINER_RUNTIME, 1);
+            case "17-install-registry" -> step.withStage(InstallStage.REGISTRY, 1);
+            case "18-init-k8s-cluster" -> step.withStage(InstallStage.KUBERNETES, 1);
+            case "19-modify-cert-expiry" -> step.withStage(InstallStage.KUBERNETES, 2);
+            case "20-add-control-nodes" -> step.withStage(InstallStage.KUBERNETES, 3);
+            case "21-add-worker-nodes" -> step.withStage(InstallStage.KUBERNETES, 4);
+            case "22-install-cni-flannel" -> step.withStage(InstallStage.KUBERNETES, 5);
+            case "23-configure-coredns-affinity" -> step.withStage(InstallStage.KUBERNETES, 6);
+            default -> throw new IllegalArgumentException("安装步骤缺少部署单元定义: " + step.key());
+        };
     }
 
     private Path verifyScript(String key) {

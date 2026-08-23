@@ -44,9 +44,10 @@ public class ComponentPlanFactory {
 
         java.util.ArrayList<InstallStep> steps = new java.util.ArrayList<>();
         steps.add(script(snapshot, "29-install-helm", "安装 Helm", "primary_control_plane", null,
-                "serial", 1, true));
+                "serial", 1, true, InstallStage.COMPONENT_PREREQUISITE, 1));
         steps.add(script(snapshot, "30-create-namespace", "创建 Kubemate 命名空间",
-                "primary_control_plane", null, "serial", 1, true));
+                "primary_control_plane", null, "serial", 1, true,
+                InstallStage.COMPONENT_PREREQUISITE, 2));
         for (String key : enabled) steps.addAll(groupSteps(snapshot, key));
         return new InstallPlan(steps);
     }
@@ -55,44 +56,46 @@ public class ComponentPlanFactory {
         return switch (groupKey) {
             case "nfs" -> List.of(
                     script(snapshot, "32-configure-nfs-exports", "配置 NFS exports", "nfs_server", groupKey,
-                            "serial", 1, true),
+                            "serial", 1, true, InstallStage.NFS, 1),
                     script(snapshot, "32-install-nfs", "安装 NFS Provisioner", "primary_control_plane", groupKey,
-                            "serial", 1, true),
+                            "serial", 1, true, InstallStage.NFS, 2),
                     script(snapshot, "32-mount-nfs-workers", "挂载 NFS 工作节点", "workers", groupKey,
-                            "parallel", 5, false));
+                            "parallel", 5, false, InstallStage.NFS, 3));
             case "kubemate" -> List.of(script(snapshot, "31-install-kubemate-ui", "安装 Kubemate 管理组件",
-                    "primary_control_plane", groupKey, "serial", 1, true));
+                    "primary_control_plane", groupKey, "serial", 1, true, InstallStage.KUBEMATE, 1));
             case "traefik" -> List.of(script(snapshot, "36-install-traefik", "安装 Traefik 网关",
-                    "primary_control_plane", groupKey, "serial", 1, true));
+                    "primary_control_plane", groupKey, "serial", 1, true, InstallStage.TRAEFIK, 1));
             case "storage_observability" -> List.of(
                     script(snapshot, "46-prepare-storage-workers", "准备存储 Worker 目录", "workers", groupKey,
-                            "parallel", 5, true),
+                            "parallel", 5, true, InstallStage.STORAGE_OBSERVABILITY, 1),
                     script(snapshot, "47-install-openebs", "安装 OpenEBS", "primary_control_plane", groupKey,
-                            "serial", 1, true),
+                            "serial", 1, true, InstallStage.STORAGE_OBSERVABILITY, 2),
                     script(snapshot, "49-install-minio", "安装 MinIO", "primary_control_plane", groupKey,
-                            "serial", 1, true),
+                            "serial", 1, true, InstallStage.STORAGE_OBSERVABILITY, 3),
                     script(snapshot, "35-install-loki", "安装 Loki", "primary_control_plane", groupKey,
-                            "serial", 1, true),
+                            "serial", 1, true, InstallStage.STORAGE_OBSERVABILITY, 4),
                     script(snapshot, "48-install-alloy", "安装 Alloy", "primary_control_plane", groupKey,
-                            "serial", 1, true));
+                            "serial", 1, true, InstallStage.STORAGE_OBSERVABILITY, 5));
             case "prometheus" -> List.of(
                     script(snapshot, "37-prepare-prometheus-workers", "准备 Prometheus Worker 目录", "workers",
-                            groupKey, "parallel", 5, true),
+                            groupKey, "parallel", 5, true, InstallStage.PROMETHEUS, 1),
                     script(snapshot, "38-install-prometheus", "安装 Prometheus", "primary_control_plane", groupKey,
-                            "serial", 1, true));
+                            "serial", 1, true, InstallStage.PROMETHEUS, 2));
             default -> throw new IllegalArgumentException("组件组不可安装: " + groupKey);
         };
     }
 
     private InstallStep script(InstallationSnapshotPayload snapshot, String key, String name, String scope,
-            String groupKey, String mode, int maxWorkers, boolean failFast) {
+            String groupKey, String mode, int maxWorkers, boolean failFast,
+            InstallStage stage, int orderInStage) {
         List<InstallStep.Resource> resources = "29-install-helm".equals(key)
                 ? List.of(media.helmResource(snapshot))
                 : requiresComponentMedia(key)
                         ? List.of(media.componentResource(snapshot, groupKey, key)) : List.of();
         return new InstallStep(key, name, "kubemate_component", scope, scripts.resolve(key + ".sh"), null,
                 mode, maxWorkers, failFast, resources, List.of(), List.of(), "", groupKey)
-                .withVerification(verifyScripts.resolve("verify-" + key + ".sh"));
+                .withVerification(verifyScripts.resolve("verify-" + key + ".sh"))
+                .withStage(stage, orderInStage);
     }
 
     private static boolean requiresComponentMedia(String key) {

@@ -32,6 +32,10 @@ public final class InstallStepMetadata {
         }
 
         public Stage next(InstallStep step) {
+            if (step.stageKey() != null) {
+                return new Stage(step.stageKey(), step.stageName(), step.stageOrder(),
+                        step.stepOrderInStage());
+            }
             String stageKey = stageKey(step);
             int stageOrder = stageOrders.computeIfAbsent(stageKey, ignored -> stageOrders.size() + 1);
             int stepOrderInStage = stepOrders.merge(stageKey, 1, Integer::sum);

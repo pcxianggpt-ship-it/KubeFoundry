@@ -24,6 +24,10 @@
         </dl></div>
         <div><h2>节点清单</h2><ul class="confirm-node-list"><li v-for="node in nodes" :key="node.id"><strong>{{ node.hostname }}</strong><span>{{ roleLabel(node.roles) }}</span><el-tag type="success" size="small">免密已验证</el-tag></li></ul></div>
       </section>
+      <section class="confirm-install-plan" aria-labelledby="install-plan-heading">
+        <div class="panel-heading"><div><h2 id="install-plan-heading">安装计划</h2><p>按部署单元组织，共 {{ deploymentUnits.length }} 个单元、{{ plan.length }} 个步骤。</p></div></div>
+        <DeploymentUnitList :units="deploymentUnits" :selectable="false" aria-label="安装计划部署单元" />
+      </section>
       <el-alert title="安装将修改目标服务器的软件包、网络、容器运行时和 Kubernetes 服务。任务开始后请勿关闭管理服务。" type="warning" show-icon :closable="false" />
       <footer class="confirm-actions">
         <el-checkbox data-testid="confirm-install-risk" v-model="riskConfirmed">我已核对目标集群、节点范围和关键配置</el-checkbox>
@@ -37,7 +41,9 @@
 import { computed, onMounted, ref } from 'vue';
 import { ArrowLeft, CircleCheckFilled, Refresh, VideoPlay, WarningFilled } from '@element-plus/icons-vue';
 import { RouterLink, useRoute, useRouter } from 'vue-router';
-import { getCluster, getClusterSettings, listJobs, listNodes, startInstall } from '../api/client';
+import DeploymentUnitList from '../components/jobs/DeploymentUnitList.vue';
+import { groupDeploymentUnits } from '../components/jobs/deploymentUnits';
+import { getCluster, getClusterSettings, getInstallPlan, listJobs, listNodes, startInstall } from '../api/client';
 import { safeErrorMessage } from '../utils/redaction';
 
 const route = useRoute();
@@ -45,12 +51,14 @@ const router = useRouter();
 const clusterId = String(route.params.clusterId);
 const cluster = ref({});
 const nodes = ref([]);
+const plan = ref([]);
 const settings = ref({ paths: {}, env: {}, advanced: {} });
 const loading = ref(true);
 const starting = ref(false);
 const riskConfirmed = ref(false);
 const errorMessage = ref('');
 const backRoute = computed(() => ({ name: 'install-overview', params: { clusterId } }));
+const deploymentUnits = computed(() => groupDeploymentUnits(plan.value));
 const registrySummary = computed(() => {
   const registry = nodes.value.find((node) => node.roles?.includes('registry'));
   return registry ? `${registry.hostname} (${registry.ip}:5000)` : '未找到 Registry 节点';
@@ -61,12 +69,14 @@ function items(payload) { return Array.isArray(payload) ? payload : payload?.ite
 async function load() {
   loading.value = true; errorMessage.value = '';
   try {
-    const [clusterPayload, nodePayload, settingPayload, jobPayload] = await Promise.all([
-      getCluster(clusterId), listNodes(clusterId), getClusterSettings(clusterId), listJobs(clusterId)
+    const [clusterPayload, nodePayload, settingPayload, jobPayload, planPayload] = await Promise.all([
+      getCluster(clusterId), listNodes(clusterId), getClusterSettings(clusterId), listJobs(clusterId),
+      getInstallPlan(clusterId)
     ]);
     cluster.value = clusterPayload?.data || clusterPayload;
     nodes.value = items(nodePayload);
     settings.value = settingPayload || settings.value;
+    plan.value = items(planPayload);
     const passed = items(jobPayload).some((job) => job.job_type === 'precheck' && job.status === 'success');
     if (!passed) throw new Error('未找到成功的部署预检查，请返回预检查阶段重新执行。');
   } catch (error) { errorMessage.value = safeErrorMessage(error, '安装确认信息加载失败，请重试。'); }

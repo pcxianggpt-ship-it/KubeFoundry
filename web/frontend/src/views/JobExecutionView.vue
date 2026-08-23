@@ -13,7 +13,7 @@
     </section>
     <template v-else>
       <section class="execution-overview">
-        <div class="progress-copy"><span>整体进度</span><strong>{{ completedStages }}/{{ stages.length }} 个阶段</strong></div>
+        <div class="progress-copy"><span>整体进度</span><strong>{{ completedSteps }}/{{ stages.length }} 个步骤</strong></div>
         <el-progress :percentage="progress" :status="job.status === 'failed' ? 'exception' : ['success', 'partial_success'].includes(job.status) ? 'success' : undefined" />
         <div class="execution-meta"><span>Kubernetes {{ cluster.k8s_version || '-' }}</span><span>{{ runModeLabel }}</span><span>{{ connected ? '实时连接中' : terminal ? '任务已结束' : '实时连接已中断' }}</span></div>
       </section>
@@ -26,10 +26,10 @@
         <template #default><el-button data-testid="locate-failure" link type="primary" @click="locateFailure">定位失败位置</el-button></template>
       </el-alert>
       <div class="execution-layout">
-        <aside class="execution-stage-panel"><div class="panel-heading"><h2>{{ jobTypeLabel }}阶段</h2><span>{{ stages.length }} 项</span></div><JobStageList :stages="stages" :selected-id="selectedStageId" @select="selectStage" /></aside>
+        <aside class="execution-stage-panel"><div class="panel-heading"><h2>{{ jobTypeLabel }}部署单元</h2><span>{{ deploymentUnits.length }} 个单元 · {{ stages.length }} 个步骤</span></div><DeploymentUnitList :units="deploymentUnits" :selected-id="selectedStageId" :aria-label="`${jobTypeLabel}部署单元`" @select="selectStage" /></aside>
         <main class="execution-detail">
           <div class="execution-filters">
-            <el-select v-model="selectedStageId" placeholder="全部阶段" aria-label="按阶段筛选"><el-option label="全部阶段" value="" /><el-option v-for="stage in stages" :key="stage.id" :label="stage.name" :value="stage.id" /></el-select>
+            <el-select v-model="selectedStageId" placeholder="全部步骤" aria-label="按步骤筛选"><el-option label="全部步骤" value="" /><el-option v-for="stage in stages" :key="stage.id" :label="stage.name" :value="stage.id" /></el-select>
             <el-select v-model="selectedNodeId" placeholder="全部节点" aria-label="按节点筛选"><el-option label="全部节点" value="" /><el-option v-for="node in nodeOptions" :key="node.node_id" :label="node.hostname" :value="node.node_id" /></el-select>
             <el-button data-testid="refresh-job-snapshot" :icon="Refresh" @click="loadSnapshot(true)">刷新快照</el-button>
           </div>
@@ -45,9 +45,10 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { ArrowLeft, CircleCheckFilled, Clock, Refresh, WarningFilled } from '@element-plus/icons-vue';
 import { RouterLink, useRoute, useRouter } from 'vue-router';
-import JobStageList from '../components/jobs/JobStageList.vue';
+import DeploymentUnitList from '../components/jobs/DeploymentUnitList.vue';
 import NodeExecutionTable from '../components/jobs/NodeExecutionTable.vue';
 import LiveLogViewer from '../components/jobs/LiveLogViewer.vue';
+import { groupDeploymentUnits } from '../components/jobs/deploymentUnits';
 import { canResumeJob, isTerminalJob, jobStatusLabel } from '../components/jobs/jobStatus';
 import { getCluster, getClusterJob, getJob, getJobLogs, getJobSteps, resumeInstallJob } from '../api/client';
 import { safeErrorMessage } from '../utils/redaction';
@@ -61,8 +62,9 @@ const selectedStageId = ref(''); const selectedNodeId = ref('');
 let eventSource; let logId = 0; let loadSequence = 0;
 
 const terminal = computed(() => isTerminalJob(job.value.status));
-const completedStages = computed(() => stages.value.filter((stage) => ['success', 'skipped'].includes(stage.status)).length);
-const progress = computed(() => stages.value.length ? Math.round(completedStages.value / stages.value.length * 100) : 0);
+const completedSteps = computed(() => stages.value.filter((stage) => ['success', 'skipped'].includes(stage.status)).length);
+const progress = computed(() => stages.value.length ? Math.round(completedSteps.value / stages.value.length * 100) : 0);
+const deploymentUnits = computed(() => groupDeploymentUnits(stages.value));
 const statusTone = computed(() => ['success', 'partial_success'].includes(job.value.status) ? 'success' : terminal.value ? 'error' : 'running');
 const statusIcon = computed(() => ['success', 'partial_success'].includes(job.value.status) ? CircleCheckFilled : terminal.value ? WarningFilled : Clock);
 const clusterRoute = computed(() => ({ name: 'install-overview', params: { clusterId: String(job.value.cluster_id) } }));

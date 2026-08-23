@@ -15,6 +15,7 @@ import {
   getJob,
   getJobLogs,
   getJobSteps,
+  getInstallPlan,
   getPrecheckResults,
   listJobs,
   listNodes,
@@ -31,6 +32,7 @@ vi.mock('../api/client', () => ({
   getJob: vi.fn(),
   getJobLogs: vi.fn(),
   getJobSteps: vi.fn(),
+  getInstallPlan: vi.fn(),
   getPrecheckResults: vi.fn(),
   listJobs: vi.fn(),
   listNodes: vi.fn(),
@@ -74,6 +76,7 @@ describe('安装流程', () => {
       { id: 1, hostname: 'cp-1', check_name: '操作系统', severity: 'error', status: 'success', message: '通过' }
     ] });
     getClusterJob.mockImplementation((_clusterId, jobId) => getJob(jobId));
+    getInstallPlan.mockResolvedValue({ items: [] });
   });
 
   it('预检查全部成功后进入安装确认，但不自动开始安装', async () => {
@@ -147,6 +150,12 @@ describe('安装流程', () => {
       { id: 2, hostname: 'worker-1', ip: '10.0.0.2', roles: ['worker'], node_test_status: 'success' }
     ] });
     getClusterSettings.mockResolvedValue({ paths: { install_media: '/opt/kf/media' }, advanced: { max_parallel_nodes: 2 } });
+    getInstallPlan.mockResolvedValue({ items: [
+      { key: '10-setup-yum-source', name: '配置 Kubernetes YUM 源', order: 1, stage_key: 'host_preparation', stage_name: '主机与软件源准备', stage_order: 1, step_order_in_stage: 1, target_scope: 'primary_control_plane' },
+      { key: '32-configure-nfs-exports', name: '配置 NFS exports', order: 16, stage_key: 'nfs', stage_name: '部署 NFS 组件', stage_order: 6, step_order_in_stage: 1, target_scope: 'nfs_server' },
+      { key: '32-install-nfs', name: '安装 NFS Provisioner', order: 17, stage_key: 'nfs', stage_name: '部署 NFS 组件', stage_order: 6, step_order_in_stage: 2, target_scope: 'primary_control_plane' },
+      { key: '32-mount-nfs-workers', name: '挂载 NFS 工作节点', order: 18, stage_key: 'nfs', stage_name: '部署 NFS 组件', stage_order: 6, step_order_in_stage: 3, target_scope: 'workers' }
+    ] });
     listJobs.mockResolvedValue({ items: [{ id: 80, cluster_id: 42, job_type: 'precheck', status: 'success' }] });
     startInstall.mockResolvedValue({ job_id: 99, status: 'pending' });
 
@@ -155,7 +164,14 @@ describe('安装流程', () => {
     expect(wrapper.text()).toContain('生产集群');
     expect(wrapper.text()).toContain('1.30.14');
     expect(wrapper.text()).toContain('2 个节点');
+    expect(wrapper.text()).toContain('2 个单元、4 个步骤');
+    expect(wrapper.text()).toContain('部署 NFS 组件');
     expect(startInstall).not.toHaveBeenCalled();
+
+    await wrapper.get('[data-testid="deployment-unit-nfs"]').trigger('click');
+    expect(wrapper.text()).toContain('配置 NFS exports');
+    expect(wrapper.text()).toContain('安装 NFS Provisioner');
+    expect(wrapper.text()).toContain('挂载 NFS 工作节点');
 
     await wrapper.get('[data-testid="confirm-install-risk"] input').setValue(true);
     await wrapper.get('[data-testid="start-install"]').trigger('click');
@@ -199,12 +215,15 @@ describe('安装流程', () => {
     getJob.mockResolvedValue({ id: 100, cluster_id: 42, job_type: 'install', status: 'failed' });
     getCluster.mockResolvedValue({ id: 42, name: '生产集群', k8s_version: '1.30.14' });
     getJobSteps.mockResolvedValue({ items: [
-      { id: 10, name: '安装依赖', order: 1, status: 'success', nodes: [{ id: 101, node_id: 1, hostname: 'cp-1', status: 'success' }] },
-      { id: 20, name: '安装 containerd', order: 2, status: 'failed', nodes: [{ id: 201, node_id: 2, hostname: 'worker-1', status: 'failed', message: '软件包校验失败' }] }
+      { id: 10, name: '安装依赖', order: 1, stage_key: 'host_preparation', stage_name: '主机与软件源准备', stage_order: 1, step_order_in_stage: 1, status: 'success', nodes: [{ id: 101, node_id: 1, hostname: 'cp-1', status: 'success' }] },
+      { id: 20, name: '安装 containerd', order: 2, stage_key: 'container_runtime', stage_name: '部署容器运行时', stage_order: 2, step_order_in_stage: 1, status: 'failed', nodes: [{ id: 201, node_id: 2, hostname: 'worker-1', status: 'failed', message: '软件包校验失败' }] }
     ] });
     getJobLogs.mockResolvedValue({ items: [] });
     const { wrapper } = await mountAt(JobExecutionView, '/cluster-install/42/jobs/100');
 
+    expect(wrapper.get('[data-testid="deployment-unit-container_runtime"]').attributes('aria-expanded')).toBe('true');
+    expect(wrapper.get('[data-testid="deployment-unit-host_preparation"]').attributes('aria-expanded')).toBe('false');
+    expect(wrapper.text()).toContain('2 个单元 · 2 个步骤');
     await wrapper.get('[data-testid="locate-failure"]').trigger('click');
     await flushPromises();
     expect(wrapper.get('[data-testid="job-stage-20"]').classes()).toContain('is-selected');

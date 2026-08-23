@@ -36,19 +36,22 @@ class ResetPlanFactory {
     InstallStep componentCleanupStep() {
         return InstallStep.script("reset-kubemate-components", "清理 Kubemate 受管组件", "reset",
                 "primary_control_plane", componentCleanupScript, "serial", 1, true,
-                List.of(), List.of(), List.of(), "");
+                List.of(), List.of(), List.of(), "")
+                .withStage(InstallStage.RESET, 1);
     }
 
     InstallStep nodeCleanupStep() {
         return InstallStep.script("reset-kubernetes-node", "清理 Kubernetes 节点", "reset",
                 "snapshot_node", script, "parallel", 3, true,
-                java.util.List.of(), java.util.List.of(), java.util.List.of(), "");
+                java.util.List.of(), java.util.List.of(), java.util.List.of(), "")
+                .withStage(InstallStage.RESET, 2);
     }
 
     InstallStep nodeVerificationStep() {
         return InstallStep.script("verify-reset-kubernetes-node", "验证 Kubernetes 节点清理", "reset",
                 "snapshot_node", verifyScript, "parallel", 3, true,
-                java.util.List.of(), java.util.List.of(), java.util.List.of(), "");
+                java.util.List.of(), java.util.List.of(), java.util.List.of(), "")
+                .withStage(InstallStage.RESET, 3);
     }
 
     RuntimeSettings runtimeSettings(InstallationSnapshotPayload payload, Set<String> componentGroups) {

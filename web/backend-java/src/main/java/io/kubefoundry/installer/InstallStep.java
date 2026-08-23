@@ -20,7 +20,11 @@ public record InstallStep(
         String componentGroupKey,
         StepType type,
         Path verifyScript,
-        Path recoveryScript) {
+        Path recoveryScript,
+        String stageKey,
+        String stageName,
+        int stageOrder,
+        int stepOrderInStage) {
 
     public enum StepType { INSTALL, VALIDATION, MAINTENANCE }
 
@@ -40,6 +44,24 @@ public record InstallStep(
         type = type == null ? StepType.INSTALL : type;
         verifyScript = verifyScript == null ? null : verifyScript.toAbsolutePath().normalize();
         recoveryScript = recoveryScript == null ? null : recoveryScript.toAbsolutePath().normalize();
+        stageKey = stageKey == null || stageKey.isBlank() ? null : stageKey.trim();
+        stageName = stageName == null || stageName.isBlank() ? null : stageName.trim();
+        if ((stageKey == null) != (stageName == null)) {
+            throw new IllegalArgumentException("部署单元键和名称必须同时设置");
+        }
+        if (stageKey != null && (stageOrder < 1 || stepOrderInStage < 1)) {
+            throw new IllegalArgumentException("部署单元和单元内顺序必须为正整数");
+        }
+    }
+
+    public InstallStep(
+            String key, String name, String phase, String targetScope, Path script, String builtin,
+            String mode, int maxWorkers, boolean failFast, List<Resource> resources,
+            List<Argument> arguments, List<Output> outputs, String verifyCommand,
+            String componentGroupKey, StepType type, Path verifyScript, Path recoveryScript) {
+        this(key, name, phase, targetScope, script, builtin, mode, maxWorkers, failFast,
+                resources, arguments, outputs, verifyCommand, componentGroupKey, type,
+                verifyScript, recoveryScript, null, null, 0, 0);
     }
 
     public InstallStep(
@@ -50,7 +72,7 @@ public record InstallStep(
         this(key, name, phase, targetScope, script, builtin, mode, maxWorkers, failFast,
                 resources, arguments, outputs, verifyCommand, componentGroupKey,
                 "cluster_health".equals(builtin) ? StepType.VALIDATION : StepType.INSTALL,
-                null, null);
+                null, null, null, null, 0, 0);
     }
 
     public static InstallStep script(
@@ -78,20 +100,29 @@ public record InstallStep(
     public InstallStep withResources(List<Resource> updatedResources) {
         return new InstallStep(key, name, phase, targetScope, script, builtin, mode, maxWorkers,
                 failFast, updatedResources, arguments, outputs, verifyCommand, componentGroupKey,
-                type, verifyScript, recoveryScript);
+                type, verifyScript, recoveryScript, stageKey, stageName, stageOrder, stepOrderInStage);
     }
 
     public InstallStep withVerification(Path updatedVerifyScript) {
         return new InstallStep(key, name, phase, targetScope, script, builtin, mode, maxWorkers,
                 failFast, resources, arguments, outputs, verifyCommand, componentGroupKey,
-                type, updatedVerifyScript, recoveryScript);
+                type, updatedVerifyScript, recoveryScript, stageKey, stageName, stageOrder, stepOrderInStage);
     }
 
     public InstallStep withVerificationAndRecovery(
             Path updatedVerifyScript, Path updatedRecoveryScript) {
         return new InstallStep(key, name, phase, targetScope, script, builtin, mode, maxWorkers,
                 failFast, resources, arguments, outputs, verifyCommand, componentGroupKey,
-                type, updatedVerifyScript, updatedRecoveryScript);
+                type, updatedVerifyScript, updatedRecoveryScript,
+                stageKey, stageName, stageOrder, stepOrderInStage);
+    }
+
+    public InstallStep withStage(InstallStage stage, int orderInStage) {
+        if (stage == null) throw new IllegalArgumentException("部署单元不能为空");
+        return new InstallStep(key, name, phase, targetScope, script, builtin, mode, maxWorkers,
+                failFast, resources, arguments, outputs, verifyCommand, componentGroupKey,
+                type, verifyScript, recoveryScript,
+                stage.key(), stage.name(), stage.order(), orderInStage);
     }
 
     public record Resource(

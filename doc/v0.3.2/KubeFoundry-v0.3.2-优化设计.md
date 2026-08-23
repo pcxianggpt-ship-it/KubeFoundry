@@ -263,7 +263,8 @@ v0.3.2 实现已使用 `# Managed by KubeFoundry v0.3.2` 标识本地与 HTTP Re
 
 | `stage_key` | 名称 | 包含内容 |
 | --- | --- | --- |
-| `host_preparation` | 主机与软件源准备 | YUM、主机名、Repo、依赖、环境、containerd |
+| `host_preparation` | 主机与软件源准备 | YUM、主机名、Repo、依赖、kubeadm、环境 |
+| `container_runtime` | 部署容器运行时 | containerd 安装与验证 |
 | `registry` | 部署镜像仓库 | Registry 安装与验证 |
 | `kubernetes` | 部署 Kubernetes 集群 | 初始化、证书、节点加入、CNI、CoreDNS、健康检查 |
 | `component_prerequisite` | Kubemate 公共准备 | Helm、命名空间 |
