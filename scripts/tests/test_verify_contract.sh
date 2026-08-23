@@ -79,7 +79,7 @@ first_result=$(run_helper vf_missing)
 second_result=$(run_helper vf_missing)
 [ "${first_result}" = "${second_result}" ] || fail "同一模拟环境重复验证结果不一致"
 
-recovery="${PROJECT_ROOT}/scripts/recovery/phase2_k8s_base/recover-18-init-k8s-cluster-outputs.sh"
+recovery="${PROJECT_ROOT}/scripts/steps/phase2_k8s_base/18-recover-k8s-keys.sh"
 [ -f "${recovery}" ] && [ ! -L "${recovery}" ] || fail "Join 产物恢复脚本不可用"
 bash -n "${recovery}" || fail "Join 产物恢复脚本语法错误"
 if grep -Eq 'log_(info|success|warn|error).*(worker_join|certificate_key|token)' "${recovery}"; then

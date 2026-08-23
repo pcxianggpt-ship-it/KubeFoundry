@@ -66,7 +66,7 @@ class InstallPlanFactoryTest {
         assertThat(initialize.verifyScript()).isEqualTo(temporaryDirectory.resolve(
                 "scripts/verify/phase2_k8s_base/verify-18-init-k8s-cluster.sh").toAbsolutePath());
         assertThat(initialize.recoveryScript()).isEqualTo(temporaryDirectory.resolve(
-                "scripts/recovery/phase2_k8s_base/recover-18-init-k8s-cluster-outputs.sh")
+                "scripts/steps/phase2_k8s_base/18-recover-k8s-keys.sh")
                 .toAbsolutePath());
         assertThat(joinControls.mode()).isEqualTo("serial");
         assertThat(joinControls.maxWorkers()).isEqualTo(1);

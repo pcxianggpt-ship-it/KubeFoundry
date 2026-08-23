@@ -132,7 +132,7 @@ extract_and_validate_package() {
     release_dir="$(find "${TEMP_DIR}" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
     [ -n "${release_dir}" ] || { log_error "发布包中未找到发布目录"; return 1; }
     validate_extracted_links "${release_dir}" || return 1
-    for path in runtime/bin/java runtime/.architecture app/kubefoundry.jar web/index.html tools/helm-amd tools/helm-arm scripts/steps scripts/lib/verify.sh scripts/verify/reset/verify-reset-kubernetes-node.sh scripts/steps/reset/reset-kubemate-components.sh templates/minio/kustomization.yaml templates/minio/tenant.yaml templates/minio/tenant.env.example deploy.sh VERSION ARCHITECTURE SHA256SUMS; do
+    for path in runtime/bin/java runtime/.architecture app/kubefoundry.jar web/index.html tools/helm-amd tools/helm-arm scripts/steps scripts/steps/phase2_k8s_base/18-recover-k8s-keys.sh scripts/lib/verify.sh scripts/verify/reset/verify-reset-kubernetes-node.sh scripts/steps/reset/reset-kubemate-components.sh templates/minio/kustomization.yaml templates/minio/tenant.yaml templates/minio/tenant.env.example deploy.sh VERSION ARCHITECTURE SHA256SUMS; do
         [ -e "${release_dir}/${path}" ] || { log_error "发布包缺少: ${path}"; return 1; }
     done
     (cd "${release_dir}" && sha256sum -c SHA256SUMS >/dev/null) || { log_error "发布包文件校验失败"; return 1; }

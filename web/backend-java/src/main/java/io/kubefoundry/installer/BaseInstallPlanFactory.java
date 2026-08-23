@@ -167,7 +167,7 @@ public class BaseInstallPlanFactory {
         Path verify = verifyScript(key);
         if ("18-init-k8s-cluster".equals(key)) {
             return step.withVerificationAndRecovery(verify, projectRoot.resolve(
-                    "scripts/recovery/phase2_k8s_base/recover-18-init-k8s-cluster-outputs.sh"));
+                    "scripts/steps/phase2_k8s_base/18-recover-k8s-keys.sh"));
         }
         return step.withVerification(verify);
     }

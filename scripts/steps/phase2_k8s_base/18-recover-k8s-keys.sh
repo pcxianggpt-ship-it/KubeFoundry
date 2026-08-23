@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #===============================================================================
-# 脚本名称：recover-18-init-k8s-cluster-outputs.sh
+# 脚本名称：18-recover-k8s-keys.sh
 # 功能：集群已初始化时受控恢复 Join 任务产物
 # 作者：KubeFoundry Team
 # 版本：0.3.2

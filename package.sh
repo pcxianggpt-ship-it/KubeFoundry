@@ -75,7 +75,7 @@ check_environment() {
     for name in tar sha256sum; do
         command -v "${name}" >/dev/null 2>&1 || { log_error "缺少命令: ${name}"; return 1; }
     done
-    for path in web/backend-java/pom.xml web/frontend/package.json deploy.sh scripts/steps scripts/lib/phase3.sh scripts/lib/verify.sh scripts/verify/reset/verify-reset-kubernetes-node.sh scripts/steps/reset/reset-kubemate-components.sh scripts/build/build-jre.sh tools/helm-amd tools/helm-arm; do
+    for path in web/backend-java/pom.xml web/frontend/package.json deploy.sh scripts/steps scripts/steps/phase2_k8s_base/18-recover-k8s-keys.sh scripts/lib/phase3.sh scripts/lib/verify.sh scripts/verify/reset/verify-reset-kubernetes-node.sh scripts/steps/reset/reset-kubemate-components.sh scripts/build/build-jre.sh tools/helm-amd tools/helm-arm; do
         [ -e "${PROJECT_ROOT}/${path}" ] || { log_error "项目文件缺失: ${path}"; return 1; }
     done
 }
