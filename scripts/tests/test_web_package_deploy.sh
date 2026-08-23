@@ -26,7 +26,7 @@ if grep -Eqi 'python|gunicorn|production_wsgi' "${PROJECT_ROOT}/package.sh" "${P
     fail "Java 发布脚本仍包含 Python 或 Gunicorn"
 fi
 
-bash "${PROJECT_ROOT}/package.sh" --help | grep -Fq 'v0.3.1-{x86_64|aarch64}' ||
+bash "${PROJECT_ROOT}/package.sh" --help | grep -Fq 'v0.3.2-{x86_64|aarch64}' ||
     fail "打包帮助缺少双架构包名"
 bash "${PROJECT_ROOT}/deploy.sh" --help | grep -q -- '--port PORT' || fail "部署帮助缺少端口参数"
 sh "${PROJECT_ROOT}/package.sh" --help >/dev/null || fail "package.sh 不支持 sh 启动"
@@ -35,11 +35,11 @@ sh "${PROJECT_ROOT}/deploy.sh" --help >/dev/null || fail "deploy.sh 不支持 sh
 for arch in x86_64 aarch64; do
     KF_PACKAGE_TEST_MODE=1 KF_TARGET_ARCH="${arch}" KF_DIST_DIR="${DIST_DIR}" \
         bash "${PROJECT_ROOT}/package.sh"
-    package="${DIST_DIR}/kubefoundry-web-v0.3.1-${arch}.tar.gz"
+    package="${DIST_DIR}/kubefoundry-web-v0.3.2-${arch}.tar.gz"
     [ -f "${package}" ] || fail "未生成 ${arch} 测试包"
 
     package_list="$(tar -tzf "${package}")"
-    prefix="kubefoundry-web-v0.3.1-${arch}"
+    prefix="kubefoundry-web-v0.3.2-${arch}"
     for expected in \
         "${prefix}/runtime/bin/java" \
         "${prefix}/runtime/.architecture" \
@@ -49,6 +49,7 @@ for arch in x86_64 aarch64; do
         "${prefix}/tools/helm-arm" \
         "${prefix}/scripts/steps/" \
         "${prefix}/scripts/lib/phase3.sh" \
+        "${prefix}/scripts/lib/verify.sh" \
         "${prefix}/scripts/verify/reset/verify-reset-kubernetes-node.sh" \
         "${prefix}/scripts/steps/reset/reset-kubemate-components.sh" \
         "${prefix}/templates/minio/kustomization.yaml" \
@@ -61,6 +62,14 @@ for arch in x86_64 aarch64; do
         grep -Fq "${expected}" <<< "${package_list}" || fail "${arch} 包缺少 ${expected}"
     done
     grep -Fq "${prefix}/kube-media" <<< "${package_list}" && fail "${arch} 包不应包含离线介质目录"
+    for removed_cli_file in \
+        "${prefix}/scripts/main.sh" \
+        "${prefix}/scripts/steps/phase2_k8s_base/11-setup-ssh-login.sh" \
+        "${prefix}/scripts/verify/phase2_k8s_base/verify-11-setup-ssh-login.sh"; do
+        if grep -Fq "${removed_cli_file}" <<< "${package_list}"; then
+            fail "${arch} 包仍包含已停止支持的 CLI 文件 ${removed_cli_file}"
+        fi
+    done
 
     mkdir -p "${TEST_ROOT}/inspect-${arch}"
     tar -xzf "${package}" -C "${TEST_ROOT}/inspect-${arch}"
@@ -70,7 +79,7 @@ for arch in x86_64 aarch64; do
     (cd "${release}" && sha256sum -c SHA256SUMS >/dev/null) || fail "包内校验和错误"
 done
 
-PACKAGE="${DIST_DIR}/kubefoundry-web-v0.3.1-x86_64.tar.gz"
+PACKAGE="${DIST_DIR}/kubefoundry-web-v0.3.2-x86_64.tar.gz"
 mkdir -p "${TEST_ROOT}/deployment/data"
 printf 'keep\n' > "${TEST_ROOT}/deployment/data/keep.txt"
 mkdir -p "${TEST_ROOT}/deployment/kube-media"
@@ -88,6 +97,7 @@ printf 'keep\n' > "${TEST_ROOT}/deployment/kube-media/keep.txt"
 [ -x "${TEST_ROOT}/deployment/tools/helm-arm" ] || fail "未安装 arm64 Helm 介质"
 [ -f "${TEST_ROOT}/deployment/kube-media/keep.txt" ] || fail "部署覆盖了独立维护的离线介质目录"
 [ -d "${TEST_ROOT}/deployment/scripts/steps" ] || fail "未安装步骤脚本"
+[ -f "${TEST_ROOT}/deployment/scripts/lib/verify.sh" ] || fail "未安装验证公共库"
 [ -f "${TEST_ROOT}/deployment/templates/minio/tenant.yaml" ] || fail "未安装 MinIO 配置模板"
 [ -f "${TEST_ROOT}/deployment/scripts/verify/reset/verify-reset-kubernetes-node.sh" ] ||
     fail "未安装重置验证脚本"
@@ -111,9 +121,9 @@ grep -q '架构不匹配' "${TEST_ROOT}/mismatch.log" || fail "架构不匹配�
 
 mkdir -p "${TEST_ROOT}/tampered"
 tar -xzf "${PACKAGE}" -C "${TEST_ROOT}/tampered"
-printf 'tampered\n' >> "${TEST_ROOT}/tampered/kubefoundry-web-v0.3.1-x86_64/app/kubefoundry.jar"
+printf 'tampered\n' >> "${TEST_ROOT}/tampered/kubefoundry-web-v0.3.2-x86_64/app/kubefoundry.jar"
 tar -czf "${TEST_ROOT}/tampered.tar.gz" -C "${TEST_ROOT}/tampered" \
-    kubefoundry-web-v0.3.1-x86_64
+    kubefoundry-web-v0.3.2-x86_64
 if (
     cd "${TEST_ROOT}/deployment"
     KF_DEPLOY_TEST_MODE=1 bash "${PROJECT_ROOT}/deploy.sh" "${TEST_ROOT}/tampered.tar.gz"
@@ -124,11 +134,11 @@ grep -q '发布包文件校验失败' "${TEST_ROOT}/tampered.log" || fail "校�
 
 mkdir -p "${TEST_ROOT}/missing-verifier"
 tar -xzf "${PACKAGE}" -C "${TEST_ROOT}/missing-verifier"
-release="${TEST_ROOT}/missing-verifier/kubefoundry-web-v0.3.1-x86_64"
+release="${TEST_ROOT}/missing-verifier/kubefoundry-web-v0.3.2-x86_64"
 rm -f "${release}/scripts/verify/reset/verify-reset-kubernetes-node.sh"
 (cd "${release}" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
 tar -czf "${TEST_ROOT}/missing-verifier.tar.gz" -C "${TEST_ROOT}/missing-verifier" \
-    kubefoundry-web-v0.3.1-x86_64
+    kubefoundry-web-v0.3.2-x86_64
 if (
     cd "${TEST_ROOT}/deployment"
     KF_DEPLOY_TEST_MODE=1 bash "${PROJECT_ROOT}/deploy.sh" "${TEST_ROOT}/missing-verifier.tar.gz"
@@ -140,11 +150,11 @@ grep -Fq '发布包缺少: scripts/verify/reset/verify-reset-kubernetes-node.sh'
 
 mkdir -p "${TEST_ROOT}/missing-helm"
 tar -xzf "${PACKAGE}" -C "${TEST_ROOT}/missing-helm"
-release="${TEST_ROOT}/missing-helm/kubefoundry-web-v0.3.1-x86_64"
+release="${TEST_ROOT}/missing-helm/kubefoundry-web-v0.3.2-x86_64"
 rm -f "${release}/tools/helm-arm"
 (cd "${release}" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
 tar -czf "${TEST_ROOT}/missing-helm.tar.gz" -C "${TEST_ROOT}/missing-helm" \
-    kubefoundry-web-v0.3.1-x86_64
+    kubefoundry-web-v0.3.2-x86_64
 if (
     cd "${TEST_ROOT}/deployment"
     KF_DEPLOY_TEST_MODE=1 bash "${PROJECT_ROOT}/deploy.sh" "${TEST_ROOT}/missing-helm.tar.gz"
@@ -156,10 +166,10 @@ grep -Fq '发布包缺少: tools/helm-arm' "${TEST_ROOT}/missing-helm.log" ||
 
 mkdir -p "${TEST_ROOT}/unsafe-link"
 tar -xzf "${PACKAGE}" -C "${TEST_ROOT}/unsafe-link"
-mkdir -p "${TEST_ROOT}/unsafe-link/kubefoundry-web-v0.3.1-x86_64/web"
-if ln -s /etc/passwd "${TEST_ROOT}/unsafe-link/kubefoundry-web-v0.3.1-x86_64/web/outside-link" 2>/dev/null; then
+mkdir -p "${TEST_ROOT}/unsafe-link/kubefoundry-web-v0.3.2-x86_64/web"
+if ln -s /etc/passwd "${TEST_ROOT}/unsafe-link/kubefoundry-web-v0.3.2-x86_64/web/outside-link" 2>/dev/null; then
     tar -czf "${TEST_ROOT}/unsafe-link.tar.gz" -C "${TEST_ROOT}/unsafe-link" \
-        kubefoundry-web-v0.3.1-x86_64
+        kubefoundry-web-v0.3.2-x86_64
     if (
         cd "${TEST_ROOT}/deployment"
         KF_DEPLOY_TEST_MODE=1 bash "${PROJECT_ROOT}/deploy.sh" "${TEST_ROOT}/unsafe-link.tar.gz"

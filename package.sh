@@ -8,7 +8,7 @@ unset KF_PACKAGE_BASH_REEXEC
 
 #===============================================================================
 # 脚本名称：package.sh
-# 功能：构建 KubeFoundry v0.3.1 Java 双架构离线部署包
+# 功能：构建 KubeFoundry v0.3.2 Java 双架构离线部署包
 # 作者：KubeFoundry Team
 # 版本：2.0.0
 #===============================================================================
@@ -31,14 +31,14 @@ log_error() { printf '[ERROR] %s\n' "$*" >&2; }
 
 show_usage() {
     cat <<'EOF'
-KubeFoundry v0.3.1 Java 离线包构建脚本
+KubeFoundry v0.3.2 Java 离线包构建脚本
 
 用法:
   KF_TARGET_ARCH=x86_64 bash package.sh
   KF_TARGET_ARCH=aarch64 bash package.sh
 
 输出:
-  dist/kubefoundry-web-v0.3.1-{x86_64|aarch64}.tar.gz
+  dist/kubefoundry-web-v0.3.2-{x86_64|aarch64}.tar.gz
 
 说明:
   使用 JDK 17 构建；交叉构建时必须通过 KF_TARGET_JDK_HOME 提供真实目标架构 JDK。
@@ -75,7 +75,7 @@ check_environment() {
     for name in tar sha256sum; do
         command -v "${name}" >/dev/null 2>&1 || { log_error "缺少命令: ${name}"; return 1; }
     done
-    for path in web/backend-java/pom.xml web/frontend/package.json deploy.sh scripts/steps scripts/lib/phase3.sh scripts/verify/reset/verify-reset-kubernetes-node.sh scripts/steps/reset/reset-kubemate-components.sh scripts/build/build-jre.sh tools/helm-amd tools/helm-arm; do
+    for path in web/backend-java/pom.xml web/frontend/package.json deploy.sh scripts/steps scripts/lib/phase3.sh scripts/lib/verify.sh scripts/verify/reset/verify-reset-kubernetes-node.sh scripts/steps/reset/reset-kubemate-components.sh scripts/build/build-jre.sh tools/helm-amd tools/helm-arm; do
         [ -e "${PROJECT_ROOT}/${path}" ] || { log_error "项目文件缺失: ${path}"; return 1; }
     done
 }
@@ -85,12 +85,12 @@ build_application() {
     mkdir -p "${release_dir}/app" "${release_dir}/web"
     if [ "${TEST_MODE}" = "1" ]; then
         printf 'test jar\n' > "${release_dir}/app/kubefoundry.jar"
-        printf '<!doctype html><html><body>KubeFoundry v0.3.1</body></html>\n' > "${release_dir}/web/index.html"
+        printf '<!doctype html><html><body>KubeFoundry v0.3.2</body></html>\n' > "${release_dir}/web/index.html"
         return
     fi
 
     if [ "${USE_PREBUILT}" = "1" ]; then
-        local jar="${PROJECT_ROOT}/web/backend-java/target/kubefoundry-backend-0.3.1.jar"
+        local jar="${PROJECT_ROOT}/web/backend-java/target/kubefoundry-backend-0.3.2.jar"
         local web="${PROJECT_ROOT}/web/frontend/dist"
         [ -f "${jar}" ] || { log_error "预构建 JAR 不存在: ${jar}"; return 1; }
         [ -f "${web}/index.html" ] || { log_error "预构建前端不存在: ${web}/index.html"; return 1; }
@@ -116,7 +116,7 @@ build_application() {
     BACKEND_BUILD_ROOT="$(mktemp -d)"
     local backend_project_dir="${BACKEND_BUILD_ROOT}/project"
     local backend_build_dir="${backend_project_dir}/web/backend-java"
-    mkdir -p "${backend_build_dir}" "${backend_project_dir}/scripts"
+    mkdir -p "${backend_build_dir}" "${backend_project_dir}/scripts/lib"
     (
         cd "${PROJECT_ROOT}/web/backend-java"
         tar --exclude='./target' -cf - .
@@ -126,6 +126,7 @@ build_application() {
     )
     cp -a "${PROJECT_ROOT}/scripts/steps" "${backend_project_dir}/scripts/steps"
     cp -a "${PROJECT_ROOT}/scripts/verify" "${backend_project_dir}/scripts/verify"
+    cp "${PROJECT_ROOT}/scripts/lib/verify.sh" "${backend_project_dir}/scripts/lib/verify.sh"
     (cd "${backend_build_dir}" && mvn -q "${maven_args[@]}")
     log_info "构建并测试 Vue 前端..."
     # 在临时目录安装依赖，避免 WSL 与 Windows 共用 node_modules 时互相覆盖平台二进制文件。
@@ -140,7 +141,7 @@ build_application() {
         tar -xf -
     )
     (cd "${frontend_build_dir}" && npm "${npm_ci_args[@]}" && npm test && npm run build)
-    cp "${backend_build_dir}/target/kubefoundry-backend-0.3.1.jar" \
+    cp "${backend_build_dir}/target/kubefoundry-backend-0.3.2.jar" \
         "${release_dir}/app/kubefoundry.jar"
     cp -a "${frontend_build_dir}/dist/." "${release_dir}/web/"
 }
@@ -182,6 +183,7 @@ create_archive() {
     cp -a "${PROJECT_ROOT}/scripts/steps" "${release_dir}/scripts/steps"
     mkdir -p "${release_dir}/scripts/lib"
     cp "${PROJECT_ROOT}/scripts/lib/phase3.sh" "${release_dir}/scripts/lib/phase3.sh"
+    cp "${PROJECT_ROOT}/scripts/lib/verify.sh" "${release_dir}/scripts/lib/verify.sh"
     cp -a "${PROJECT_ROOT}/scripts/verify" "${release_dir}/scripts/verify"
     cp -a "${PROJECT_ROOT}/templates" "${release_dir}/templates"
     cp "${PROJECT_ROOT}/deploy.sh" "${release_dir}/deploy.sh"
@@ -203,7 +205,7 @@ main() {
     check_environment
     local version
     version="$(read_version)"
-    [ "${version}" = "0.3.1" ] || { log_error "后端版本必须为 0.3.1，实际为 ${version:-未知}"; return 1; }
+    [ "${version}" = "0.3.2" ] || { log_error "后端版本必须为 0.3.2，实际为 ${version:-未知}"; return 1; }
     STAGING_ROOT="$(mktemp -d)"
     create_archive "${version}"
 }

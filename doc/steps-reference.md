@@ -119,21 +119,6 @@
 
 ---
 
-### 11-setup-ssh-login.sh
-
-| 项目 | 说明 |
-|------|------|
-| **对应章节** | cmdlist.md 3.2 配置SSH免密登录 |
-| **脚本路径** | `scripts/steps/phase2_k8s_base/11-setup-ssh-login.sh` |
-| **执行机器** | 管理节点 |
-| **批量执行函数** | 无需远程执行，本地直接运行脚本 |
-| **依赖关系** | 可选步骤，无强制依赖 |
-| **主要功能** | 生成 SSH 密钥对、复制公钥到所有节点、验证免密登录 |
-| **执行方式** | 手动执行，可选 |
-| **所需参数** | ssh.user、ssh.key_path、ssh.port、所有节点 IP<br>（来源：config.ssh.*、config.control_plane[].ip、config.workers[].ip） |
-
----
-
 ### 12-setup-k8s-repo.sh
 
 | 项目 | 说明 |
@@ -579,8 +564,6 @@
 
 ```
 10-setup-yum-source.sh (k8sc1)
-    ↓
-11-setup-ssh-login.sh (管理节点，可选)
     ↓
 12-setup-k8s-repo.sh (所有节点，除k8sc1)
     ↓

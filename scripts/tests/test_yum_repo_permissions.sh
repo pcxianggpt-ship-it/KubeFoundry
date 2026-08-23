@@ -54,14 +54,15 @@ grep -Fq 'systemctl stop firewalld' "${CALLS_FILE}" || fail "未直接关闭 fir
 grep -Fq 'systemctl disable firewalld' "${CALLS_FILE}" || fail "未禁用 firewalld"
 grep -Fq 'yum -q --disablerepo=* --enablerepo=k8s-yum makecache' "${CALLS_FILE}" \
     || fail "服务端未限制目标仓库刷新缓存"
+grep -Fq 'yum -yq --disablerepo=* --enablerepo=k8s-yum install httpd' "${CALLS_FILE}" \
+    || fail "服务端未仅从目标仓库安装 httpd"
 grep -Fq "curl --fail --silent --show-error --max-time 10 --output /dev/null ${KF_YUM_LOCAL_METADATA_URL}" \
     "${CALLS_FILE}" || fail "服务端未校验仓库 HTTP 200"
 
-if grep -Eq 'setfacl|semanage|restorecon|policycoreutils|getfacl|getenforce' \
+if grep -Eq 'setfacl|semanage|restorecon|policycoreutils|getfacl|getenforce|sshpass' \
     "${PROJECT_ROOT}/scripts/steps/phase2_k8s_base/10-setup-yum-source.sh"; then
-    fail "服务端脚本仍依赖 ACL 或 SELinux 工具"
+    fail "服务端脚本仍依赖额外的系统管理工具"
 fi
-
 # 重复执行仍保持相同配置和权限。
 bash -c 'source "$1"; source "$2" "$3"' _ \
     "${PROJECT_ROOT}/scripts/lib/logger.sh" \

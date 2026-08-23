@@ -1,5 +1,7 @@
 # KubeFoundry K8S 集群一键安装工具设计方案
 
+> 维护状态：本文记录早期 Bash CLI 架构。自 v0.3.2 起，项目停止支持旧 CLI，`scripts/main.sh` 已删除；当前安装入口、任务编排和状态管理以 Web Wizard Java 后端及 `doc/v0.3.2/` 版本文档为准。本文中的 CLI 示例仅作为历史设计记录，不可用于当前版本操作。
+
 ## 一、需求分析
 
 ### 1.1 功能需求
@@ -54,7 +56,6 @@
 ```
 KubeFoundry/
 ├── scripts/                    # 脚本目录
-│   ├── main.sh               # 主入口脚本
 │   ├── lib/                  # 公共函数库
 │   │   ├── logger.sh        # 日志函数（颜色、格式）
 │   │   ├── config.sh        # 配置解析函数
@@ -88,7 +89,7 @@ KubeFoundry/
 ### 4.1 管理节点概念
 
 **管理节点（Management Node）：**
-- 即执行 `main.sh` 的本地机器
+- 即运行 Web Wizard 服务的机器
 - 负责向其他节点发送命令和传输文件
 - 可以是任何可以 SSH 连接到所有 K8S 节点的机器
 
@@ -1013,13 +1014,7 @@ vi config/cluster.yaml
 
 ### 9.3 执行安装
 
-```bash
-# 赋予执行权限
-chmod +x scripts/main.sh
-
-# 执行安装
-./scripts/main.sh
-```
+在 Web Wizard 中完成集群配置和节点测试后发起安装。Java 后端负责生成任务计划并调用 Bash 步骤，不提供独立 CLI 入口。
 
 ### 9.4 查看日志
 
@@ -1072,7 +1067,7 @@ kubectl delete pod test-nginx
 
 ### Phase 1：基础框架（优先）
 1. 创建项目目录结构
-2. 实现主入口脚本（main.sh）
+2. 实现 Web Wizard 后端任务编排入口
 3. 实现公共函数库（logger.sh、config.sh、ssh.sh、rollback.sh）
 4. 创建配置文件模板（cluster.yaml）
 
@@ -1120,7 +1115,6 @@ kubectl delete pod test-nginx
 ### 13.1 需要创建的文件
 
 **脚本文件：**
-- `scripts/main.sh` - 主入口
 - `scripts/lib/logger.sh` - 日志函数
 - `scripts/lib/config.sh` - 配置解析
 - `scripts/lib/ssh.sh` - SSH 执行

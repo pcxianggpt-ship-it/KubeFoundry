@@ -43,7 +43,7 @@ java_major=$(java -version 2>&1 | sed -n '1s/.*version "\([0-9][0-9]*\).*/\1/p')
 mkdir -p "${TEST_ROOT}/data"
 chmod 700 "${TEST_ROOT}/data"
 KF_DATA_DIR="${TEST_ROOT}/data" \
-    java -jar "${BACKEND_DIR}/target/kubefoundry-backend-0.3.1.jar" \
+    java -jar "${BACKEND_DIR}/target/kubefoundry-backend-0.3.2.jar" \
     --server.port="${API_PORT}" >"${TEST_ROOT}/backend.log" 2>&1 &
 BACKEND_PID=$!
 
@@ -61,7 +61,7 @@ for _ in $(seq 1 90); do
         case "${health}" in
             *'"status":"ok"'*)
                 case "${health}" in
-                    *'"version":"0.3.1"'*) ready=1; break ;;
+                    *'"version":"0.3.2"'*) ready=1; break ;;
                 esac
                 ;;
         esac

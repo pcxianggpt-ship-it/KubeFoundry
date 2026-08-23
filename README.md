@@ -2,7 +2,7 @@
 
 K8S 集群一键安装工具，支持通过网页流水线完成高可用集群部署。
 
-Web Wizard v0.3.1 使用 Java 17、Spring Boot、H2 和 Vue 3，提供独立的“集群配置”和“集群安装”模块，复用 Bash step 脚本完成节点免密、预检查、Kubernetes 基础安装、Kubemate 组件安装、远程重置、实时日志与失败定位。目标服务器使用包内 Java 运行时，不要求安装 Java、Python、Node.js 或 `sshpass`。
+Web Wizard v0.3.2 使用 Java 17、Spring Boot、H2 和 Vue 3，提供独立的“集群配置”和“集群安装”模块，复用 Bash step 脚本完成节点免密、预检查、Kubernetes 基础安装、Kubemate 组件安装、远程重置、实时日志与失败定位。目标服务器使用包内 Java 运行时，不要求安装 Java、Python、Node.js 或 `sshpass`。
 
 ## 功能特性
 
@@ -45,16 +45,16 @@ KF_TARGET_ARCH=aarch64 KF_JAVA_HOME=/opt/jdk-17-x86_64 \
 脚本会运行 Java 与前端测试、构建 JAR，并通过 `jlink` 生成当前架构的精简 Java 17 运行时：
 
 ```text
-dist/kubefoundry-web-v0.3.1-x86_64.tar.gz
-dist/kubefoundry-web-v0.3.1-aarch64.tar.gz
+dist/kubefoundry-web-v0.3.2-x86_64.tar.gz
+dist/kubefoundry-web-v0.3.2-aarch64.tar.gz
 ```
 
 将匹配服务器架构的压缩包复制到目标 Linux 服务器，在计划安装目录中执行：
 
 ```bash
-tar -xzf kubefoundry-web-v0.3.1-x86_64.tar.gz
-cp kubefoundry-web-v0.3.1-x86_64/deploy.sh .
-sudo bash deploy.sh kubefoundry-web-v0.3.1-x86_64.tar.gz
+tar -xzf kubefoundry-web-v0.3.2-x86_64.tar.gz
+cp kubefoundry-web-v0.3.2-x86_64/deploy.sh .
+sudo bash deploy.sh kubefoundry-web-v0.3.2-x86_64.tar.gz
 ```
 
 也可以把发布包内的 `deploy.sh` 与压缩包放到独立部署目录后执行。服务默认监听 `10001`，程序位于当前目录的 `app`，双架构 Helm 位于 `tools/helm-amd` 与 `tools/helm-arm`，H2 数据、主密钥和任务数据位于 `data`，日志位于 `logs`。组件 Chart、YAML 和 Kubernetes 离线介质位于独立维护的 `kube-media`；发布包不会携带或覆盖该目录，重复部署会保留 `kube-media`、`data` 和 `logs`。完整说明见 [v0.3.0 部署手册](doc/v0.3.0/部署手册.md)。
@@ -76,63 +76,13 @@ npm ci
 npm run dev
 ```
 
-v0.3.1 节点配置页录入密码并加密保存；节点可同时承担 Registry 与控制节点或工作节点角色。“测试全部节点”由 Java SSH 实现首次连接、分发 Ed25519 公钥并验证免密。后续预检查、安装和重置使用集群私钥，不依赖系统 `sshpass`。安装介质必须位于管理端的 `${APP_DIR}/kube-media`；Helm 由运行时按目标节点架构从 `${APP_DIR}/tools` 分发至主控制节点后执行。
+v0.3.2 节点配置页录入密码并加密保存；节点可同时承担 Registry 与控制节点或工作节点角色。“测试全部节点”由 Java SSH 实现首次连接、分发 Ed25519 公钥并验证免密。后续预检查、安装和重置使用集群私钥，不依赖系统 `sshpass`。安装介质必须位于管理端的 `${APP_DIR}/kube-media`；Helm 由运行时按目标节点架构从 `${APP_DIR}/tools` 分发至主控制节点后执行。
 
-### 1. 克隆项目
+### 操作入口
 
-```bash
-git clone <repo> KubeFoundry
-cd KubeFoundry
-```
+从 v0.3.2 起仅支持 Web Wizard，不再提供 `scripts/main.sh` 命令行安装入口。完成部署后，在浏览器访问 `http://<管理节点IP>:10001`，按“集群配置 → 节点测试 → 集群安装”流程操作。首次连接、密钥分发、安装续跑和集群重置均由 Java 服务统一编排。
 
-### 2. 安装必要工具
-
-```bash
-# 安装 yq
-wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
-chmod +x /usr/local/bin/yq
-
-# 安装其他工具
-yum install -y jq bc
-```
-
-### 3. 配置 SSH 免密登录
-
-```bash
-# 在管理节点执行
-ssh-keygen -t rsa -b 4096
-
-# 复制公钥到所有节点
-ssh-copy-id root@10.3.66.18  # k8sc1
-ssh-copy-id root@10.3.66.19  # k8sc2
-ssh-copy-id root@10.3.66.20  # k8sc3
-ssh-copy-id root@10.3.66.21  # k8sw1
-# ... (所有节点）
-```
-
-### 4. 编辑配置文件
-
-```bash
-# 根据实际环境修改配置
-vi config/cluster.yaml
-```
-
-主要修改项：
-- 节点 IP 地址和主机名
-- 网络配置（网关、网段）
-- 路径配置（安装包路径）
-
-### 5. 执行安装
-
-```bash
-# 赋予执行权限
-chmod +x scripts/main.sh
-
-# 执行安装
-./scripts/main.sh
-```
-
-### 6. 验证安装
+### 验证安装
 
 ```bash
 # 在 k8sc1 控制节点执行
@@ -147,24 +97,7 @@ kubectl get pods -A
 
 ## 使用说明
 
-### 命令行参数
-
-```bash
-# 显示帮助信息
-./scripts/main.sh --help
-
-# 使用自定义配置文件
-./scripts/main.sh -c custom.yaml
-
-# 从指定步骤开始执行
-./scripts/main.sh -s 3.7
-
-# 预演模式（只显示将要执行的操作）
-./scripts/main.sh --dry-run
-
-# 跳过服务器状态检查（不推荐，仅用于调试）
-./scripts/main.sh --skip-check
-```
+安装参数在 Web 集群配置页维护，安装任务由后端计划工厂生成。Bash 文件是后端调用的内部步骤实现，不作为独立 CLI 接口提供兼容性承诺。
 
 ### 步骤列表
 
@@ -193,22 +126,11 @@ kubectl get pods -A
 
 ### 查看日志
 
-```bash
-# 查看安装日志
-tail -f /tmp/kubefoundry_install.log
-```
+在 Web 安装进度页查看阶段、步骤状态及实时日志；服务端日志保存在部署目录的 `logs` 中。
 
 ## 回滚操作
 
-如果安装失败或需要重新安装，可以执行回滚操作：
-
-```bash
-# 回滚 K8S 底座安装阶段
-./scripts/rollback/rollback_k8s_base.sh
-
-# 完全回滚所有安装
-./scripts/rollback/rollback_full.sh
-```
+如果安装失败，可在 Web 安装进度页续跑失败任务；需要重新安装时，在 Web 中执行集群重置。
 
 **注意：** 回滚操作将删除已安装的组件和数据，请谨慎操作。
 
@@ -262,11 +184,8 @@ KubeFoundry/
 │   ├── design.md                    # 设计文档
 │   ├── api.md                       # 接口文档
 │   ├── steps_execution_guide.md     # 步骤执行指南
-│   ├── main_script_analysis.md      # 主脚本分析
-│   ├── main_script_improvements.md  # v1.1.0 改进说明
-│   └── improvements_quick_reference.md  # 改进快速参考
+│   └── v0.3.2/                      # 当前版本设计与验收文档
 ├── scripts/
-│   ├── main.sh                      # 主入口脚本（v1.1.0）
 │   ├── lib/                         # 公共函数库
 │   │   ├── logger.sh                # 日志函数
 │   │   ├── config.sh                # 配置解析
@@ -295,18 +214,14 @@ KubeFoundry/
 
 ### Q2: 安装失败后如何重新安装？
 
-**A:** 执行回滚操作后重新安装：
-```bash
-./scripts/rollback/rollback_full.sh
-./scripts/main.sh
-```
+**A:** 在 Web 安装进度页续跑失败任务；如需从头安装，先在 Web 中执行集群重置，再重新发起安装。
 
 ### Q3: 如何支持不同版本的 K8S？
 
 **A:** 修改配置文件中的 `k8s_version`：
 ```yaml
 cluster:
-  k8s_version: "1.30.14"  # Web Wizard v0.3.1 当前固定版本
+  k8s_version: "1.30.14"  # Web Wizard v0.3.2 当前固定版本
 ```
 
 ### Q4: 节点状态一直 NotReady 怎么办？
@@ -329,7 +244,7 @@ cluster:
 ### 添加新步骤
 1. 在对应的章节目录创建脚本文件
 2. 定义函数（不包含 main 函数）
-3. 在 `scripts/main.sh` 中引入并调用函数
+3. 在后端安装计划工厂中注册步骤和对应 verify 脚本
 4. 更新文档
 
 ## 文档
@@ -338,7 +253,6 @@ cluster:
 - [接口文档](doc/api.md) - 公共函数接口定义
 - [命令清单](doc/cmdlist.md) - 手动安装命令参考
 - [步骤执行指南](doc/steps_execution_guide.md) - 各步骤服务器执行清单
-- [主脚本分析](doc/main_script_analysis.md) - main.sh 执行服务器问题分析
 
 ## 版本历史
 

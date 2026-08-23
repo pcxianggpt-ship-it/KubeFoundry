@@ -13,7 +13,7 @@
 
 ## 2. 设计范围与优先级
 
-v0.3.2 包含以下九项需求：
+v0.3.2 包含以下十项需求：
 
 1. 安装任务失败重跑与续跑，并在步骤执行前后运行验证脚本。
 2. 修复本地 YUM 仓库 HTTP 403。
@@ -24,8 +24,16 @@ v0.3.2 包含以下九项需求：
 7. 重置流程不依赖尚未安装的 Helm。
 8. 重置时清理 KubeFoundry 写入的参数配置。
 9. 使用离线 Helm Chart 完成 Redis Sentinel 模式部署。
+10. 停止支持旧 Bash CLI，仅保留 Web Wizard 安装入口。
 
 实施优先级保持需求记录中的约定：先实现失败续跑，再修复 YUM 仓库权限，之后按依赖关系实施其他需求。
+
+### 2.1 CLI 支持边界
+
+- 删除旧入口 `scripts/main.sh`，不再维护命令行参数、dry-run、指定步骤启动等兼容行为。
+- 删除仅由旧 CLI 调用的 SSH 步骤及验证脚本；首次连接和密钥分发统一由 Java SSH 服务完成。
+- Bash `steps/`、`verify/` 和 `rollback/` 继续作为 Web 后端任务执行器的内部实现，不构成独立用户接口。
+- 当前文档和发布包只提供 Web Wizard 操作说明；历史版本归档文档保留原貌。
 
 ## 3. 当前基线
 
@@ -211,7 +219,7 @@ exit_code=0
 
 1. 校验 `/var/www/html/repo/repodata/repomd.xml` 存在且为普通文件。
 2. 由 root 将 `/var/www`、`/var/www/html` 和仓库目录内容设置为 `777`，直接消除 httpd 路径访问限制。
-3. 仅从离线仓库安装 `httpd` 和 `sshpass`，不引入 ACL、SELinux 管理工具依赖。
+3. 仅从离线仓库安装 `httpd`，不引入 `sshpass`、ACL 或 SELinux 管理工具依赖；节点密码首连、公钥安装和密钥复验由安装前的 Java SSH 节点测试完成。
 4. 启动并启用 httpd，随后直接停止并禁用 firewalld。
 5. 使用 `curl --fail --silent --show-error --max-time 10` 请求本机仓库元数据。
 

@@ -27,10 +27,6 @@ if [ ! -f "${metadata_file}" ]; then
     exit 1
 fi
 
-# 安装过程由 root 执行，直接开放仓库路径权限，避免 httpd 返回 403。
-chmod 777 "$(dirname "${web_root}")" "${web_root}" || exit 1
-chmod -R 777 "${repo_root}" || exit 1
-
 cat > "${repo_config}" <<EOF
 # Managed by KubeFoundry v0.3.2
 [k8s-yum]
@@ -43,7 +39,12 @@ EOF
 
 yum -q clean all || exit 1
 yum -q --disablerepo='*' --enablerepo='k8s-yum' makecache || exit 1
-yum -yq --disablerepo='*' --enablerepo='k8s-yum' install httpd sshpass || exit 1
+yum -yq --disablerepo='*' --enablerepo='k8s-yum' install httpd || exit 1
+
+# httpd RPM 可能重设 /var/www/html 权限，因此必须在安装软件后再开放仓库路径。
+chmod 777 "$(dirname "${web_root}")" "${web_root}" || exit 1
+chmod -R 777 "${repo_root}" || exit 1
+
 systemctl enable httpd --now || exit 1
 
 # 集群安装环境要求直接关闭并禁用 firewalld。

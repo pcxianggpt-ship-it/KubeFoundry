@@ -8,7 +8,7 @@
 # 版本：1.0.0
 #===============================================================================
 
-# PROJECT_ROOT 由 main.sh export，无需推算
+# PROJECT_ROOT 由任务执行器 export，无需推算
 
 # 加载公共函数库
 source "${PROJECT_ROOT}/scripts/lib/logger.sh"
