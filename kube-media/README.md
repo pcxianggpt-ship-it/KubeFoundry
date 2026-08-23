@@ -6,4 +6,4 @@
 
 预检查会按当前节点架构和启用组件校验实际介质；本说明文件不构成可安装介质。
 
-Kubernetes RPM 仓库包还必须包含 [YUM 仓库必需包清单](./yum-required-packages.txt) 中的 HTTP、ACL、SELinux 和客户端工具。重新制作离线仓库后，应确认这些包及其依赖能通过 `k8s-yum` 仓库安装。
+Kubernetes RPM 仓库包还必须包含 [YUM 仓库安装包清单](./yum-required-packages.txt) 中的软件。重新制作离线仓库后，应确认这些包及其依赖能通过 `k8s-yum` 仓库安装；仓库步骤不依赖 ACL 或 SELinux 管理工具。

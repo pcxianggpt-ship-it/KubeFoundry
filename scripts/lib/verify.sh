@@ -96,30 +96,22 @@ vf_verify_base() {
             local metadata_file="${repo_root}/repodata/repomd.xml"
             local repo_config="${KF_YUM_LOCAL_REPO_CONFIG:-/etc/yum.repos.d/k8s.repo}"
             local metadata_url="${KF_YUM_LOCAL_METADATA_URL:-http://127.0.0.1/repo/repodata/repomd.xml}"
-            local httpd_user selinux_mode repo_context
             [ -r "${repo_config}" ] || vf_missing "Kubernetes YUM 源未配置"
             grep -qF '# Managed by KubeFoundry v0.3.2' "${repo_config}" \
                 || vf_missing "Kubernetes YUM 源不是 KubeFoundry 受管配置"
             [ -f "${metadata_file}" ] || vf_missing "Kubernetes YUM 仓库元数据不存在"
+            [ "$(stat -c '%a' "$(dirname "${web_root}")" 2>/dev/null)" = 777 ] \
+                || vf_missing "Kubernetes YUM 仓库父目录权限不是 777"
+            [ "$(stat -c '%a' "${web_root}" 2>/dev/null)" = 777 ] \
+                || vf_missing "Kubernetes YUM Web 目录权限不是 777"
+            [ -z "$(find "${repo_root}" ! -perm 0777 -print -quit 2>/dev/null)" ] \
+                || vf_missing "Kubernetes YUM 仓库权限不是 777"
             vf_systemctl_active httpd || vf_missing "httpd 未运行"
             vf_systemctl_enabled httpd || vf_missing "httpd 未设为开机启动"
-            vf_require_tool ps
-            vf_require_tool awk
-            httpd_user=$(ps -eo user=,comm= 2>/dev/null \
-                | awk '$2 == "httpd" && $1 != "root" { print $1; exit }')
-            [ -n "${httpd_user}" ] || vf_error "无法确认 httpd 实际运行账户"
-            vf_require_tool runuser
-            vf_run "${KF_VERIFY_COMMAND_TIMEOUT:-30s}" runuser -u "${httpd_user}" -- \
-                test -r "${metadata_file}" || vf_missing "httpd 账户无法读取仓库元数据"
-            if command -v getenforce >/dev/null 2>&1; then
-                selinux_mode=$(getenforce 2>/dev/null) || vf_error "无法读取 SELinux 状态"
-                if [ "${selinux_mode}" != "Disabled" ]; then
-                    repo_context=$(stat -Lc '%C' "${metadata_file}" 2>/dev/null) \
-                        || vf_error "无法读取仓库 SELinux 标签"
-                    [[ "${repo_context}" == *:httpd_sys_content_t:* ]] \
-                        || vf_missing "仓库 SELinux 标签不是 httpd_sys_content_t"
-                fi
-            fi
+            vf_systemctl_active firewalld \
+                && vf_missing "firewalld 仍处于运行状态"
+            vf_systemctl_enabled firewalld \
+                && vf_missing "firewalld 仍处于启用状态"
             vf_require_tool curl
             vf_run "${KF_VERIFY_COMMAND_TIMEOUT:-30s}" curl --fail --silent --show-error \
                 --max-time 10 --output /dev/null "${metadata_url}" \

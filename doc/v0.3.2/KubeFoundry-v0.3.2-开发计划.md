@@ -17,7 +17,7 @@
 
 1. 安装或组件安装失败后，可创建新的续跑任务并保留原任务记录。
 2. 每个安装步骤执行前后均使用统一验证脚本判断目标状态，已满足的步骤安全跳过。
-3. 本地 YUM 仓库在 SELinux Enforcing 环境中可从本机和远程节点通过 HTTP 访问。
+3. 本地 YUM 仓库设置 `777` 权限并关闭 firewalld 后，可从本机和远程节点通过 HTTP 访问。
 4. 安装计划与进度按部署单元分组，并保持叶子步骤、节点状态和日志可追踪。
 5. Kubemate 页面支持 MinIO PVC、CPU 和内存参数配置，并在安装开始时校验至少 4 个正式工作节点。
 6. 完整安装计划的最后一个单元完成 etcd 备份并校验快照。
@@ -137,7 +137,7 @@
 | --- | --- | --- | --- |
 | M0 决策与基线 | 任务 1、门禁 A～E | 1～3 人日 | 高风险契约冻结，基线测试可复现 |
 | M1 失败续跑 | 任务 2～6 | 12～18 人日 | 基础与组件任务均可安全续跑 |
-| M2 YUM 修复 | 任务 7 | 2～4 人日 | SELinux Enforcing 下本机和远程 HTTP 200 |
+| M2 YUM 修复 | 任务 7 | 2～4 人日 | 关闭 firewalld 后本机和远程 HTTP 200 |
 | M3 展示与配置 | 任务 8～10 | 5～8 人日 | 分组、节点 IP、MinIO 参数闭环 |
 | M4 重置可靠性 | 任务 11～12 | 6～10 人日 | 无 Helm 失败集群可重置，受管配置无残留 |
 | M5 新增单元 | 任务 13～14 | 7～12 人日 | Redis Sentinel 与 etcd 备份真实环境通过 |
@@ -422,34 +422,34 @@
 
 ### 目标
 
-使用最小权限 ACL 和正确 SELinux 标签修复仓库元数据 HTTP 403，并把 HTTP 200 纳入步骤前后验证。
+使用 root 直接设置 `777` 仓库权限并关闭 firewalld，修复仓库元数据 HTTP 403，并把 HTTP 200 纳入步骤前后验证。
 
 ### 主要文件
 
 - 修改：`scripts/steps/phase2_k8s_base/10-setup-yum-source.sh`
 - 修改：`scripts/steps/phase2_k8s_base/12-setup-k8s-repo.sh`
 - 修改：对应两个验证脚本。
-- 修改：离线 YUM 包清单，确保包含 ACL/SELinux 工具。
+- 修改：离线 YUM 包清单，仅保留步骤实际安装的软件。
 - 新增：YUM 权限和验证脚本自动化测试。
 
 ### 实施步骤
 
-- [x] 先构造父目录缺少搜索权限导致 403 的失败测试。
-- [x] 校验仓库元数据存在并确认 httpd 实际运行账户。
-- [x] 仅为 httpd 账户设置父目录遍历和仓库只读 ACL。
-- [x] 登记并恢复 `httpd_sys_content_t`，保持 SELinux Enforcing。
+- [x] 校验仓库元数据存在。
+- [x] 由 root 将仓库父目录和仓库内容设置为 `777`。
+- [x] 直接停止并禁用 firewalld。
+- [x] 不增加 ACL 和 SELinux 工具依赖。
 - [x] 本机请求元数据返回 200 后才完成服务端步骤。
 - [x] 客户端步骤仅启用目标仓库执行 `yum makecache`。
-- [x] 验证脚本覆盖文件、ACL、SELinux、HTTP 和 YUM 缓存。
-- [x] 验证不使用 `777`、不关闭 SELinux、不改变非仓库内容所有权。
+- [x] 验证脚本覆盖文件、`777` 权限、firewalld、HTTP 和 YUM 缓存。
+- [x] 保持服务端脚本为直接、简洁的顺序操作。
 
-完成记录（2026-08-23）：服务端和客户端步骤已按最小 ACL、SELinux 内容标签、目标 Repo `makecache` 和 HTTP 200 契约实现；自动化测试覆盖 403 复现、修复、重复执行及禁止过度授权。SELinux Enforcing 的真实远程节点验收仍按验收计划执行。
+完成记录（2026-08-23，按最终要求调整）：服务端使用 root 设置 `777` 权限，直接停止并禁用 firewalld，不再依赖 ACL 或 SELinux 工具；服务端和客户端仍验证目标 Repo `makecache` 与 HTTP 200。
 
 ### 验收
 
 - 仓库节点本机和至少一个远程节点访问元数据均返回 200。
 - 所有节点 `yum makecache` 成功，httpd 日志无路径搜索权限错误。
-- 重复运行步骤不会累积无效 ACL 或破坏现有权限。
+- 重复运行步骤后仓库权限和 Repo 配置保持一致。
 
 ### 建议提交
 
@@ -768,7 +768,7 @@
 - [ ] 执行 Vitest、前端构建和生产包隔离测试。
 - [ ] 执行全部 Bash 单元/静态测试、LF 和敏感信息检查。
 - [ ] 在隔离真实集群执行正常安装、阶段失败、续跑、重置和再次安装。
-- [ ] 在 SELinux Enforcing 环境验收 YUM 仓库。
+- [ ] 在关闭 firewalld 的环境验收 YUM 仓库。
 - [ ] 验收 MinIO 参数、Redis Sentinel 故障切换和 etcd 快照完整性。
 - [ ] 检查任务日志、事件、快照和发布包不存在凭据。
 - [ ] 构建 x86_64 发布包；ARM64 无真实环境时明确保留未验收项。
@@ -814,10 +814,10 @@ bash scripts/tests/test_web_package_deploy.sh
 
 ### M2 门禁：YUM
 
-- [ ] SELinux Enforcing。
+- [ ] firewalld 已停止并禁用。
 - [ ] 仓库节点本机 HTTP 200。
 - [ ] 至少一个远程节点 HTTP 200 和 `yum makecache` 成功。
-- [ ] 未使用 `777`、关闭 SELinux 或扩大非仓库内容访问。
+- [ ] `/var/www`、`/var/www/html` 和仓库内容权限为 `777`。
 
 ### M3 门禁：展示与配置
 
@@ -887,7 +887,7 @@ bash scripts/tests/test_web_package_deploy.sh
 - 九项需求均有代码、自动化测试、中文接口说明和验收记录。
 - 续跑状态机、数据库迁移、SSH 执行、配置清理、Redis 和 etcd 已完成高风险专项复核。
 - 所有安装步骤前后验证覆盖率为 100%，验证异常不会触发安装。
-- 本机与远程 YUM 仓库 HTTP 200，且保持 SELinux Enforcing。
+- 本机与远程 YUM 仓库 HTTP 200，且 firewalld 已停止并禁用。
 - 分组进度、节点 IP 和 MinIO 参数在前端、API、快照和实际集群状态间一致。
 - MinIO 安装开始时至少 4 个正式 Worker 的准入规则不可绕过，配置保存不受该数量限制，且不得误加 Ready Worker 数量门禁。
 - 无 Helm 的失败安装可重置，KubeFoundry 受管参数无残留，用户配置不被覆盖。

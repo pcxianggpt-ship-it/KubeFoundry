@@ -34,7 +34,7 @@ v0.3.2 包含以下九项需求：
 - `JobService` 已支持 `skipped` 和 `status_reason`，但 `skipped` 仅用于任务中止或组件组前置失败。
 - 应用重启时，未完成安装任务会被标记为 `interrupted`，不会自动恢复。
 - `scripts/verify/` 已覆盖大部分步骤，但部分脚本仍通过 `PROJECT_ROOT`、`config.sh` 和嵌套 SSH 执行，不符合当前 Java 远端逐节点运行模型。
-- `10-setup-yum-source.sh` 解压仓库并启动 httpd，但未设置完整的目录遍历权限和 SELinux 内容标签。
+- `10-setup-yum-source.sh` 解压仓库并启动 httpd，但父目录权限可能导致仓库元数据 HTTP 403。
 - 安装确认页已加载节点 IP，但节点清单只展示主机名和角色。
 - `ClusterResetService` 只允许重置安装成功并锁定的集群，且组件清理脚本强制要求 Helm 存在。
 - Redis 目录中现有介质是旧 `redis-ha` Chart，不是需求指定的 Bitnami Redis Chart；Redis 组件组目前标记为不可用。
@@ -210,21 +210,19 @@ exit_code=0
 `10-setup-yum-source.sh` 在解压完成后执行以下非交互操作：
 
 1. 校验 `/var/www/html/repo/repodata/repomd.xml` 存在且为普通文件。
-2. 确认 httpd 运行账户；RHEL 系默认账户为 `apache`，实际账户无法确认时安全失败。
-3. 优先使用 POSIX ACL，仅向 httpd 账户授予 `/var/www`、`/var/www/html` 的目录遍历权限，以及仓库目录的只读和遍历权限。
-4. ACL 工具不可用时不直接放宽整个 `/var/www`，而是输出明确依赖错误；离线 YUM 介质需包含 `acl` 包。
-5. 使用 `semanage fcontext` 为仓库路径登记 `httpd_sys_content_t`，再执行 `restorecon -RF`；SELinux 工具不可用时至少执行 `restorecon` 并验证实际标签。
-6. 启动 httpd 后，使用 `curl --fail --silent --show-error --max-time 10` 请求本机仓库元数据。
-
-不得通过关闭 SELinux、把目录递归设为 `777` 或改变非仓库内容所有权来修复 403。
+2. 由 root 将 `/var/www`、`/var/www/html` 和仓库目录内容设置为 `777`，直接消除 httpd 路径访问限制。
+3. 仅从离线仓库安装 `httpd` 和 `sshpass`，不引入 ACL、SELinux 管理工具依赖。
+4. 启动并启用 httpd，随后直接停止并禁用 firewalld。
+5. 使用 `curl --fail --silent --show-error --max-time 10` 请求本机仓库元数据。
 
 ### 6.2 验证要求
 
 `verify-10-setup-yum-source.sh` 改为目标节点本地验证，并返回统一验证退出码：
 
 - httpd 为 active 且 enabled。
+- firewalld 不处于 active 状态。
 - 仓库元数据文件存在。
-- 从 httpd 运行账户视角可遍历父目录并读取元数据。
+- 仓库父目录和仓库内容权限为 `777`。
 - `http://127.0.0.1/repo/repodata/repomd.xml` 返回 HTTP 200。
 - `yum --disablerepo='*' --enablerepo='k8s-yum' makecache` 成功。
 
@@ -238,14 +236,13 @@ exit_code=0
 
 ### 6.3 实现记录
 
-v0.3.2 实现已使用 `# Managed by KubeFoundry v0.3.2` 标识本地与 HTTP Repo 文件，并冻结以下安全边界：
+v0.3.2 实现已使用 `# Managed by KubeFoundry v0.3.2` 标识本地与 HTTP Repo 文件，并冻结以下行为：
 
-- httpd 运行账户从已启动的工作进程确认，无法确认时安装安全失败。
-- 父目录只增加该账户的搜索 ACL；仓库目录和文件只增加该账户的只读 ACL，不改变所有权和基础模式。
-- SELinux 启用时登记并恢复 `httpd_sys_content_t`，实际标签不匹配时安装失败。
-- firewalld 正在运行时只开放 HTTP 服务，不因仓库配置步骤直接停用防火墙。
+- YUM 仓库由 root 安装，父目录和仓库内容统一设置为 `777`。
+- 安装过程直接停止并禁用 firewalld，验证阶段确认其不再运行。
+- 不依赖 `acl`、`policycoreutils`、`semanage` 或 `restorecon`。
 - 两端验证均使用目标 Repo 执行 `makecache`，不再以全局 `yum repolist` 代替可用性验证。
-- 离线 RPM 仓库必须包含 `kube-media/yum-required-packages.txt` 声明的 HTTP、ACL、SELinux 和客户端工具。
+- 离线 RPM 仓库只需包含 `kube-media/yum-required-packages.txt` 声明的安装软件及其依赖。
 
 ## 7. 安装进度部署单元分组
 
@@ -513,7 +510,7 @@ MINIO_WORKER_COUNT_INSUFFICIENT
 - 每个安装步骤验证脚本连续执行两次，结论一致且不修改系统。
 - 镜像仓库已安装时前置验证通过，续跑不上传或执行 Registry 安装介质。
 - 模拟 Kubernetes API 不可达，验证必须返回异常而不是触发重复初始化。
-- YUM 仓库本机及远程节点访问元数据返回 200；SELinux Enforcing 下通过。
+- YUM 仓库本机及远程节点访问元数据返回 200，firewalld 已关闭。
 - etcd 立即备份生成可校验快照，timer 生效，重置后无受管 unit 残留。
 - 第二阶段失败且没有 Helm 时可完成重置。
 - 用户修改过的共享配置不会被重置脚本静默覆盖。
@@ -532,7 +529,7 @@ MINIO_WORKER_COUNT_INSUFFICIENT
 
 ### M2：YUM 仓库权限（需求 3.4）
 
-- ACL、SELinux 和 HTTP 200 修复。
+- `777` 仓库权限、关闭 firewalld 和 HTTP 200 修复。
 - 重写对应验证脚本并完成远程节点真实验收。
 
 ### M3：安装展示与配置体验
@@ -563,7 +560,7 @@ MINIO_WORKER_COUNT_INSUFFICIENT
 | 验证脚本嵌套 SSH | 目标错误、凭据扩散、结果难归属 | 验证只在当前目标节点本地执行 |
 | 重置误删用户配置 | 节点网络或系统参数损坏 | 独立 drop-in、标记块、校验和及冲突时安全失败 |
 | 无 Helm 时组件残留 | 重置结果不完整 | 依据成功步骤证据生成计划；有 release 证据而缺 Helm 时明确失败 |
-| YUM 权限过度放宽 | 暴露 `/var/www` 其他内容 | 仅为 httpd 账户设置路径 ACL，保持 SELinux Enforcing |
+| YUM 仓库 HTTP 403 | 节点无法刷新安装缓存 | 由 root 设置 `777` 仓库权限并直接关闭 firewalld |
 | Redis Chart 与旧介质混用 | 镜像、参数和升级行为不可预测 | 固定 Bitnami Chart、介质清单和 SHA-256，旧 Chart 单独处置 |
 | etcd 备份不可恢复 | 产生虚假安全感 | 安装后立即备份并执行快照完整性检查 |
 
@@ -580,7 +577,7 @@ MINIO_WORKER_COUNT_INSUFFICIENT
 - 九项需求均有实现、自动化测试、中文接口说明和验收记录。
 - 失败任务可以创建新任务安全续跑，已满足步骤不会重复安装，验证异常不会触发安装。
 - 每个安装步骤执行前后都有符合统一契约的验证，验证脚本覆盖率为 100%。
-- YUM 仓库在 SELinux Enforcing 环境中通过本机与远程 HTTP 200 验收。
+- YUM 仓库在关闭 firewalld 后通过本机与远程 HTTP 200 验收。
 - 安装进度按部署单元展示，状态与叶子步骤一致。
 - MinIO PVC、CPU 和内存配置经过前后端校验并真实应用。
 - MinIO 少于 4 个正式工作节点时无法开始安装；不设置 Ready Worker 数量门禁，实际部署仍需通过通用就绪验证。
