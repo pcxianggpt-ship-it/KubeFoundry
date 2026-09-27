@@ -35,6 +35,11 @@ assert_no_managed_block() {
         || fail "受管 NFS 配置残留未清理: ${file}"
 }
 
+assert_no_owned_file() {
+    local target="$1"
+    [[ ! -e "${target}" && ! -L "${target}" ]] || fail "KubeFoundry 受管文件残留未清理: ${target}"
+}
+
 has_role() {
     local role="$1"
     local roles=",${KF_NODE_ROLES:-${KF_NODE_ROLE:-}},"
@@ -71,6 +76,25 @@ assert_absent /etc/kubernetes
 assert_absent /etc/cni/net.d
 assert_no_managed_block /etc/fstab '# >>>KubeFoundry NFS fstab>>>'
 assert_no_managed_block /etc/exports '# >>>KubeFoundry NFS exports>>>'
+assert_no_managed_block /etc/hosts '# >>>KubeFoundry>>>'
+assert_no_managed_block /etc/sysctl.conf '# >>>KubeFoundry sysctl>>>'
+for managed_file in \
+    /etc/yum.repos.d/k8s.repo \
+    /etc/yum.repos.d/k8s-http.repo \
+    /etc/modules-load.d/kubefoundry-k8s.conf \
+    /etc/sysctl.d/99-kubefoundry-k8s.conf \
+    /etc/security/limits.d/99-kubefoundry.conf \
+    /etc/systemd/system/kubefoundry-disable-swap.service \
+    /etc/systemd/system/kubefoundry-etcd-backup.service \
+    /etc/systemd/system/kubefoundry-etcd-backup.timer \
+    /usr/local/libexec/kubefoundry-etcd-backup.sh; do
+    assert_no_owned_file "${managed_file}"
+done
+if [ -n "${KF_REGISTRY_IP:-}" ]; then
+    assert_no_owned_file "/etc/containerd/certs.d/${KF_REGISTRY_IP}:5000/hosts.toml"
+fi
+assert_no_owned_file /etc/containerd/certs.d/registry:5000/hosts.toml
+assert_no_owned_file /var/lib/kubefoundry/managed-config
 verify_registry
 
 log_success "Kubernetes 节点重置验证通过: ${KF_NODE_HOSTNAME}"
