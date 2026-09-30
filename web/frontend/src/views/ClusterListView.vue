@@ -110,7 +110,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 import { RouterLink } from 'vue-router';
 import {
   ArrowRight,
@@ -136,6 +136,7 @@ const loading = ref(true);
 const errorMessage = ref('');
 
 onMounted(loadClusters);
+watch(() => props.mode, loadClusters);
 
 function normalizeList(payload) {
   if (Array.isArray(payload)) return payload;
@@ -163,21 +164,21 @@ async function enrichClusterStatus(cluster) {
     const jobs = normalizeList(await listJobs(cluster.id))
       .slice()
       .sort((left, right) => Number(right.id || 0) - Number(left.id || 0));
-    const install = jobs.find((job) => job.job_type === 'install');
+    const install = jobs.find((job) => ['install', 'component_install'].includes(job.job_type));
     if (install) {
       if (['pending', 'running'].includes(install.status)) {
         return { ...cluster, status: 'installing', active_job_id: install.id };
       }
       if (['failed', 'interrupted', 'canceled'].includes(install.status)) {
-        return { ...cluster, status: 'install_failed', latest_job_id: install.id };
+        return { ...cluster, status: 'install_failed', active_job_id: null, latest_job_id: install.id };
       }
-      if (install.status === 'success') {
-        return { ...cluster, status: 'installed', latest_job_id: install.id };
+      if (['success', 'partial_success'].includes(install.status)) {
+        return { ...cluster, status: 'installed', active_job_id: null, latest_job_id: install.id };
       }
     }
     const precheck = jobs.find((job) => job.job_type === 'precheck');
     if (precheck?.status === 'success') {
-      return { ...cluster, status: 'precheck_passed', latest_job_id: precheck.id };
+      return { ...cluster, status: 'precheck_passed', active_job_id: null, latest_job_id: precheck.id };
     }
   } catch (error) {
     // Keep the cluster list usable if historical task lookup is temporarily unavailable.

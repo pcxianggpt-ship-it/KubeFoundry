@@ -72,6 +72,7 @@ while IFS= read -r crd_resource; do
     [ -z "${crd_resource}" ] || kubectl wait --for=condition=Established "${crd_resource}" \
         --timeout "${KF_CRD_TIMEOUT:-180s}"
 done <<< "${crd_resources}"
-phase3_apply_managed "${resource_manifest}"
+# KMRole 使用与手动安装一致的客户端 apply，避免服务端字段合并改变 rights。
+kubectl apply -f "${resource_manifest}"
 
 log_success "Kubemate 管理组件安装命令执行完成"

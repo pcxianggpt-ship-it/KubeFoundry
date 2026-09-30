@@ -93,6 +93,53 @@ describe('ClusterListView', () => {
     ]);
   });
 
+  it('进度入口选择最新安装或补装任务，并清除旧的活动任务编号', async () => {
+    listClusters.mockResolvedValue({ items: [
+      { id: 10, name: '补装中', status: 'installed', active_job_id: 100 },
+      { id: 11, name: '补装失败', status: 'installed', active_job_id: 110 },
+      { id: 12, name: '安装完成', status: 'installing', active_job_id: 120 }
+    ] });
+    listJobs.mockImplementation((clusterId) => Promise.resolve({ items: {
+      10: [
+        { id: 100, job_type: 'install', status: 'success' },
+        { id: 103, job_type: 'precheck', status: 'success' },
+        { id: 102, job_type: 'component_install', status: 'running' }
+      ],
+      11: [
+        { id: 112, job_type: 'component_install', status: 'failed' },
+        { id: 110, job_type: 'install', status: 'success' }
+      ],
+      12: [{ id: 122, job_type: 'install', status: 'success' }]
+    }[clusterId] }));
+
+    const wrapper = mountView('install');
+    await flushPromises();
+    const actions = wrapper.findAllComponents(RouterLinkStub)
+      .filter((link) => link.classes('cluster-row__action'));
+    expect(actions.map((link) => link.props('to').params.jobId)).toEqual(['102', '112', '122']);
+    expect(actions.map((link) => link.text())).toEqual(['查看进度', '查看失败原因', '查看执行记录']);
+  });
+
+  it('从集群配置切换到集群安装时重新加载最新任务', async () => {
+    listClusters.mockResolvedValue({ items: [{ id: 1, name: 'app', status: 'installed' }] });
+    listJobs.mockResolvedValueOnce({ items: [{ id: 2, job_type: 'precheck', status: 'success' }] });
+    const wrapper = mountView('config');
+    await flushPromises();
+
+    listJobs.mockResolvedValue({ items: [
+      { id: 4, job_type: 'component_install', status: 'partial_success' },
+      { id: 3, job_type: 'install', status: 'partial_success' },
+      { id: 2, job_type: 'precheck', status: 'success' }
+    ] });
+    await wrapper.setProps({ mode: 'install' });
+    await flushPromises();
+
+    const action = wrapper.findAllComponents(RouterLinkStub)
+      .find((link) => link.classes('cluster-row__action'));
+    expect(action.props('to').params.jobId).toBe('4');
+    expect(listJobs).toHaveBeenCalledTimes(2);
+  });
+
   it('提供加载、空数据、错误重试和无目标任务禁用状态', async () => {
     let resolveClusters;
     listClusters.mockReturnValue(new Promise((resolve) => {

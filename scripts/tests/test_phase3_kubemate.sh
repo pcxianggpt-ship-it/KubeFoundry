@@ -25,6 +25,14 @@ printf 'apiVersion: v1\n' > "${TMP}/kube/admin.conf"
 cat > "${BIN}/kubectl" <<'EOF'
 #!/bin/bash
 printf '%s\n' "$*" >> "${KF_KUBEMATE_KUBECTL_LOG}"
+if [[ "$*" == *"apply --server-side"*"kubemate-resources.yml"* ]]; then
+    printf 'KMRole deployment: spec.rights[18].group must be a string\n' >&2
+    exit 1
+fi
+if [ "${KF_TEST_APPLY_FAILURE:-}" = 1 ] && [[ "$*" == "apply -f "*"kubemate-resources.yml" ]]; then
+    printf 'simulated resource apply failure\n' >&2
+    exit 1
+fi
 if [ "${KF_TEST_MISSING_ROLE:-}" = 1 ] && [[ "$*" == *"get kmrole deployment -n kubemate-system"* ]]; then
     exit 1
 fi
@@ -64,17 +72,25 @@ grep -Fxq -- 'apply --server-side --field-manager=kubefoundry --force-conflicts 
     "${KF_KUBEMATE_KUBECTL_LOG}"
 grep -Fxq -- 'wait --for=condition=Established customresourcedefinition.apiextensions.k8s.io/users.example.io --timeout 180s' \
     "${KF_KUBEMATE_KUBECTL_LOG}"
-grep -Fxq -- 'apply --server-side --field-manager=kubefoundry --force-conflicts -f '"${KF_COMPONENT_RESOURCE_DIR}"'/kubemate-resources.yml' \
-    "${KF_KUBEMATE_KUBECTL_LOG}"
-grep -Fxq -- 'label --overwrite -f '"${KF_COMPONENT_RESOURCE_DIR}"'/kubemate-resources.yml app.kubernetes.io/managed-by=kubefoundry kubefoundry.io/component-group=kubemate' \
+grep -Fxq -- 'apply -f '"${KF_COMPONENT_RESOURCE_DIR}"'/kubemate-resources.yml' \
     "${KF_KUBEMATE_KUBECTL_LOG}"
 crd_apply_line=$(grep -nF -- 'apply --server-side --field-manager=kubefoundry --force-conflicts -f '"${KF_COMPONENT_RESOURCE_DIR}"'/kubemate-crds.yml' "${KF_KUBEMATE_KUBECTL_LOG}" | cut -d: -f1)
-resource_apply_line=$(grep -nF -- 'apply --server-side --field-manager=kubefoundry --force-conflicts -f '"${KF_COMPONENT_RESOURCE_DIR}"'/kubemate-resources.yml' "${KF_KUBEMATE_KUBECTL_LOG}" | cut -d: -f1)
+resource_apply_line=$(grep -nF -- 'apply -f '"${KF_COMPONENT_RESOURCE_DIR}"'/kubemate-resources.yml' "${KF_KUBEMATE_KUBECTL_LOG}" | cut -d: -f1)
 [ "${crd_apply_line}" -lt "${resource_apply_line}" ]
 grep -Eq '^[[:space:]]*- ip: 10\.0\.0\.10[[:space:]]*$' \
     "${KF_COMPONENT_RESOURCE_DIR}/kubemate-resources.yml"
 ! grep -q -- '192.168.0.1' "${KF_COMPONENT_RESOURCE_DIR}/kubemate-resources.yml"
 ! grep -Eq 'ssh_exec|config_get|get_all_' "${ROOT}/scripts/steps/phase3_ecosystem/31-install-kubemate-ui.sh"
+
+# 应用失败必须结束步骤，不能继续标记资源或输出安装成功。
+: > "${KF_KUBEMATE_KUBECTL_LOG}"
+if KF_TEST_APPLY_FAILURE=1 bash "${ROOT}/scripts/steps/phase3_ecosystem/31-install-kubemate-ui.sh" \
+    > "${TMP}/apply-failure.log" 2>&1; then
+    printf 'resource apply failure was ignored\n' >&2
+    exit 1
+fi
+grep -q 'simulated resource apply failure' "${TMP}/apply-failure.log"
+! grep -Fq -- 'label --overwrite -f '"${KF_COMPONENT_RESOURCE_DIR}"'/kubemate-resources.yml' "${KF_KUBEMATE_KUBECTL_LOG}"
 
 export KF_KUBECONFIG="${KUBECONFIG}"
 KF_TEST_MISSING_ROLE=1 bash "${ROOT}/scripts/verify/phase3_ecosystem/verify-31-install-kubemate-ui.sh" \
