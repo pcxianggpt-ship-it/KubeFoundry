@@ -1118,20 +1118,135 @@ cat /etc/hosts | grep k8sc1
 
 ### 3.16 安装 Redis 哨兵模式（可选，默认禁用）
 
-**登录 k8sc1 执行：**
+使用 Bitnami Redis Chart `28.0.12` 和 Redis/Sentinel `8.10.1`，部署 3 个 Pod，动态选举 1 主 2 从，Sentinel quorum 为 2，每个 Redis Pod 申请一个 `8Gi` PVC。
+
+以下命令在主控制节点 k8sc1 上逐条执行，某一步报错时先处理再继续。需要提前安装 Helm、配置 `registry:5000` 镜像仓库和 `nfs-storage` 动态存储类；使用其他存储类时替换下方的 `nfs-storage`。
+
+**1. 检查环境和介质**
 
 ```bash
-cd /root/kube-media/03.setup_file/allyaml/redis
+export KUBECONFIG=/etc/kubernetes/admin.conf
+cd /root/kube-media/03.setup_file/v1.30.14/helmapp/redis
 
-kubectl create ns redis-sentinel
-kubectl apply -f redis-sentinel/redis-pv.yml
-kubectl apply -f redis-sentinel/storageclass.yml
-helm install -n redis-sentinel redis-ha allyaml/redis-ha
+sha256sum --check --strict SHA256SUMS
+kubectl get nodes
+kubectl get storageclass nfs-storage
 ```
 
-**验证：**
+节点应为 Ready，介质校验应全部显示 OK。安装使用目录中的 `redis-28.0.12.tgz`、`values-sentinel.yaml`，不使用历史 `redis-ha` 和手工 PV 清单。
+
+仓库必须包含 `images.txt` 中两张 required 镜像及对应摘要。尚未上传时，在已安装 skopeo 且能访问公网和私有仓库的机器上执行：
+
 ```bash
-kubectl get pod -n redis-sentinel
+skopeo copy --all --preserve-digests --dest-tls-verify=false \
+    docker://docker.io/bitnami/redis@sha256:d75bda00b778ad5e03a639ec36e00f6665a5d7e0f35a6250be5b103fb2117275 \
+    docker://registry:5000/bitnami/redis:8.10.1
+
+skopeo copy --all --preserve-digests --dest-tls-verify=false \
+    docker://docker.io/bitnami/redis-sentinel@sha256:fcfca07d8b56cea8e990e51c09c0d03102bde09a2147bd6a669e024a56893a8c \
+    docker://registry:5000/bitnami/redis-sentinel:8.10.1
+```
+
+目标 `registry:5000` 可替换为实际仓库 IP 和端口；公网源不可达时，可将源 `docker.io` 替换为可用代理。保留 `--all --preserve-digests`，确保上传后摘要不变。已上传的镜像无需重复复制。
+
+**2. 创建命名空间和密码 Secret**
+
+下面仅在首次安装时执行；命名空间已存在则跳过创建，Secret 已存在则沿用原密码。输入密码时不显示字符，不要开启 `set -x`。
+
+```bash
+kubectl create namespace redis-sentinel
+
+read -rsp "请输入 Redis 密码: " REDIS_PASSWORD
+echo
+
+kubectl create secret generic kubefoundry-redis-auth -n redis-sentinel \
+    --from-file=redis-password=<(printf '%s' "$REDIS_PASSWORD")
+unset REDIS_PASSWORD
+
+kubectl label secret kubefoundry-redis-auth -n redis-sentinel \
+    app.kubernetes.io/managed-by=kubefoundry \
+    kubefoundry.io/component-group=redis_sentinel
+```
+
+密码必须非空。已有其他应用的同名 Secret 时先核对来源，不要直接修改其标签或密码。
+
+**3. 安装 Redis Sentinel**
+
+直接通过 Helm 参数指定存储类，不修改原始 values 文件：
+
+```bash
+helm upgrade --install kubefoundry-redis ./redis-28.0.12.tgz \
+    -n redis-sentinel -f values-sentinel.yaml \
+    --set global.defaultStorageClass=nfs-storage \
+    --set master.persistence.storageClass=nfs-storage \
+    --set replica.persistence.storageClass=nfs-storage \
+    --labels app.kubernetes.io/managed-by=kubefoundry,kubefoundry.io/component-group=redis_sentinel \
+    --wait --timeout 10m --atomic
+```
+
+**4. 检查安装结果**
+
+```bash
+helm status kubefoundry-redis -n redis-sentinel
+kubectl get pods,pvc,service -n redis-sentinel
+kubectl rollout status statefulset/kubefoundry-redis-node \
+    -n redis-sentinel --timeout=180s
+```
+
+预期 release 为 deployed，3 个 Pod 全部 2/2 Running，3 个 PVC 全部 Bound、各 8Gi。
+
+**5. 查询 master 和验证读写**
+
+进入 Sentinel 客户端，在提示时输入步骤 2 设置的密码：
+
+```bash
+kubectl exec -it kubefoundry-redis-node-0 -n redis-sentinel -c sentinel -- \
+    redis-cli -p 26379 --askpass
+```
+
+在 redis-cli 提示符中逐条输入：
+
+```text
+SENTINEL CKQUORUM kubefoundry-master
+SENTINEL GET-MASTER-ADDR-BY-NAME kubefoundry-master
+QUIT
+```
+
+CKQUORUM 应返回 OK；第二条命令返回当前 master 的地址和 6379 端口。从地址中确认 Pod 名，例如 `kubefoundry-redis-node-0`。将下方 Pod 名替换为实际 master，再连接并输入相同密码：
+
+```bash
+kubectl exec -it kubefoundry-redis-node-0 -n redis-sentinel -c redis -- \
+    redis-cli --askpass
+```
+
+在 redis-cli 提示符中逐条输入：
+
+```text
+ROLE
+SET kubefoundry:manual-check manual-ok EX 300
+GET kubefoundry:manual-check
+DEL kubefoundry:manual-check
+QUIT
+```
+
+ROLE 应为 master，SET 返回 OK，GET 返回 manual-ok，DEL 返回 1。
+
+业务客户端使用 Sentinel 模式，集群内发现地址为 `kubefoundry-redis.redis-sentinel.svc.cluster.local:26379`，master 名为 `kubefoundry-master`。Redis 和 Sentinel 使用相同密码。master 会变化，客户端应通过 Sentinel 获取 master；集群外客户端还需要能解析和访问返回的 Pod 地址。
+
+**6. 故障切换演练（仅验收环境，可选）**
+
+以下脚本会删除当前 master Pod、验证自动选主和数据保留。脚本根目录以 `/root` 为例，按实际部署路径调整：
+
+```bash
+KF_ACCEPT_REDIS_FAILOVER=YES KUBECONFIG=/etc/kubernetes/admin.conf \
+    bash /root/scripts/acceptance/redis-sentinel-failover.sh
+```
+
+演练后重新执行步骤 4、5。需要严格检查 1 主 2 从、quorum=2、PVC 和 Secret 时执行：
+
+```bash
+KF_KUBECONFIG=/etc/kubernetes/admin.conf KF_REDIS_STORAGE_CLASS=nfs-storage \
+    bash /root/scripts/verify/phase3_ecosystem/verify-43-install-redis-sentinel.sh
 ```
 
 ---
