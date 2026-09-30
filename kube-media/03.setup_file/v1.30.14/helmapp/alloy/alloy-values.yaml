@@ -1,0 +1,23 @@
+image:
+  registry: registry:5000
+configReloader:
+  image:
+    registry: "registry:5000/quay.io"
+alloy:
+  configMap:
+    #--Create a new ConfigMap for the config file.
+    create: false
+    # -- Content to assign to the new configMap, This is passed into 'tpl* allowing for templating from values.
+    content: ''
+    #-Name of existing ConfigMap to use, Used when create is false.
+    name: alloy
+    #-- Key in configMap to get config from.
+    key: config.alloy
+  extrArg:
+  - '--disable-reporting=true'
+controller:
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      effect: NoSchedule
+    - key: node-role.kubernetes.io/master
+      effect: NoSchedule

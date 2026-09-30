@@ -19,6 +19,7 @@ component_steps=(
     32-mount-nfs-workers 31-install-kubemate-ui 36-install-traefik
     46-prepare-storage-workers 47-install-openebs 49-install-minio 35-install-loki
     48-install-alloy 37-prepare-prometheus-workers 38-install-prometheus
+    43-install-redis-sentinel 44-setup-etcd-backup
 )
 
 verify_script() {

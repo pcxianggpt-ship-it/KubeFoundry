@@ -1,0 +1,62 @@
+#k8s服务暴露
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    k8s-app: mysql-exporter
+  annotations:
+    #必须包含这个kv以匹配prometheus的job规则
+    prometheus.io/probe: 'true'
+  name: mysql-exporter
+  namespace: kubemate-monitoring-system
+spec:
+  ports:
+    - port: 9104
+      protocol: TCP
+      targetPort: 9104
+      #必须包含这个name以匹配job规则.(annotations和这里二选一即可,不需要全部匹配)
+      name: mysql-exporter
+  selector:
+    k8s-app: mysql-exporter
+  sessionAffinity: None
+  type: ClusterIP
+---
+#k8s部署
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql-exporter
+  namespace: kubemate-monitoring-system
+  labels:
+    k8s-app: mysql-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: mysql-exporter
+  template:
+    metadata:
+      labels:
+        k8s-app: mysql-exporter
+    spec:
+      containers:
+        - name: mysql-exporter
+          image: 38.62.44.40:5000/prom/mysqld-exporter
+          imagePullPolicy: IfNotPresent
+          args: [ "--collect.info_schema.processlist",
+                  "--collect.info_schema.innodb_metrics",
+                  "--collect.info_schema.tablestats",
+                  "--collect.info_schema.userstats",
+                  "--collect.engine_innodb_status",
+                  "--collect.slave_hosts"
+          ]
+          env:
+            - name: DATA_SOURCE_NAME
+              value: 'exporter:exporter@(10.2.5.113:3306)/' # user:password@(hostname:3306)/
+          resources:
+            limits:
+              cpu: 500m
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 512Mi

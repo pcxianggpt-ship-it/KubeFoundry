@@ -50,7 +50,7 @@ public class ComponentInstallationStateService {
         ClusterComponentState state = stateOwnedBy(job, groupKey);
         if (state == null) return;
         List<JobStep> groupSteps = groupSteps(job.getId(), groupKey);
-        if (!groupSteps.isEmpty() && groupSteps.stream().allMatch(step -> "success".equals(step.getStatus()))) {
+        if (!groupSteps.isEmpty() && groupSteps.stream().allMatch(ComponentInstallationStateService::satisfied)) {
             state.markInstalled(null, job.getId());
             states.save(state);
         }
@@ -71,7 +71,7 @@ public class ComponentInstallationStateService {
             ClusterComponentState state = stateOwnedBy(job, groupKey);
             if (state == null) continue;
             List<JobStep> groupSteps = groupSteps(job.getId(), groupKey);
-            if (groupSteps.stream().allMatch(step -> "success".equals(step.getStatus()))) {
+            if (groupSteps.stream().allMatch(ComponentInstallationStateService::satisfied)) {
                 state.markInstalled(null, job.getId());
             } else if (groupSteps.stream().anyMatch(step -> "failed".equals(step.getStatus()))) {
                 state.markFailed("COMPONENT_INSTALL_FAILED", job.getId());
@@ -143,6 +143,12 @@ public class ComponentInstallationStateService {
 
     private static boolean isComponentJob(Job job) {
         return job != null && supportsJobType(job.getType());
+    }
+
+    private static boolean satisfied(JobStep step) {
+        return "success".equals(step.getStatus())
+                || ("skipped".equals(step.getStatus())
+                        && "PREVERIFY_SATISFIED".equals(step.getStatusReason()));
     }
 
     public static boolean supportsJobType(String jobType) {

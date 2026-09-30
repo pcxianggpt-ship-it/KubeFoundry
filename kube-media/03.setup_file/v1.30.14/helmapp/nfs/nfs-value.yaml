@@ -1,0 +1,6 @@
+nfs:
+  server: k8sw1
+  path: /data/nfs_root
+image:
+  repository: registry:5000/nfs-subdir-external-provisioner
+  tag: v4.0.2

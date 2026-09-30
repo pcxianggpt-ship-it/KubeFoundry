@@ -30,8 +30,8 @@ export PATH="${BIN}:${PATH}"
 export KF_RESET_HELM_LOG="${TMP}/helm.log"
 export KF_RESET_KUBECTL_LOG="${TMP}/kubectl.log"
 export KUBECONFIG="${TMP}/admin.conf"
-export KF_RESET_COMPONENT_GROUPS='nfs,kubemate,traefik,storage_observability,prometheus'
-export KF_RESET_HELM_RELEASE_CHECKSUMS='alloy=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,loki=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,openebs=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,nfs-subdir-external-provisioner=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+export KF_RESET_COMPONENT_GROUPS='nfs,kubemate,traefik,storage_observability,prometheus,redis_sentinel'
+export KF_RESET_HELM_RELEASE_CHECKSUMS='alloy=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,loki=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,openebs=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,nfs-subdir-external-provisioner=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,kubefoundry-redis=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 touch "${KUBECONFIG}"
 log_info() { :; }
 log_success() { :; }
@@ -45,11 +45,16 @@ grep -Fxq 'uninstall loki --namespace kubemate-system --wait --timeout 10m' "${K
 grep -Fxq 'uninstall openebs --namespace kubemate-system --wait --timeout 10m' "${KF_RESET_HELM_LOG}"
 grep -Fxq 'uninstall nfs-subdir-external-provisioner --namespace kubemate-system --wait --timeout 10m' \
     "${KF_RESET_HELM_LOG}"
+grep -Fxq 'uninstall kubefoundry-redis --namespace redis-sentinel --wait --timeout 10m' \
+    "${KF_RESET_HELM_LOG}"
+grep -Fq -- '--selector app.kubernetes.io/managed-by=kubefoundry,kubefoundry.io/component-group=redis_sentinel' \
+    "${KF_RESET_KUBECTL_LOG}"
 test "$(grep -nF 'uninstall alloy' "${KF_RESET_HELM_LOG}" | cut -d: -f1)" \
     -lt "$(grep -nF 'uninstall loki' "${KF_RESET_HELM_LOG}" | cut -d: -f1)"
 test "$(grep -nF 'uninstall loki' "${KF_RESET_HELM_LOG}" | cut -d: -f1)" \
     -lt "$(grep -nF 'uninstall openebs' "${KF_RESET_HELM_LOG}" | cut -d: -f1)"
-grep -Fq -- '--selector app.kubernetes.io/managed-by=kubefoundry' "${KF_RESET_KUBECTL_LOG}"
+grep -Fq -- '--selector app.kubernetes.io/managed-by=kubefoundry,kubefoundry.io/component-group=kubemate' \
+    "${KF_RESET_KUBECTL_LOG}"
 
 if KF_RESET_COMPONENT_GROUPS='nfs,unknown' bash "${ROOT}/scripts/steps/reset/reset-kubemate-components.sh"; then
     printf '%s\n' '不安全组件组列表未被拒绝' >&2
@@ -94,5 +99,51 @@ if (remove_managed_block "${FSTAB}" '# >>>KubeFoundry NFS fstab>>>' '# <<<KubeFo
     exit 1
 fi
 test "$(grep -cF '# >>>KubeFoundry NFS fstab>>>' "${FSTAB}")" -eq 2
+
+# 基线恢复只在当前文件仍匹配安装后校验和时执行。
+STATE_DIR="${TMP}/managed-config"
+managed_state_dir() { printf '%s\n' "${STATE_DIR}"; }
+manifest_target_allowed() { return 0; }
+mkdir -p "${STATE_DIR}/baseline"
+chmod 0700 "${STATE_DIR}" "${STATE_DIR}/baseline"
+TARGET_CONFIG="${TMP}/containerd.toml"
+BASELINE="${STATE_DIR}/baseline/containerd.config"
+printf '%s\n' 'original-user-config' > "${BASELINE}"
+printf '%s\n' 'kubefoundry-managed-config' > "${TARGET_CONFIG}"
+chmod 0600 "${BASELINE}"
+original_sha=$(sha256sum "${BASELINE}" | awk '{print $1}')
+managed_sha=$(sha256sum "${TARGET_CONFIG}" | awk '{print $1}')
+printf 'containerd.config\t%s\t%s\t%s\t%s\t640\t%s\t%s\n' \
+    "${TARGET_CONFIG}" "${original_sha}" "${BASELINE}" "${managed_sha}" "$(id -u)" "$(id -g)" \
+    > "${STATE_DIR}/manifest.tsv"
+chmod 0600 "${STATE_DIR}/manifest.tsv"
+preflight_replacement_manifest
+restore_replacement_manifest
+grep -Fqx 'original-user-config' "${TARGET_CONFIG}"
+test "$(stat -c '%a' "${TARGET_CONFIG}")" = 640
+test ! -e "${STATE_DIR}"
+
+mkdir -p "${STATE_DIR}/baseline"
+chmod 0700 "${STATE_DIR}" "${STATE_DIR}/baseline"
+printf '%s\n' 'original-user-config' > "${BASELINE}"
+printf '%s\n' 'user-modified-after-install' > "${TARGET_CONFIG}"
+chmod 0600 "${BASELINE}"
+printf 'containerd.config\t%s\t%s\t%s\t%s\t640\t%s\t%s\n' \
+    "${TARGET_CONFIG}" "${original_sha}" "${BASELINE}" "${managed_sha}" "$(id -u)" "$(id -g)" \
+    > "${STATE_DIR}/manifest.tsv"
+chmod 0600 "${STATE_DIR}/manifest.tsv"
+if (preflight_replacement_manifest); then
+    printf '%s\n' '用户修改后的受管配置未被拒绝' >&2
+    exit 1
+fi
+grep -Fqx 'user-modified-after-install' "${TARGET_CONFIG}"
+
+rm -rf "${STATE_DIR}"
+mkdir -p "${STATE_DIR}"
+chmod 0700 "${STATE_DIR}"
+if (preflight_replacement_manifest); then
+    printf '%s\n' '缺少清单的受管状态目录未被拒绝' >&2
+    exit 1
+fi
 
 printf 'reset component cleanup tests passed\n'

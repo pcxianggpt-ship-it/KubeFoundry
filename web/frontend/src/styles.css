@@ -698,12 +698,32 @@ a:focus-visible {
 
 .confirm-node-list li {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 110px auto;
+  grid-template-columns: minmax(140px, 1.2fr) minmax(120px, 0.8fr) minmax(110px, 1fr) auto;
   align-items: center;
   gap: 12px;
   min-height: 48px;
   padding: 8px 12px;
   background: var(--kf-surface);
+}
+
+.confirm-node-list li.is-invalid {
+  background: #fff7f6;
+}
+
+.confirm-node-list strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.confirm-node-ip {
+  font-variant-numeric: tabular-nums;
+}
+
+.confirm-node-ip small {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--kf-muted);
+  font-size: 10px;
 }
 
 .confirm-actions {
@@ -714,6 +734,15 @@ a:focus-visible {
   margin-top: 24px;
   padding-top: 20px;
   border-top: 1px solid var(--kf-border);
+}
+
+.confirm-risk {
+  display: grid;
+  gap: 4px;
+}
+
+.confirm-risk small {
+  color: var(--el-color-danger);
 }
 
 .execution-overview {
@@ -1431,13 +1460,15 @@ a.pipeline-stage:hover {
   font-size: 12px;
 }
 
-.component-nfs-form {
+.component-nfs-form,
+.component-resource-form {
   margin-top: 18px;
   padding-top: 18px;
   border-top: 1px solid #e7ebe9;
 }
 
-.component-nfs-form .el-form-item {
+.component-nfs-form .el-form-item,
+.component-resource-form .el-form-item {
   margin-bottom: 16px;
 }
 

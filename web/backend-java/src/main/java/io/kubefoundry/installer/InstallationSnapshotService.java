@@ -7,6 +7,7 @@ import io.kubefoundry.cluster.Cluster;
 import io.kubefoundry.cluster.ClusterComponent;
 import io.kubefoundry.cluster.ClusterComponentRepository;
 import io.kubefoundry.cluster.Node;
+import io.kubefoundry.cluster.MinioComponentConfiguration;
 import io.kubefoundry.job.Job;
 import io.kubefoundry.job.JobRepository;
 import java.util.LinkedHashMap;
@@ -94,10 +95,18 @@ public class InstallationSnapshotService {
     private InstallationSnapshotPayload withRuntimeSettings(
             InstallationSnapshotPayload payload, Cluster cluster, List<Node> nodes) {
         if (settings == null) return payload;
+        Map<String, String> minio = payload.componentGroups().stream()
+                .filter(group -> MinioComponentConfiguration.GROUP_KEY.equals(group.key()) && group.enabled())
+                .findFirst()
+                .map(group -> MinioComponentConfiguration.environment(group.config()))
+                .orElse(Map.of());
         Map<Long, InstallationSnapshotPayload.RuntimeConfiguration> values = new TreeMap<>();
         for (Node node : InstallationNodes.normalize(nodes)) {
+            RuntimeSettings base = settings.runtimeSettings(cluster, node);
+            Map<String, String> env = new LinkedHashMap<>(base.env());
+            env.putAll(minio);
             values.put(node.getId(), InstallationSnapshotPayload.RuntimeConfiguration.from(
-                    settings.runtimeSettings(cluster, node)));
+                    new RuntimeSettings(base.paths(), env, base.advanced())));
         }
         return payload.withRuntimeSettings(values);
     }
@@ -135,6 +144,11 @@ public class InstallationSnapshotService {
 
     @Transactional(readOnly = true)
     public InstallationSnapshotPayload latestInstallPayload(long clusterId) {
+        return latestInstallContext(clusterId).payload();
+    }
+
+    @Transactional(readOnly = true)
+    public LatestInstallContext latestInstallContext(long clusterId) {
         InstallationSnapshot snapshot = snapshots
                 .findTopByCluster_IdAndJob_TypeOrderByIdDesc(clusterId, "install")
                 .orElseThrow(() -> new IllegalArgumentException("集群没有可用于远程重置的安装快照"));
@@ -147,7 +161,7 @@ public class InstallationSnapshotService {
                     .forEach(mediaChecksums::putIfAbsent);
         }
         installPayload.mediaChecksums().forEach(mediaChecksums::putIfAbsent);
-        return new InstallationSnapshotPayload(
+        InstallationSnapshotPayload payload = new InstallationSnapshotPayload(
                 installPayload.clusterId(),
                 installPayload.clusterName(),
                 installPayload.kubernetesVersion(),
@@ -160,7 +174,10 @@ public class InstallationSnapshotService {
                 mediaChecksums,
                 installPayload.clusterConfiguration(),
                 installPayload.runtimeSettings());
+        return new LatestInstallContext(payload, snapshot.getJob().getId(), snapshot.getJob().getStatus());
     }
+
+    public record LatestInstallContext(InstallationSnapshotPayload payload, long jobId, String jobStatus) { }
 
     private InstallationSnapshotPayload readPayload(InstallationSnapshot snapshot) {
         try {

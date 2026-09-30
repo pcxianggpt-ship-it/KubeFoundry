@@ -95,6 +95,19 @@ class ComponentMediaServiceTest {
                 "/tmp/kubefoundry/jobs/{job_id}/resources/storage_observability/49-install-minio");
     }
 
+    @Test
+    void mapsRedisSentinelToTheFrozenRedisDirectory() {
+        ComponentMediaService media = new ComponentMediaService(temporaryDirectory);
+
+        InstallStep.Resource resource = media.componentResource(
+                snapshot("amd64"), "redis_sentinel", "43-install-redis-sentinel");
+
+        assertThat(resource.localPath().toString().replace('\\', '/'))
+                .endsWith("kube-media/03.setup_file/vunknown/helmapp/redis");
+        assertThat(resource.remotePath()).endsWith(
+                "/resources/redis_sentinel/43-install-redis-sentinel");
+    }
+
     private static InstallationSnapshotPayload snapshot(String architecture) {
         Cluster cluster = new Cluster("component-media");
         ReflectionTestUtils.setField(cluster, "id", 1L);

@@ -60,7 +60,7 @@ remove_managed_directory() {
 remove_system_directory() {
     local target="$1"
     case "$target" in
-        /etc/kubernetes|/etc/cni/net.d) ;;
+        /etc/kubernetes|/etc/cni/net.d|/run/flannel) ;;
         *) fail "拒绝清理非白名单系统目录: ${target}" ;;
     esac
     [[ ! -L "$target" ]] || fail "拒绝清理符号链接: ${target}"
@@ -388,6 +388,7 @@ remove_managed_directory "${KF_CONTAINERD_ROOT:-}"
 
 remove_system_directory /etc/kubernetes
 remove_system_directory /etc/cni/net.d
+remove_system_directory /run/flannel
 cleanup_managed_configuration
 ip link delete cni0 2>/dev/null || true
 ip link delete flannel.1 2>/dev/null || true

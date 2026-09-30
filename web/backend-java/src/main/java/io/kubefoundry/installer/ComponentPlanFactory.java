@@ -30,6 +30,10 @@ public class ComponentPlanFactory {
         return create(snapshot, null);
     }
 
+    Path projectRoot() {
+        return media.projectRoot();
+    }
+
     public InstallPlan create(InstallationSnapshotPayload snapshot, Set<String> candidateGroups) {
         if (snapshot == null) throw new IllegalArgumentException("组件计划缺少安装快照");
         Set<String> requested = candidateGroups == null ? null : Set.copyOf(candidateGroups);
@@ -81,6 +85,10 @@ public class ComponentPlanFactory {
                             groupKey, "parallel", 5, true, InstallStage.PROMETHEUS, 1),
                     script(snapshot, "38-install-prometheus", "安装 Prometheus", "primary_control_plane", groupKey,
                             "serial", 1, true, InstallStage.PROMETHEUS, 2));
+            case "redis_sentinel" -> List.of(
+                    script(snapshot, "43-install-redis-sentinel", "安装 Redis Sentinel",
+                            "primary_control_plane", groupKey, "serial", 1, true,
+                            InstallStage.REDIS_SENTINEL, 1));
             default -> throw new IllegalArgumentException("组件组不可安装: " + groupKey);
         };
     }
@@ -101,7 +109,7 @@ public class ComponentPlanFactory {
     private static boolean requiresComponentMedia(String key) {
         return List.of("31-install-kubemate-ui", "32-install-nfs", "36-install-traefik",
                 "47-install-openebs", "49-install-minio", "35-install-loki", "48-install-alloy",
-                "38-install-prometheus").contains(key);
+                "38-install-prometheus", "43-install-redis-sentinel").contains(key);
     }
 
     private static boolean isEnabled(InstallationSnapshotPayload snapshot, String groupKey) {

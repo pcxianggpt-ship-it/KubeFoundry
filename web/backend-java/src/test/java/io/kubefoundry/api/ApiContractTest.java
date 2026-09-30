@@ -125,7 +125,7 @@ class ApiContractTest {
                 .andExpect(jsonPath("$.env.containerd_root").isString());
         mvc.perform(get("/api/clusters/{id}/install-plan", cluster.getId()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items.length()").value(15))
+                .andExpect(jsonPath("$.items.length()").value(16))
                 .andExpect(jsonPath("$.items[0].stage_key").value("host_preparation"))
                 .andExpect(jsonPath("$.items[0].stage_name").value("主机与软件源准备"))
                 .andExpect(jsonPath("$.items[0].stage_order").value(1))
@@ -136,7 +136,10 @@ class ApiContractTest {
                 .andExpect(jsonPath("$.items[6].stage_order").value(2))
                 .andExpect(jsonPath("$.items[6].step_order_in_stage").value(1))
                 .andExpect(jsonPath("$.items[0].step_type").value("INSTALL"))
-                .andExpect(jsonPath("$.items[0].has_strict_verification").value(true));
+                .andExpect(jsonPath("$.items[0].has_strict_verification").value(true))
+                .andExpect(jsonPath("$.items[15].key").value("44-setup-etcd-backup"))
+                .andExpect(jsonPath("$.items[15].step_type").value("MAINTENANCE"))
+                .andExpect(jsonPath("$.items[15].stage_key").value("etcd_backup"));
         mvc.perform(get("/api/jobs").param("cluster_id", cluster.getId().toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].job_type").value("install"))

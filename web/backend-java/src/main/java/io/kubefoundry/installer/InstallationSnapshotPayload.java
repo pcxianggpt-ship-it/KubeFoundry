@@ -74,6 +74,7 @@ public record InstallationSnapshotPayload(
             throw new IllegalArgumentException("安装快照缺少集群");
         }
         List<NodeTarget> targets = InstallationNodes.normalize(configuredNodes).stream()
+                .filter(node -> !node.isDraft())
                 .map(NodeTarget::from)
                 .toList();
         if (targets.isEmpty()) throw new IllegalArgumentException("安装快照缺少节点");

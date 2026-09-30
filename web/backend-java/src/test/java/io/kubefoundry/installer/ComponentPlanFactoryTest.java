@@ -71,9 +71,12 @@ class ComponentPlanFactoryTest {
         InstallPlan combined = new InstallPlanAssembler(
                 new BaseInstallPlanFactory(temporaryDirectory), componentPlans)
                 .forNewCluster(snapshot(List.of(group("traefik", true))));
-        assertThat(combined.steps()).hasSize(18);
+        assertThat(combined.steps()).hasSize(19);
         assertThat(combined.steps().get(14).key()).isEqualTo("web-verify-cluster-health");
         assertThat(combined.steps().get(15).key()).isEqualTo("29-install-helm");
+        assertThat(combined.steps().get(18).key()).isEqualTo("44-setup-etcd-backup");
+        assertThat(combined.steps().get(18).type()).isEqualTo(InstallStep.StepType.MAINTENANCE);
+        assertThat(combined.steps().get(18).stageKey()).isEqualTo("etcd_backup");
     }
 
     @Test
@@ -112,6 +115,22 @@ class ComponentPlanFactoryTest {
         assertThat(plan.require("32-install-nfs").resources()).singleElement().satisfies(resource ->
                 assertThat(resource.localPath().toString().replace('\\', '/'))
                         .endsWith("kube-media/03.setup_file/vunknown/helmapp/nfs/nfs-subdir-external-provisioner"));
+    }
+
+    @Test
+    void installsRedisSentinelFromItsFrozenOfflineMedia() {
+        ComponentPlanFactory factory = new ComponentPlanFactory(temporaryDirectory);
+
+        InstallPlan plan = factory.create(snapshot(List.of(group("redis_sentinel", true))));
+
+        assertThat(plan.steps()).extracting(InstallStep::key).containsExactly(
+                "29-install-helm", "30-create-namespace", "43-install-redis-sentinel");
+        assertThat(plan.require("43-install-redis-sentinel").componentGroupKey())
+                .isEqualTo("redis_sentinel");
+        assertThat(plan.require("43-install-redis-sentinel").stageKey()).isEqualTo("redis_sentinel");
+        assertThat(plan.require("43-install-redis-sentinel").resources()).singleElement()
+                .satisfies(resource -> assertThat(resource.localPath().toString().replace('\\', '/'))
+                        .endsWith("kube-media/03.setup_file/vunknown/helmapp/redis"));
     }
 
     private static InstallationSnapshotPayload snapshot(List<InstallationSnapshotPayload.ComponentGroup> groups) {

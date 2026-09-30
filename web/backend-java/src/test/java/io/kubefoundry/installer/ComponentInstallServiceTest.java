@@ -125,6 +125,22 @@ class ComponentInstallServiceTest {
         assertThat(cluster.isInstallationLocked()).isTrue();
     }
 
+    @Test
+    void rejectsEnabledMinioWithFewerThanFourConfiguredWorkersBeforeCreatingAJob() {
+        Cluster cluster = preparedCluster("minio-workers");
+        components.saveAndFlush(new ClusterComponent(cluster, "storage_observability", true, "{}"));
+        states.saveAndFlush(new ClusterComponentState(cluster, "storage_observability"));
+
+        assertThatThrownBy(() -> service.submit(cluster.getId(), cluster.getComponentConfigVersion(), List.of(
+                new JobService.StepDefinition("安装 MinIO", 1, 1, true,
+                        List.of(new JobService.NodeOperation(nodeId(cluster), () -> { })),
+                        "storage_observability")), Map.of()))
+                .isInstanceOf(MinioWorkerCountException.class)
+                .hasMessageContaining("当前为 0 个");
+        assertThat(jobs.count()).isZero();
+        assertThat(jobSteps.count()).isZero();
+    }
+
     private Cluster preparedCluster(String suffix) {
         Cluster cluster = clusters.saveAndFlush(new Cluster("component-install-" + suffix + System.nanoTime()));
         cluster.update(null, null, "1.30.14", "10.244.0.0/16", "10.96.0.0/12",

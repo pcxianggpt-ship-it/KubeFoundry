@@ -74,6 +74,11 @@ assert_absent "${KF_ETCD_DATA_DIR:-}"
 assert_absent "${KF_CONTAINERD_ROOT:-}"
 assert_absent /etc/kubernetes
 assert_absent /etc/cni/net.d
+assert_absent /run/flannel
+for interface in cni0 flannel.1; do
+    ! ip link show "${interface}" >/dev/null 2>&1 \
+        || fail "Kubernetes CNI 网络接口残留未清理: ${interface}"
+done
 assert_no_managed_block /etc/fstab '# >>>KubeFoundry NFS fstab>>>'
 assert_no_managed_block /etc/exports '# >>>KubeFoundry NFS exports>>>'
 assert_no_managed_block /etc/hosts '# >>>KubeFoundry>>>'

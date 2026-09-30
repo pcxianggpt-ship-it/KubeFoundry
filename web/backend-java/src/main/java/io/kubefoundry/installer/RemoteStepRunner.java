@@ -129,13 +129,15 @@ public class RemoteStepRunner {
             Path verifyFile = workDirectory.resolve("verify.sh");
             Path recoveryFile = workDirectory.resolve("recovery.sh");
             Path phase3Library = workDirectory.resolve("phase3.sh");
+            Path managedConfigLibrary = workDirectory.resolve("managed_config.sh");
             Files.writeString(runtimeFile, runtimeRenderer.render(cluster, normalizedNodes, node, settings,
                     runtimeEnvironment(jobId, cluster, step, List.of())),
                     StandardCharsets.UTF_8);
             writePhase3Library(phase3Library, step);
+            writeManagedConfigLibrary(managedConfigLibrary, step);
             String remoteDirectory = remoteStepDirectory(jobId, step, node);
 
-            if (usesStrictVerification(step)) {
+            if (usesPreVerification(step)) {
                 writeVerifyScript(verifyFile, step);
                 writeRecoveryScript(recoveryFile, step);
                 createEvidenceSnapshot(jobId, step, node, workDirectory, List.of());
@@ -188,6 +190,10 @@ public class RemoteStepRunner {
                 }
             }
 
+            if (usesPostVerification(step) && !Files.exists(verifyFile)) {
+                writeVerifyScript(verifyFile, step);
+            }
+
             ResourceResolution resources = resolveResources(jobId, step, settings);
             if (resources.error() != null) {
                 writeLog(logPath, "", resources.error() + "\n");
@@ -215,6 +221,9 @@ public class RemoteStepRunner {
                 if (Files.exists(phase3Library)) {
                     ssh.upload(session, phase3Library, remoteDirectory + "phase3.sh");
                 }
+                if (Files.exists(managedConfigLibrary)) {
+                    ssh.upload(session, managedConfigLibrary, remoteDirectory + "managed_config.sh");
+                }
                 for (ResolvedResource resource : resources.files()) {
                     if ("directory".equals(resource.kind())) {
                         ssh.uploadDirectory(session, resource.localPath(), resource.remotePath());
@@ -227,7 +236,7 @@ public class RemoteStepRunner {
                         session, buildExecutionCommand(
                                 remoteDirectory, step, cluster, normalizedNodes, node),
                         STEP_TIMEOUT);
-                if (executed.exitCode() != 0 || !usesStrictVerification(step)) {
+                if (executed.exitCode() != 0 || !usesPostVerification(step)) {
                     if (executed.exitCode() == 0) collectOutputs(session, jobId, step);
                     return executed;
                 }
@@ -394,7 +403,7 @@ public class RemoteStepRunner {
         for (InstallStep.Argument argument : step.arguments()) {
             inner.append(' ').append(RuntimeEnvRenderer.shellQuote(resolveArgument(argument, nodes)));
         }
-        if (!usesStrictVerification(step) && !step.verifyCommand().isBlank()) {
+        if (!usesPostVerification(step) && !step.verifyCommand().isBlank()) {
             inner.append(" && { ").append(formatVerify(step.verifyCommand(), node, nodes)).append("; }");
         }
         return "bash -lc " + RuntimeEnvRenderer.shellQuote(inner.toString());
@@ -413,8 +422,14 @@ public class RemoteStepRunner {
         return "bash -lc " + RuntimeEnvRenderer.shellQuote(inner);
     }
 
-    private static boolean usesStrictVerification(InstallStep step) {
+    private static boolean usesPreVerification(InstallStep step) {
         return step.type() == InstallStep.StepType.INSTALL && step.verifyScript() != null;
+    }
+
+    private static boolean usesPostVerification(InstallStep step) {
+        return step.verifyScript() != null
+                && (step.type() == InstallStep.StepType.INSTALL
+                        || step.type() == InstallStep.StepType.MAINTENANCE);
     }
 
     private static String verificationFailure(String phase, int exitCode) {
@@ -480,6 +495,9 @@ public class RemoteStepRunner {
         String group = step.componentGroupKey() == null ? "shared" : step.componentGroupKey();
         Map<String, String> values = new LinkedHashMap<>();
         values.put("KF_STEP_KEY", step.key());
+        if (step.componentGroupKey() != null) {
+            values.put("KF_COMPONENT_GROUP_KEY", step.componentGroupKey());
+        }
         values.put("KF_VERIFY_COMMAND_TIMEOUT", "30s");
         values.put("KF_VERIFY_ROLLOUT_TIMEOUT", "180s");
         String resourceDirectory = "/tmp/kubefoundry/jobs/" + jobId + "/resources/" + group;
@@ -553,11 +571,34 @@ public class RemoteStepRunner {
         Files.copy(library, target, StandardCopyOption.REPLACE_EXISTING);
     }
 
+    private static void writeManagedConfigLibrary(Path target, InstallStep step) throws IOException {
+        if (!List.of("11b-setup-hostname", "15-environment-config", "16-install-containerd",
+                "18-init-k8s-cluster", "32-configure-nfs-exports",
+                "20-add-control-nodes", "32-mount-nfs-workers",
+                "44-setup-etcd-backup").contains(step.key())) return;
+        Path script = step.script();
+        Path root;
+        if (script == null) {
+            Path verifyScript = step.verifyScript();
+            root = verifyScript == null ? null
+                    : verifyScript.getParent().getParent().getParent().getParent();
+        } else {
+            root = script.getParent().getParent().getParent().getParent();
+        }
+        Path library = root == null ? null : root.resolve("scripts/lib/managed_config.sh");
+        if (library == null || !Files.isRegularFile(library) || Files.isSymbolicLink(library)) {
+            throw new IOException("受管配置公共函数库不存在: " + library);
+        }
+        Files.copy(library, target, StandardCopyOption.REPLACE_EXISTING);
+    }
+
     private static String renderHostnameScript(Cluster cluster, List<Node> nodes) {
         StringBuilder script = new StringBuilder("#!/bin/bash\nset -e\n")
+                .append("source ./managed_config.sh\n")
                 .append("hostnamectl set-hostname \"$KF_NODE_HOSTNAME\"\n")
-                .append("sed -i '/^# >>>KubeFoundry>>>$/,/^# <<<KubeFoundry<<</d' /etc/hosts\n")
-                .append("{\n  printf '%s\\n' '# >>>KubeFoundry>>>'\n");
+                .append("hosts_content=$(mktemp)\n")
+                .append("trap 'rm -f \"$hosts_content\"' EXIT\n")
+                .append("{\n");
         Map<String, java.util.LinkedHashSet<String>> aliases = new java.util.TreeMap<>();
         nodes.stream().sorted(java.util.Comparator.comparing(Node::getHostname,
                 java.util.Comparator.nullsLast(String::compareTo))).forEach(item -> addHostAlias(
@@ -571,7 +612,11 @@ public class RemoteStepRunner {
         aliases.forEach((ip, hostnames) -> script.append("  printf '%s\\n' ")
                 .append(RuntimeEnvRenderer.shellQuote(ip + "    " + String.join(" ", hostnames)))
                 .append('\n'));
-        script.append("  printf '%s\\n' '# <<<KubeFoundry<<<'\n} >> /etc/hosts\n")
+        script.append("} > \"$hosts_content\"\n")
+                .append("kf_replace_managed_block /etc/hosts '# >>>KubeFoundry>>>' ")
+                .append("'# <<<KubeFoundry<<<' \"$hosts_content\" || {\n")
+                .append("  log_error 'hosts 受管标记不完整或配置写入失败'\n")
+                .append("  exit 1\n}\n")
                 .append("log_success \"主机名和 hosts 配置完成\"\n");
         return script.toString();
     }

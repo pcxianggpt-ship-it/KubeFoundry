@@ -6,6 +6,7 @@ PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 BACKEND_DIR="${PROJECT_ROOT}/web/backend-java"
 FRONTEND_DIR="${PROJECT_ROOT}/web/frontend"
 TEST_ROOT=$(mktemp -d)
+FRONTEND_TEST_DIR="${TEST_ROOT}/frontend"
 API_PORT=${KF_SMOKE_API_PORT:-11001}
 WEB_PORT=${KF_SMOKE_WEB_PORT:-15173}
 BACKEND_PID=""
@@ -13,7 +14,7 @@ FRONTEND_PID=""
 
 cleanup() {
     if [ -n "${FRONTEND_PID}" ]; then
-        kill "${FRONTEND_PID}" 2>/dev/null || true
+        kill -- "-${FRONTEND_PID}" 2>/dev/null || kill "${FRONTEND_PID}" 2>/dev/null || true
         wait "${FRONTEND_PID}" 2>/dev/null || true
     fi
     if [ -n "${BACKEND_PID}" ]; then
@@ -31,14 +32,28 @@ fail() {
     exit 1
 }
 
-for command in java mvn npm curl sed; do
+for command in java mvn node npm curl sed tar readlink setsid; do
     command -v "${command}" >/dev/null 2>&1 || fail "缺少命令: ${command}"
 done
+npm_bin=$(command -v npm)
+node_bin=$(command -v node)
+node_bin_dir=$(dirname "$(readlink -f "${node_bin}")")
+native_path="${node_bin_dir}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 java_major=$(java -version 2>&1 | sed -n '1s/.*version "\([0-9][0-9]*\).*/\1/p')
 [ "${java_major:-0}" -ge 17 ] || fail "需要 Java 17 或更高版本"
 
 (cd "${BACKEND_DIR}" && mvn -q -DskipTests package)
+
+mkdir -p "${FRONTEND_TEST_DIR}"
+(
+    cd "${FRONTEND_DIR}"
+    tar --exclude='./node_modules' --exclude='./dist' -cf - .
+) | (
+    cd "${FRONTEND_TEST_DIR}"
+    tar -xf -
+)
+(cd "${FRONTEND_TEST_DIR}" && env PATH="${native_path}" "${npm_bin}" ci)
 
 mkdir -p "${TEST_ROOT}/data"
 chmod 700 "${TEST_ROOT}/data"
@@ -48,9 +63,9 @@ KF_DATA_DIR="${TEST_ROOT}/data" \
 BACKEND_PID=$!
 
 (
-    cd "${FRONTEND_DIR}"
-    KF_API_TARGET="http://127.0.0.1:${API_PORT}" \
-        npm run dev -- --host 127.0.0.1 --port "${WEB_PORT}" --strictPort
+    cd "${FRONTEND_TEST_DIR}"
+    exec setsid env PATH="${native_path}" KF_API_TARGET="http://127.0.0.1:${API_PORT}" \
+        "${npm_bin}" run dev -- --host 127.0.0.1 --port "${WEB_PORT}" --strictPort
 ) >"${TEST_ROOT}/frontend.log" 2>&1 &
 FRONTEND_PID=$!
 

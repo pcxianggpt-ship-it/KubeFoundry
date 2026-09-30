@@ -11,6 +11,7 @@ import io.kubefoundry.job.JobEventRepository;
 import io.kubefoundry.job.JobExecutor;
 import io.kubefoundry.job.JobRepository;
 import java.nio.file.Path;
+import java.nio.file.Files;
 import org.springframework.beans.factory.annotation.Autowired;
 import java.util.List;
 import java.util.Map;
@@ -75,10 +76,19 @@ class PrecheckServiceTest {
     Path mediaDirectory;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
+        Files.createDirectories(mediaDirectory.resolve("01.rpm_package"));
+        Files.writeString(mediaDirectory.resolve("01.rpm_package/k8srepo_kylinos_sp3_amd64.tar.gz"), "repo");
+        Files.writeString(mediaDirectory.resolve("01.rpm_package/kubeadm-v1.30.14-100y-amd64"), "kubeadm");
+        Files.createDirectories(mediaDirectory.resolve("02.container_runtime"));
+        Files.createDirectories(mediaDirectory.resolve("04.registry"));
+        Files.createDirectories(mediaDirectory.resolve("03.setup_file"));
+        Files.writeString(mediaDirectory.resolve("03.setup_file/kube-flannel.yml"), "flannel");
         settings.updateGlobalSettings(Map.of("paths", Map.of(
                 "install_media", mediaDirectory.toString())));
-        cluster = clusters.save(new Cluster("precheck-" + System.nanoTime()));
+        cluster = new Cluster("precheck-" + System.nanoTime());
+        cluster.update(null, null, "1.30.14", null, null, null, null, null, null);
+        cluster = clusters.save(cluster);
         cluster.markNodeTestStatus("success");
         cluster = clusters.saveAndFlush(cluster);
         node = new Node(cluster);
@@ -190,6 +200,23 @@ class PrecheckServiceTest {
     }
 
     @Test
+    void incompleteOfflineMediaFailsPrecheckBeforeInstallation() throws Exception {
+        Files.delete(mediaDirectory.resolve("01.rpm_package/k8srepo_kylinos_sp3_amd64.tar.gz"));
+        stubHealthyPrecheck();
+
+        long jobId = service.start(cluster.getId());
+        assertThat(executor.awaitIdle(5, TimeUnit.SECONDS)).isTrue();
+
+        assertThat(jobs.findById(jobId).orElseThrow().getStatus()).isEqualTo("failed");
+        assertThat(results.findByJobIdOrderByNodeIdAscIdAsc(jobId))
+                .filteredOn(result -> "offline_media".equals(result.getCheckKey()))
+                .allSatisfy(result -> {
+                    assertThat(result.getStatus()).isEqualTo("fail");
+                    assertThat(result.getMessage()).contains("repo_source");
+                });
+    }
+
+    @Test
     void rejectsNfsServerAddressThatDoesNotMatchAnyTestedNodeBeforeRemotePrecheckStarts() {
         cluster.updateKubemateEnabled(true);
         clusters.saveAndFlush(cluster);
@@ -203,6 +230,17 @@ class PrecheckServiceTest {
                 .hasMessageContaining("NFS 服务端地址“192.160.0.160”未匹配任何通过节点测试的集群节点")
                 .hasMessageContaining("worker-a（10.0.0.2）")
                 .hasMessageContaining("导出模式改为“外部”");
+    }
+
+    @Test
+    void enabledMinioRequiresFourConfiguredWorkersBeforeRemotePrecheckStarts() {
+        cluster.updateKubemateEnabled(true);
+        clusters.saveAndFlush(cluster);
+        components.saveAndFlush(new ClusterComponent(cluster, "storage_observability", true));
+
+        assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> service.start(cluster.getId())))
+                .isInstanceOf(MinioWorkerCountException.class)
+                .hasMessageContaining("至少需要 4 个工作节点，当前为 1 个");
     }
 
     private void stubHealthyPrecheck() {

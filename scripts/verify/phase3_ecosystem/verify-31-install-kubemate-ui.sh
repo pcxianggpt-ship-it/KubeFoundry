@@ -15,6 +15,7 @@ kube() {
 [ -n "${KF_KUBECONFIG:-}" ] && [ -r "${KF_KUBECONFIG}" ] || error "Kubernetes 管理配置不可读"
 kube "${KF_VERIFY_COMMAND_TIMEOUT:-30s}" get --raw=/readyz >/dev/null 2>&1 || error "Kubernetes API 验证异常"
 kube "${KF_VERIFY_COMMAND_TIMEOUT:-30s}" get configmap kubemate-etc -n kubemate-system >/dev/null 2>&1 || missing "Kubemate ConfigMap 不存在"
+kube "${KF_VERIFY_COMMAND_TIMEOUT:-30s}" get kmrole deployment -n kubemate-system >/dev/null 2>&1 || missing "Kubemate deployment 角色不存在"
 kube "${KF_VERIFY_COMMAND_TIMEOUT:-30s}" get deployment kubemate-appx -n kubemate-system >/dev/null 2>&1 || missing "Kubemate Deployment 不存在"
 kube "${KF_VERIFY_ROLLOUT_TIMEOUT:-180s}" rollout status deployment/kubemate-appx --namespace kubemate-system --timeout="${KF_VERIFY_ROLLOUT_TIMEOUT:-180s}" >/dev/null 2>&1 || missing "Kubemate Deployment 未就绪"
 kube "${KF_VERIFY_COMMAND_TIMEOUT:-30s}" get service kubemate-app -n kubemate-system >/dev/null 2>&1 || missing "Kubemate Service 不存在"

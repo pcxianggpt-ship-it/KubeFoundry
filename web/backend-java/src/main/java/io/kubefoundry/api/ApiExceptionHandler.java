@@ -9,6 +9,7 @@ import io.kubefoundry.installer.ActiveInstallerJobException;
 import io.kubefoundry.installer.InstallationReadinessException;
 import io.kubefoundry.installer.InstallResumeException;
 import io.kubefoundry.installer.ResetConfirmationMismatchException;
+import io.kubefoundry.installer.MinioWorkerCountException;
 import io.kubefoundry.ssh.NodeTestService.ActiveNodeTestException;
 import io.kubefoundry.cluster.ClusterComponentService.ComponentConfigurationException;
 import io.kubefoundry.api.ClusterJobController.ClusterJobMismatchException;
@@ -22,6 +23,16 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+
+    @ExceptionHandler(MinioWorkerCountException.class)
+    public ResponseEntity<Map<String, Object>> minioWorkerCount(MinioWorkerCountException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                "code", "MINIO_WORKER_COUNT_INSUFFICIENT",
+                "message", exception.getMessage(),
+                "details", Map.of(
+                        "required_workers", MinioWorkerCountException.REQUIRED_WORKERS,
+                        "actual_workers", exception.actualWorkers())));
+    }
 
     @ExceptionHandler(ClusterJobMismatchException.class)
     public ResponseEntity<Map<String, String>> clusterJobMismatch(ClusterJobMismatchException exception) {

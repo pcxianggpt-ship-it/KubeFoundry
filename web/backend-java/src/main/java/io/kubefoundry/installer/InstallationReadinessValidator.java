@@ -32,7 +32,9 @@ class InstallationReadinessValidator {
             List<Node> nodes = InstallationNodes.normalize(configuredNodes);
             ClusterTopologyValidator.requireValid(nodes, cluster.getImageRegistryType());
             InstallationGate.requireSuccessfulNodeTests(cluster, nodes);
-            InstallPlan generated = assembler.forNewCluster(snapshots.previewPayload(cluster, nodes));
+            InstallationSnapshotPayload snapshot = snapshots.previewPayload(cluster, nodes);
+            MinioInstallationAdmission.requireEnoughWorkers(snapshot);
+            InstallPlan generated = assembler.forNewCluster(snapshot);
             for (InstallStep step : generated.steps()) {
                 List<Node> targets = plans.resolveTargets(step, cluster, nodes);
                 if (targets.isEmpty() && List.of("primary_control_plane", "registry", "nfs_server")

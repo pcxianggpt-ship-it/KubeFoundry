@@ -13,6 +13,10 @@ web_root="${KF_YUM_WEB_ROOT:-/var/www/html}"
 repo_root="${web_root}/repo"
 metadata_file="${repo_root}/repodata/repomd.xml"
 repo_config="${KF_YUM_LOCAL_REPO_CONFIG:-/etc/yum.repos.d/k8s.repo}"
+[ ! -e "${repo_config}" ] || grep -Fqx '# Managed by KubeFoundry v0.3.2' "${repo_config}" || {
+    log_error "YUM Repo 配置已存在且不属于 KubeFoundry: ${repo_config}"
+    exit 1
+}
 metadata_url="${KF_YUM_LOCAL_METADATA_URL:-http://127.0.0.1/repo/repodata/repomd.xml}"
 
 if [ ! -f "${repo_source_name}" ]; then

@@ -75,4 +75,24 @@ bash -c 'source "$1"; source "$2"' _ \
     "${PROJECT_ROOT}/scripts/steps/phase2_k8s_base/12-setup-k8s-repo.sh"
 bash "${PROJECT_ROOT}/scripts/verify/phase2_k8s_base/verify-12-setup-k8s-repo.sh"
 
+# 同名用户 Repo 文件不得被安装脚本覆盖。
+printf '%s\n' '[user-repo]' > "${TEST_ROOT}/repos/user.repo"
+if KF_YUM_LOCAL_REPO_CONFIG="${TEST_ROOT}/repos/user.repo" bash -c \
+    'source "$1"; source "$2" "$3"' _ \
+    "${PROJECT_ROOT}/scripts/lib/logger.sh" \
+    "${PROJECT_ROOT}/scripts/steps/phase2_k8s_base/10-setup-yum-source.sh" \
+    "${TEST_ROOT}/k8s-repo-source.tar.gz"; then
+    fail "YUM 源脚本未拒绝同名用户配置"
+fi
+grep -Fqx '[user-repo]' "${TEST_ROOT}/repos/user.repo" || fail "YUM 源脚本覆盖了用户配置"
+
+printf '%s\n' '[user-http-repo]' > "${TEST_ROOT}/repos/user-http.repo"
+if KF_YUM_HTTP_REPO_CONFIG="${TEST_ROOT}/repos/user-http.repo" bash -c \
+    'source "$1"; source "$2"' _ \
+    "${PROJECT_ROOT}/scripts/lib/logger.sh" \
+    "${PROJECT_ROOT}/scripts/steps/phase2_k8s_base/12-setup-k8s-repo.sh"; then
+    fail "HTTP Repo 脚本未拒绝同名用户配置"
+fi
+grep -Fqx '[user-http-repo]' "${TEST_ROOT}/repos/user-http.repo" || fail "HTTP Repo 脚本覆盖了用户配置"
+
 printf 'yum repository permission tests passed\n'

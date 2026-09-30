@@ -29,6 +29,21 @@ if grep -q 'CHANGE_ME_' "${tenant_env}"; then
     exit 1
 fi
 
+: "${KF_MINIO_PVC_SIZE:=10Gi}"
+: "${KF_MINIO_CPU_REQUEST:=250m}"
+: "${KF_MINIO_CPU_LIMIT:=2}"
+: "${KF_MINIO_MEMORY_REQUEST:=512Mi}"
+: "${KF_MINIO_MEMORY_LIMIT:=4Gi}"
+export KF_MINIO_PVC_SIZE KF_MINIO_CPU_REQUEST KF_MINIO_CPU_LIMIT
+export KF_MINIO_MEMORY_REQUEST KF_MINIO_MEMORY_LIMIT
+yq eval -i '
+  .spec.pools[0].volumeClaimTemplate.spec.resources.requests.storage = strenv(KF_MINIO_PVC_SIZE) |
+  .spec.pools[0].resources.requests.cpu = strenv(KF_MINIO_CPU_REQUEST) |
+  .spec.pools[0].resources.limits.cpu = strenv(KF_MINIO_CPU_LIMIT) |
+  .spec.pools[0].resources.requests.memory = strenv(KF_MINIO_MEMORY_REQUEST) |
+  .spec.pools[0].resources.limits.memory = strenv(KF_MINIO_MEMORY_LIMIT)
+' "${tenant_manifest}"
+
 minio_image="registry:5000/quay.io/minio/minio:RELEASE.2024-03-05T04-48-44Z"
 phase3_registry_image_exists "${minio_image}" || {
     log_error "MinIO 私有仓库镜像缺失: ${minio_image}"
@@ -52,6 +67,9 @@ kubectl get storageclass openebs-hostpath >/dev/null 2>&1 || {
 }
 kubectl label nodes "${minio_nodes[@]:0:4}" kubefoundry.io/minio=true --overwrite
 kubectl apply -k "${resource_dir}"
+kubectl label --overwrite -k "${resource_dir}" \
+    app.kubernetes.io/managed-by=kubefoundry \
+    kubefoundry.io/component-group="${KF_COMPONENT_GROUP_KEY:-storage_observability}"
 
 tenant_name="kubemate-minio"
 namespace="kubemate-system"

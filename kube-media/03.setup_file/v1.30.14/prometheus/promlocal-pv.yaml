@@ -1,0 +1,54 @@
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: promlocal-storage
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: prom-4j-pv-0
+spec:
+  capacity:
+    storage: 100Gi
+  volumeMode: Filesystem
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: promlocal-storage
+  local:
+    path: /data/prom_data
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: prom
+          operator: In
+          values:
+          - 'true'
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: prom-4j-pv-1
+spec:
+  capacity:
+    storage: 100Gi
+  volumeMode: Filesystem
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: promlocal-storage
+  local:
+    path: /data/prom_data
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: prom
+          operator: In
+          values:
+          - 'true'
+---

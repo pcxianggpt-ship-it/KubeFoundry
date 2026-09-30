@@ -228,19 +228,38 @@ public class PrecheckService {
     }
 
     private PrecheckCheck offlineMediaDirectory(Cluster cluster, Node node) {
-        String directory = settings.runtimeSettings(cluster, node).installMedia();
-        boolean exists = false;
+        RuntimeSettings runtime = settings.runtimeSettings(cluster, node);
+        String directory = runtime.installMedia();
+        List<String> missing = new ArrayList<>();
         try {
-            exists = !directory.isBlank() && Files.isDirectory(Path.of(directory));
+            if (directory.isBlank() || !Files.isDirectory(Path.of(directory))) {
+                missing.add("install_media");
+            } else {
+                requireMediaFile(runtime, "repo_source", missing);
+                requireMediaFile(runtime, "kubeadm_100y", missing);
+                requireMediaDirectory(runtime, "container_runtime", missing);
+                requireMediaDirectory(runtime, "registry_install", missing);
+                requireMediaFile(runtime, "flannel_config", missing);
+            }
         } catch (InvalidPathException ignored) {
-            // Invalid paths are reported as a failed precheck result below.
+            missing.add("路径格式无效");
         }
+        boolean complete = missing.isEmpty();
         return new PrecheckCheck("offline_media", "\u79BB\u7EBF\u4ECB\u8D28\u76EE\u5F55", "error",
-                exists ? "pass" : "fail",
-                exists ? "\u79BB\u7EBF\u4ECB\u8D28\u76EE\u5F55\u5B58\u5728: " + directory
-                        : "\u79BB\u7EBF\u4ECB\u8D28\u76EE\u5F55\u4E0D\u5B58\u5728: " + directory,
-                "\u8BF7\u5728\u7BA1\u7406\u8282\u70B9\u4E0A\u914D\u7F6E\u5E76\u51C6\u5907"
-                        + "\u6709\u6548\u7684\u79BB\u7EBF\u5B89\u88C5\u4ECB\u8D28\u76EE\u5F55");
+                complete ? "pass" : "fail",
+                complete ? "离线安装介质完整: " + directory
+                        : "离线安装介质缺失: " + String.join(", ", missing),
+                "请在管理节点准备完整的 RPM、kubeadm、containerd、镜像仓库和 Flannel 离线介质");
+    }
+
+    private static void requireMediaFile(RuntimeSettings runtime, String key, List<String> missing) {
+        Path path = runtime.localPath(key);
+        if (path == null || !Files.isRegularFile(path)) missing.add(key);
+    }
+
+    private static void requireMediaDirectory(RuntimeSettings runtime, String key, List<String> missing) {
+        Path path = runtime.localPath(key);
+        if (path == null || !Files.isDirectory(path)) missing.add(key);
     }
 
     private static PrecheckCheck systemDrift(Node node, OsInfo os, String arch) {

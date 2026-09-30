@@ -38,7 +38,8 @@ class ResetPlanFactoryTest {
                         "unmount_managed_mounts", "findmnt -rn -o TARGET", "umount -l",
                         "systemctl stop containerd || fail", "cleanup_managed_nfs",
                         "remove_managed_block", "# >>>KubeFoundry NFS fstab>>>",
-                        "# >>>KubeFoundry NFS exports>>>")
+                        "# >>>KubeFoundry NFS exports>>>", "remove_system_directory /run/flannel",
+                        "ip link delete cni0", "ip link delete flannel.1")
                 .doesNotContain("rm -rf --one-file-system -- /etc/kubernetes");
         assertThat(Files.readString(root.resolve("scripts/steps/reset/reset-kubemate-components.sh")))
                 .contains("helm get metadata", "KF_RESET_HELM_RELEASE_CHECKSUMS",
@@ -48,7 +49,9 @@ class ResetPlanFactoryTest {
         assertThat(cleanup.indexOf("systemctl stop containerd || fail"))
                 .isLessThan(cleanup.indexOf("remove_managed_directory \"${KF_CONTAINERD_ROOT:-}\""));
         assertThat(verification)
-                .contains("verify_registry", "assert_absent /etc/kubernetes", "kubelet 服务仍在运行");
+                .contains("verify_registry", "assert_absent /etc/kubernetes",
+                        "assert_absent /run/flannel", "Kubernetes CNI 网络接口残留未清理",
+                        "kubelet 服务仍在运行");
     }
 
     @Test
@@ -62,9 +65,23 @@ class ResetPlanFactoryTest {
         io.kubefoundry.cluster.ClusterComponentState state =
                 new io.kubefoundry.cluster.ClusterComponentState(cluster, "traefik");
         state.markFailed("INSTALL_FAILED", 1L);
+        io.kubefoundry.job.Job job = new io.kubefoundry.job.Job(cluster, "install");
+        io.kubefoundry.job.JobStep nfsStep = new io.kubefoundry.job.JobStep(
+                job, "NFS", 1, "nfs", "32-install-nfs", "nfs", "NFS", 1, 1);
+        nfsStep.markSuccess();
 
-        assertThat(ResetPlanFactory.componentGroups(payload, List.of(state)))
+        assertThat(ResetPlanFactory.componentGroups(payload, List.of(state), List.of(nfsStep)))
                 .containsExactlyInAnyOrder("nfs", "traefik");
+    }
+
+    @Test
+    void doesNotCleanupEnabledSnapshotGroupWithoutExecutionOrStateEvidence() {
+        InstallationSnapshotPayload payload = new InstallationSnapshotPayload(1L, "cluster", "v1", "/data/k8s",
+                "local", List.of(), 1L, List.of(
+                        new InstallationSnapshotPayload.ComponentGroup("nfs", true, java.util.Map.of())),
+                "v0.3.0", java.util.Map.of());
+
+        assertThat(ResetPlanFactory.componentGroups(payload, List.of(), List.of())).isEmpty();
     }
 
     @Test
@@ -79,5 +96,18 @@ class ResetPlanFactoryTest {
 
         assertThat(settings.envValue("reset_helm_release_checksums"))
                 .isEqualTo("alloy=" + "a".repeat(64) + ",loki=" + "b".repeat(64));
+    }
+
+    @Test
+    void exposesRedisMediaChecksumOnlyForAnInstalledRedisGroup() {
+        InstallationSnapshotPayload payload = new InstallationSnapshotPayload(1L, "cluster", "v1", "/data/k8s",
+                "local", List.of(), 1L, List.of(), "v0.3.2", java.util.Map.of(
+                        "kube-media/03.setup_file/v1/helmapp/redis", "c".repeat(64)));
+
+        RuntimeSettings settings = new ResetPlanFactory(".").runtimeSettings(payload,
+                java.util.Set.of("redis_sentinel"));
+
+        assertThat(settings.envValue("reset_helm_release_checksums"))
+                .isEqualTo("kubefoundry-redis=" + "c".repeat(64));
     }
 }

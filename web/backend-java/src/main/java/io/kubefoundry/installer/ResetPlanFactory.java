@@ -1,6 +1,7 @@
 package io.kubefoundry.installer;
 
 import io.kubefoundry.cluster.ClusterComponentState;
+import io.kubefoundry.job.JobStep;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
@@ -75,11 +76,15 @@ class ResetPlanFactory {
         paths.put("loki", "helmapp/loki");
         paths.put("openebs", "helmapp/openebs");
         paths.put("nfs-subdir-external-provisioner", "helmapp/nfs/nfs-subdir-external-provisioner");
+        paths.put("kubefoundry-redis", "helmapp/redis");
         Set<String> enabled = componentGroups == null ? Set.of() : componentGroups;
         List<String> entries = new java.util.ArrayList<>();
         for (Map.Entry<String, String> entry : paths.entrySet()) {
-            String group = "nfs-subdir-external-provisioner".equals(entry.getKey()) ? "nfs"
-                    : "storage_observability";
+            String group = switch (entry.getKey()) {
+                case "nfs-subdir-external-provisioner" -> "nfs";
+                case "kubefoundry-redis" -> "redis_sentinel";
+                default -> "storage_observability";
+            };
             if (!enabled.contains(group)) continue;
             payload.mediaChecksums().entrySet().stream()
                     .filter(value -> value.getKey().endsWith(entry.getValue()))
@@ -90,12 +95,16 @@ class ResetPlanFactory {
     }
 
     static Set<String> componentGroups(
-            InstallationSnapshotPayload payload, List<ClusterComponentState> states) {
+            InstallationSnapshotPayload payload, List<ClusterComponentState> states,
+            List<JobStep> evidenceSteps) {
         if (payload == null) throw new IllegalArgumentException("重置缺少安装快照");
         Set<String> result = new LinkedHashSet<>();
-        payload.componentGroups().stream().filter(InstallationSnapshotPayload.ComponentGroup::enabled)
-                .map(InstallationSnapshotPayload.ComponentGroup::key)
-                .filter(ResetPlanFactory::isCleanupGroup).forEach(result::add);
+        for (JobStep step : evidenceSteps == null ? List.<JobStep>of() : evidenceSteps) {
+            if (step != null && isCleanupGroup(step.getComponentGroupKey())
+                    && Set.of("success", "skipped").contains(step.getStatus())) {
+                result.add(step.getComponentGroupKey());
+            }
+        }
         for (ClusterComponentState state : states == null ? List.<ClusterComponentState>of() : states) {
             if (state != null && isCleanupGroup(state.getComponentKey())
                     && !ClusterComponentState.NOT_INSTALLED.equals(state.getStatus())) {
@@ -106,7 +115,7 @@ class ResetPlanFactory {
     }
 
     private static boolean isCleanupGroup(String group) {
-        return Set.of("nfs", "kubemate", "traefik", "storage_observability", "prometheus")
+        return group != null && Set.of("nfs", "kubemate", "traefik", "storage_observability", "prometheus", "redis_sentinel")
                 .contains(group);
     }
 

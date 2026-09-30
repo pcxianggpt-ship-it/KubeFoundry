@@ -1,0 +1,101 @@
+global:
+  imageRegistry: registry:5000
+  defaultStorageClass: openebs-hostpath
+  security:
+    # 私有仓库改写会触发 Bitnami 的仓库名检查；镜像内容仍由下方 OCI digest 固定。
+    allowInsecureImages: true
+
+fullnameOverride: kubefoundry-redis
+
+commonLabels:
+  app.kubernetes.io/managed-by: kubefoundry
+  kubefoundry.io/component-group: redis_sentinel
+
+architecture: replication
+
+auth:
+  enabled: true
+  sentinel: true
+  existingSecret: kubefoundry-redis-auth
+  existingSecretPasswordKey: redis-password
+  usePasswordFiles: true
+  usePasswordFileFromSecret: true
+
+image:
+  registry: registry-1.docker.io
+  repository: bitnami/redis
+  tag: latest
+  digest: sha256:d75bda00b778ad5e03a639ec36e00f6665a5d7e0f35a6250be5b103fb2117275
+  pullPolicy: IfNotPresent
+
+master:
+  count: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  persistence:
+    enabled: true
+    storageClass: openebs-hostpath
+    size: 8Gi
+
+replica:
+  kind: StatefulSet
+  # Sentinel 模式使用同一 StatefulSet，3 个 Pod 中动态选举 1 主 2 从。
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  persistence:
+    enabled: true
+    storageClass: openebs-hostpath
+    size: 8Gi
+
+sentinel:
+  enabled: true
+  image:
+    registry: registry-1.docker.io
+    repository: bitnami/redis-sentinel
+    tag: latest
+    digest: sha256:fcfca07d8b56cea8e990e51c09c0d03102bde09a2147bd6a669e024a56893a8c
+    pullPolicy: IfNotPresent
+  masterSet: kubefoundry-master
+  quorum: 2
+  persistence:
+    enabled: false
+
+networkPolicy:
+  enabled: true
+  allowExternal: true
+  allowExternalEgress: true
+
+metrics:
+  enabled: false
+  image:
+    registry: registry-1.docker.io
+    repository: bitnami/redis-exporter
+    tag: latest
+    digest: sha256:09233726b19097ccbeb7a90347a7a0975c015de9efafaf2ac90d62dae241ca67
+
+volumePermissions:
+  enabled: false
+  image:
+    registry: registry-1.docker.io
+    repository: bitnami/os-shell
+    tag: latest
+    digest: sha256:52f04d8e29dc3d77929fca8d75890c4cabe6182f650e0e921057a744559a9736
+
+sysctl:
+  enabled: false
+  image:
+    registry: registry-1.docker.io
+    repository: bitnami/os-shell
+    tag: latest
+    digest: sha256:52f04d8e29dc3d77929fca8d75890c4cabe6182f650e0e921057a744559a9736

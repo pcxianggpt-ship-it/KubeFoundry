@@ -57,7 +57,7 @@ cp kubefoundry-web-v0.3.2-x86_64/deploy.sh .
 sudo bash deploy.sh kubefoundry-web-v0.3.2-x86_64.tar.gz
 ```
 
-也可以把发布包内的 `deploy.sh` 与压缩包放到独立部署目录后执行。服务默认监听 `10001`，程序位于当前目录的 `app`，双架构 Helm 位于 `tools/helm-amd` 与 `tools/helm-arm`，H2 数据、主密钥和任务数据位于 `data`，日志位于 `logs`。组件 Chart、YAML 和 Kubernetes 离线介质位于独立维护的 `kube-media`；发布包不会携带或覆盖该目录，重复部署会保留 `kube-media`、`data` 和 `logs`。完整说明见 [v0.3.0 部署手册](doc/v0.3.0/部署手册.md)。
+也可以把发布包内的 `deploy.sh` 与压缩包放到独立部署目录后执行。服务默认监听 `10001`，程序位于当前目录的 `app`，双架构 Helm 位于 `tools/helm-amd` 与 `tools/helm-arm`，H2 数据、主密钥和任务数据位于 `data`，日志位于 `logs`。组件 Chart、YAML 和 Kubernetes 离线介质位于独立维护的 `kube-media`；发布包不会携带或覆盖该目录，重复部署会保留 `kube-media`、`data` 和 `logs`。完整说明见 [v0.3.2 部署手册](doc/v0.3.2/部署手册.md)和[使用手册](doc/v0.3.2/使用手册.md)。
 
 ### Web Wizard
 

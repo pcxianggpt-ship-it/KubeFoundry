@@ -109,6 +109,14 @@ public record InstallStep(
                 type, updatedVerifyScript, recoveryScript, stageKey, stageName, stageOrder, stepOrderInStage);
     }
 
+    public InstallStep withType(StepType updatedType) {
+        if (updatedType == null) throw new IllegalArgumentException("步骤类型不能为空");
+        return new InstallStep(key, name, phase, targetScope, script, builtin, mode, maxWorkers,
+                failFast, resources, arguments, outputs, verifyCommand, componentGroupKey,
+                updatedType, verifyScript, recoveryScript,
+                stageKey, stageName, stageOrder, stepOrderInStage);
+    }
+
     public InstallStep withVerificationAndRecovery(
             Path updatedVerifyScript, Path updatedRecoveryScript) {
         return new InstallStep(key, name, phase, targetScope, script, builtin, mode, maxWorkers,

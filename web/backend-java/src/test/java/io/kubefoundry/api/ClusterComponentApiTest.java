@@ -59,15 +59,16 @@ class ClusterComponentApiTest {
                 .andExpect(jsonPath("$.groups.length()").value(6))
                 .andExpect(jsonPath("$.groups[0].key").value("nfs"))
                 .andExpect(jsonPath("$.groups[3].components[0]").value("openebs"))
-                .andExpect(jsonPath("$.groups[5].available").value(false));
+                .andExpect(jsonPath("$.groups[5].available").value(true));
     }
 
     @Test
-    void rejectsUnavailableUnknownDuplicateAndInvalidNfsGroups() throws Exception {
+    void acceptsRedisAndRejectsUnknownDuplicateAndInvalidNfsGroups() throws Exception {
         long clusterId = createCluster("components-validation");
         mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"groups\":[{\"key\":\"redis_sentinel\",\"enabled\":true,\"config\":{}}]}"))
-                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMPONENT_GROUP_UNAVAILABLE"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.groups[5].enabled").value(true));
         mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"groups\":[{\"key\":\"unknown\",\"enabled\":true,\"config\":{}}]}"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMPONENT_GROUP_UNKNOWN"));
@@ -91,6 +92,33 @@ class ClusterComponentApiTest {
                 .andExpect(jsonPath("$.groups[0].enabled").value(true))
                 .andExpect(jsonPath("$.groups[0].config.server_address").value("10.0.0.10"))
                 .andExpect(jsonPath("$.groups[2].enabled").value(true));
+    }
+
+    @Test
+    void suppliesAndValidatesStrongMinioResourceConfiguration() throws Exception {
+        long clusterId = createCluster("components-minio");
+        mvc.perform(get("/api/clusters/{id}/components", clusterId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.groups[3].config.minio_pvc_size").value("10Gi"))
+                .andExpect(jsonPath("$.groups[3].config.minio_cpu_request").value("250m"))
+                .andExpect(jsonPath("$.groups[3].config.minio_memory_limit").value("4Gi"));
+
+        String valid = "{\"minio_pvc_size\":\"20Gi\",\"minio_cpu_request\":\"500m\","
+                + "\"minio_cpu_limit\":\"2\",\"minio_memory_request\":\"1Gi\","
+                + "\"minio_memory_limit\":\"4Gi\"}";
+        mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"groups\":[{\"key\":\"storage_observability\",\"enabled\":true,\"config\":" + valid + "}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.groups[3].config.minio_pvc_size").value("20Gi"));
+
+        mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"groups\":[{\"key\":\"storage_observability\",\"enabled\":true,\"config\":{\"unknown\":\"1\"}}]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMPONENT_CONFIG_INVALID"));
+        mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"groups\":[{\"key\":\"storage_observability\",\"enabled\":true,\"config\":{\"minio_cpu_request\":\"3\",\"minio_cpu_limit\":\"2\"}}]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("MinIO CPU request 不能大于 limit"));
     }
 
     @Test

@@ -5,7 +5,7 @@
 | 项目 | 内容 |
 | --- | --- |
 | 目标版本 | v0.3.2 |
-| 状态 | 设计初稿，待评审 |
+| 状态 | 设计已冻结并完成实现，等待真实集群联合验收 |
 | 日期 | 2026-08-20 |
 | 前置版本 | v0.3.1 |
 | 适用范围 | Vue 3 前端、Java 17 后端、H2/Flyway、Bash 安装与验证脚本、离线介质 |
@@ -46,7 +46,7 @@ v0.3.2 包含以下十项需求：
 - 安装确认页已加载节点 IP，但节点清单只展示主机名和角色。
 - `ClusterResetService` 只允许重置安装成功并锁定的集群，且组件清理脚本强制要求 Helm 存在。
 - Redis 目录中现有介质是旧 `redis-ha` Chart，不是需求指定的 Bitnami Redis Chart；Redis 组件组目前标记为不可用。
-- etcd 备份脚本仍包含 `crontab -e` 等交互命令，尚未进入 Java 安装计划。
+- etcd 备份已改为非交互 systemd service/timer，并以 `MAINTENANCE` 类型进入 Java 安装计划最后一个单元。
 
 ## 4. 总体设计
 
@@ -358,7 +358,16 @@ KF_MINIO_MEMORY_LIMIT
 5. 对生成快照执行完整性检查，成功后再原子移动到最终文件名。
 6. 按保留数量清理旧的、且名称符合 KubeFoundry 规则的备份文件。
 
-默认路径和保留数量在进入开发前由配置评审冻结；不得把备份写入 etcd 数据目录本身。验证必须检查 service/timer、最近一次执行结果、快照新鲜度和快照完整性。
+冻结策略如下：
+
+- 备份目录为 `/var/backups/kubefoundry/etcd`，权限 `0700`；快照及其 `.sha256`、`.status.json` 边车文件权限为 `0600`。
+- 定时器每日 `02:10` 执行，使用 `Persistent=true`，默认保留最新 7 份；命令超时 15 分钟，service 超时 20 分钟。
+- `etcdctl` 和 `etcdutl` 使用 Kubernetes `v1.30.14` 的 kubeadm etcd `3.5.15-0` 静态 Pod 镜像内工具，不引入联网下载或宿主机二进制。
+- 快照先写入 etcd Pod 的 `/tmp`，通过 `etcdutl snapshot status` 验证 revision，再串流传输到宿为 `.part`；远端与本地 SHA-256 一致后才原子更名。
+- 首次备份和安装后验证失败使完整安装失败。续跑时该单元总是重新执行，不会因旧快照存在而前置跳过。
+- 重置在 `kubeadm reset` 前停止 timer/service，并删除受管脚本与 unit；已生成快照保留。
+
+验证必须检查 service/timer、最近一次执行结果、快照新鲜度、SHA-256 和快照状态。
 
 ## 10. 安装确认页显示节点 IP
 
@@ -416,6 +425,20 @@ IP 为空或格式非法时不得进入安装确认状态；后端安装准入�
 
 对于无法迁移成独立文件且必须替换的配置，安装前在每个节点创建受权限保护的基线备份和清单，记录原文件 SHA-256、安装后 SHA-256 和备份路径。重置时仅在当前文件仍匹配受管版本时恢复原文件；检测到用户后续修改则安全失败并给出冲突文件，不覆盖用户改动。
 
+v0.3.2 活动安装计划的写入与所有权清单如下：
+
+| 步骤 | 系统写入/状态 | 所有权与冲突策略 |
+| --- | --- | --- |
+| `10` / `12` YUM Repo | 独立 Repo 文件；`httpd` 和 `firewalld` 状态 | Repo 文件带稳定头标记，同名非受管文件直接报冲突；服务状态仅清点，不在任务 11 恢复 |
+| `11b` 主机名 | `hostnamectl`、`/etc/hosts` | 主机名为集群节点身份；hosts 仅替换唯一成对标记块，重复或残缺标记均拒绝写入 |
+| `13` / `14` | kubelet 服务状态、受管 kubeadm 二进制 | 不修改共享配置；软件和服务状态不在任务 11 恢复 |
+| `15` 节点环境 | swap 状态、firewalld 状态、modules/sysctl/limits | 改用四个带头标记的 KubeFoundry 独立 drop-in/unit；不再改写 `resolv.conf`、`sysctl.conf`、共享 `99-sysctl.conf`和 `limits.conf` |
+| `16` containerd | containerd/buildkit unit、`config.toml`、Registry `hosts.toml` | 整体替换文件使用 `0700` 状态目录、`0600` 基线/清单和前后 SHA-256；Registry 文件带头标记且不覆盖同名用户配置 |
+| `18` / `20` kubeadm | `/etc/sysconfig/kubelet`、`/etc/kubernetes`、root kubectl config | kubelet 和可能存在的 root kubectl 配置整体替换前纳入受保护基线；清单仅记录路径/元数据/SHA-256，不记录 kubeconfig 内容；`/etc/kubernetes` 为 kubeadm 专用目录，由节点重置流程处理 |
+| NFS | `/etc/exports`、`/etc/fstab` | 仅替换各自唯一成对标记块，保留块外用户内容，残缺或重复标记时安全失败 |
+
+当前活动计划不写 crontab。`44-setup-etcd-backup.sh` 以 `MAINTENANCE` 类型作为完整安装计划最后一个部署单元，安装固定名称、带所有权标记的 systemd service/timer。已停用的管理端 `11b-setup-hostname.sh` 不再保留，实际步骤由 `RemoteStepRunner` 按节点生成并执行。
+
 重置验证脚本补充上述配置无残留检查。软件包卸载、恢复防火墙原状态、恢复用户 DNS 和删除非 KubeFoundry 容器不属于本需求，除非安装基线能够证明其原始状态并在后续评审中明确纳入。
 
 ## 12. Redis Sentinel 离线部署
@@ -429,6 +452,10 @@ architecture: replication
 sentinel:
   enabled: true
 ```
+
+截至 2026-08-29，离线基线冻结为 Bitnami Redis Chart `28.0.12`（Chart SHA-256 `55f89ea30517ba0f1169edfa6e9965a8ae058ae03b3b055d848d8805a87bc761`）和 Redis/Redis Sentinel `8.10.1`。上游镜像使用 `latest` 对应的多架构 OCI manifest，但 values 中同时写入当前 digest，导入私有仓库后按 digest 部署，防止滚动标签漂移。
+
+Redis 镜像 digest 为 `sha256:d75bda00b778ad5e03a639ec36e00f6665a5d7e0f35a6250be5b103fb2117275`，Redis Sentinel 镜像 digest 为 `sha256:fcfca07d8b56cea8e990e51c09c0d03102bde09a2147bd6a669e024a56893a8c`；两者均包含 `linux/amd64` 和 `linux/arm64`。已淘汰存在官方高危漏洞披露的 Redis `7.2.5` 候选基线。
 
 实施时冻结 Chart 版本，不在目标环境访问在线 Helm 仓库。离线目录统一为：
 
@@ -451,7 +478,7 @@ kube-media/03.setup_file/v1.30.14/helmapp/redis/
 - 安装使用 `helm upgrade --install --atomic --wait --timeout`，release 和 namespace 使用固定名称。
 - 镜像必须全部指向离线 Registry，安装前逐一验证 Registry 中存在。
 - Redis 密码使用受管 Secret；首次创建后续用，禁止在命令行、日志、事件或普通配置响应中回显。
-- 持久化必须使用明确的 StorageClass；没有可用 StorageClass 时预检查失败，不临时创建不受管理的本地 PV。
+- 持久化默认使用集群唯一的默认 StorageClass，也可通过 `KF_REDIS_STORAGE_CLASS` 显式指定；没有唯一可用的 StorageClass 或指定项不存在时安装失败，不临时创建不受管理的本地 PV。
 
 后置验证至少包括 Helm release、Redis Pod Ready、Sentinel 数量与 quorum、当前 master 可识别、复制链路正常、PVC 全部 Bound，并执行一次不输出密码的最小读写与故障切换验收。
 
@@ -576,17 +603,17 @@ MINIO_WORKER_COUNT_INSUFFICIENT
 | Redis Chart 与旧介质混用 | 镜像、参数和升级行为不可预测 | 固定 Bitnami Chart、介质清单和 SHA-256，旧 Chart 单独处置 |
 | etcd 备份不可恢复 | 产生虚假安全感 | 安装后立即备份并执行快照完整性检查 |
 
-## 17. 待评审决策
+## 17. 已冻结决策
 
-1. etcd 备份目录、执行周期和默认保留数量。
-2. Redis Sentinel 的固定 Chart 版本、Pod 数量、StorageClass 和密码交付方式。
-3. v0.3.1 已安装集群缺少配置基线备份时，重置允许清理到何种边界。
-4. 历史 v0.3.1 失败任务是否完全禁止续跑，还是提供一次只读迁移工具生成 v0.3.2 快照。
-5. MinIO 默认资源值是否继续采用当前清单的 `10Gi/250m/2/512Mi/4Gi`；安装开始时至少 4 个正式工作节点的准入规则已经确定，不再作为待评审项。
+1. etcd 备份目录为 `/var/backups/kubefoundry/etcd`，每日 `02:10` 执行并默认保留 7 份。
+2. Redis Sentinel 使用 Bitnami Redis Chart `28.0.12`、Redis/Sentinel `8.10.1`、3 个 Redis Pod、3 个 Sentinel 和受管 Secret；运行镜像按架构 OCI digest 冻结。
+3. v0.3.1 已安装节点缺少配置基线时，只允许清理能够通过稳定头标记或完整成对标记块证明所有权的内容，不猜测或恢复未知原值。
+4. v0.3.1 历史失败任务禁止续跑；只有带完整 v0.3.2 快照、步骤键和目标身份的任务可以创建续跑任务。
+5. MinIO 默认资源值为 `10Gi/250m/2/512Mi/4Gi`；配置可先保存，安装开始时至少需要 4 个正式工作节点，不增加 Ready Worker 数量专项门禁。
 
 ## 18. 完成定义
 
-- 九项需求均有实现、自动化测试、中文接口说明和验收记录。
+- 十项需求均有实现、自动化测试、中文接口说明和验收记录。
 - 失败任务可以创建新任务安全续跑，已满足步骤不会重复安装，验证异常不会触发安装。
 - 每个安装步骤执行前后都有符合统一契约的验证，验证脚本覆盖率为 100%。
 - YUM 仓库在关闭 firewalld 后通过本机与远程 HTTP 200 验收。

@@ -88,9 +88,9 @@ class RemoteStepRunnerTest {
         Path script = temporaryDirectory.resolve("step.sh");
         Files.writeString(script, "#!/bin/bash\nprintf 'script must not run locally\\n'\n",
                 StandardCharsets.UTF_8);
-        InstallStep step = InstallStep.script(
-                "test-step", "测试步骤", "test", "primary_control_plane", script,
-                "serial", 1, true, List.of(), List.of(), List.of(), "printf verified");
+        InstallStep step = new InstallStep(
+                "test-step", "测试步骤", "test", "primary_control_plane", script, null,
+                "serial", 1, true, List.of(), List.of(), List.of(), "printf verified", "kubemate");
         RemoteStepRunner runner = runner();
 
         JobService.NodeOutcome outcome = runner.run(
@@ -112,6 +112,8 @@ class RemoteStepRunnerTest {
                 .contains("printf verified");
         Path remoteStep = remoteRoot.resolve("tmp/kubefoundry/jobs/42/steps/test-step/cp-a");
         assertThat(remoteStep.resolve("runtime.env")).isRegularFile();
+        assertThat(Files.readString(remoteStep.resolve("runtime.env")))
+                .contains("export KF_COMPONENT_GROUP_KEY='kubemate'");
         assertThat(remoteStep.resolve("step.sh")).hasSameTextualContentAs(script);
         Path evidence = temporaryDirectory.resolve("data/jobs/42/evidence/test-step/cp-a");
         assertThat(evidence.resolve("runtime.env")).isRegularFile();
@@ -149,6 +151,32 @@ class RemoteStepRunnerTest {
         Path evidence = temporaryDirectory.resolve("data/jobs/42/evidence/pre-satisfied/cp-a");
         assertThat(evidence.resolve("verification-before.properties"))
                 .hasContent("phase=before\nexit_code=0\n");
+    }
+
+    @Test
+    void maintenanceAlwaysExecutesAndOnlyVerifiesAfterward() throws Exception {
+        Path script = temporaryDirectory.resolve("maintenance-step.sh");
+        Path verify = temporaryDirectory.resolve("maintenance-verify.sh");
+        Files.writeString(script, "#!/bin/bash\nexit 0\n", StandardCharsets.UTF_8);
+        Files.writeString(verify, "#!/bin/bash\nexit 0\n", StandardCharsets.UTF_8);
+        InstallStep step = InstallStep.script(
+                "maintenance-test", "维护任务", "maintenance", "primary_control_plane", script,
+                "serial", 1, true, List.of(), List.of(), List.of(), "")
+                .withVerification(verify)
+                .withType(InstallStep.StepType.MAINTENANCE);
+
+        JobService.NodeOutcome outcome = runner().run(42L, cluster, List.of(node), node, step);
+
+        assertThat(outcome.success()).isTrue();
+        assertThat(outcome.status()).isEqualTo("success");
+        assertThat(outcome.verificationPhase()).isEqualTo("after");
+        assertThat(commands.stream().filter(command -> command.contains("bash ./step.sh")).toList()).hasSize(1);
+        assertThat(commands.stream().filter(command -> command.contains("bash ./verify.sh")).toList()).hasSize(1);
+        int execution = java.util.stream.IntStream.range(0, commands.size())
+                .filter(index -> commands.get(index).contains("bash ./step.sh")).findFirst().orElseThrow();
+        int verification = java.util.stream.IntStream.range(0, commands.size())
+                .filter(index -> commands.get(index).contains("bash ./verify.sh")).findFirst().orElseThrow();
+        assertThat(execution).isLessThan(verification);
     }
 
     @Test
@@ -446,7 +474,25 @@ class RemoteStepRunnerTest {
                 "tmp/kubefoundry/jobs/42/steps/hostname/cp-a/step.sh"));
         assertThat(script).contains("registry'\"'\"'; touch /tmp/pwn; #");
         assertThat(script).contains("printf '%s\\n'");
+        assertThat(script).contains("source ./managed_config.sh");
+        assertThat(script).contains("kf_replace_managed_block /etc/hosts");
         assertThat(script).doesNotContain("cat >> /etc/hosts <<");
+    }
+
+    @Test
+    void copiesManagedConfigurationLibraryForOwningInstallSteps() throws Exception {
+        Path projectRoot = BaseInstallPlanFactory.discoverProjectRoot(Path.of("").toAbsolutePath());
+        InstallStep step = new BaseInstallPlanFactory(projectRoot).create().steps().stream()
+                .filter(candidate -> candidate.key().equals("15-environment-config"))
+                .findFirst().orElseThrow();
+        Path target = temporaryDirectory.resolve("managed_config.sh");
+
+        ReflectionTestUtils.invokeMethod(RemoteStepRunner.class,
+                "writeManagedConfigLibrary", target, step);
+
+        assertThat(target).isRegularFile();
+        assertThat(Files.readString(target)).contains("kf_install_replacement")
+                .contains("kf_replace_managed_block");
     }
 
     @Test

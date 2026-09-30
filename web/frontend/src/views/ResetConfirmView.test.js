@@ -43,6 +43,9 @@ describe('ResetConfirmView', () => {
 
     expect(wrapper.text()).toContain('远程重置不可恢复');
     expect(wrapper.text()).toContain('/data/k8s_install/04.registry');
+    expect(wrapper.text()).toContain('失败或中断的最近安装任务');
+    expect(wrapper.text()).toContain('安装记录证明 Helm 已执行');
+    expect(wrapper.text()).toContain('受管基线配置已被人工修改');
     expect(wrapper.get('button.el-button--danger').attributes('disabled')).toBeDefined();
 
     await wrapper.get('.el-checkbox input').setValue(true);

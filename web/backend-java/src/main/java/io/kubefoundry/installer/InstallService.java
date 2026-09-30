@@ -77,6 +77,9 @@ public class InstallService {
                 .orElseThrow(() -> ResourceNotFoundException.cluster(clusterId));
         List<Node> configuredNodes = InstallationNodes.normalize(
                 nodes.findByClusterIdOrderById(clusterId));
+        InstallationSnapshotPayload plannedSnapshot = assembler == null
+                ? null : snapshots.previewPayload(cluster, configuredNodes);
+        if (plannedSnapshot != null) MinioInstallationAdmission.requireEnoughWorkers(plannedSnapshot);
         InstallPlan plan;
         if (readiness != null) {
             plan = readiness.validate(cluster, configuredNodes);
@@ -85,7 +88,7 @@ public class InstallService {
             InstallationGate.requireSuccessfulNodeTests(cluster, configuredNodes);
             InstallPlan generatedPlan = assembler == null
                     ? plans.create()
-                    : assembler.forNewCluster(snapshots.previewPayload(cluster, configuredNodes));
+                    : assembler.forNewCluster(plannedSnapshot);
             plan = media == null ? generatedPlan : media.verifyAndChecksum(generatedPlan);
         }
         List<JobService.StepDefinition> definitions = new ArrayList<>();
@@ -99,8 +102,11 @@ public class InstallService {
             }
             List<JobService.NodeOperation> operations = targets.stream()
                     .map(node -> JobService.NodeOperation.withOutcome(node.getId(), jobId -> {
-                        RuntimeSettings runtimeSettings = settings == null
-                                ? null : settings.runtimeSettings(cluster, node);
+                        InstallationSnapshotPayload.RuntimeConfiguration frozen = plannedSnapshot == null
+                                ? null : plannedSnapshot.runtimeSettings().get(node.getId());
+                        RuntimeSettings runtimeSettings = frozen == null
+                                ? (settings == null ? null : settings.runtimeSettings(cluster, node))
+                                : frozen.toRuntimeSettings();
                         return runtimeSettings == null
                                 ? runner.run(jobId, cluster, configuredNodes, node, step)
                                 : runner.run(jobId, cluster, configuredNodes, node, step, runtimeSettings);
@@ -111,6 +117,14 @@ public class InstallService {
         return admission.submit(clusterId, () -> {
             Cluster admittedCluster = clusters.findById(clusterId)
                     .orElseThrow(() -> ResourceNotFoundException.cluster(clusterId));
+            if (assembler != null) {
+                if (admittedCluster.getComponentConfigVersion()
+                        != plannedSnapshot.componentConfigurationVersion()) {
+                    throw new IllegalStateException("组件配置已变化，请重新生成安装计划");
+                }
+                List<Node> admittedNodes = InstallationNodes.normalize(nodes.findByClusterIdOrderById(clusterId));
+                MinioInstallationAdmission.requireEnoughWorkers(snapshots.previewPayload(admittedCluster, admittedNodes));
+            }
             admittedCluster.markInstallationStarted();
             clusters.save(admittedCluster);
             long jobId = jobService.submit(new JobService.JobDefinition(clusterId, "install", definitions));

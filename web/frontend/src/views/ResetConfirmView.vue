@@ -21,6 +21,14 @@
       <section class="reset-scope" aria-label="远程重置范围">
         <div><h2>目标节点</h2><ul><li v-for="node in nodes" :key="node.id"><strong>{{ node.hostname }}</strong><span>{{ roleLabel(node.roles) }}</span></li></ul></div>
         <div><h2>受管清理目录</h2><ul><li>{{ cluster.kubernetes_work_dir }}/kubelet_root</li><li>{{ cluster.kubernetes_work_dir }}/etcd_root</li><li>{{ cluster.kubernetes_work_dir }}/containerd_root</li><li v-if="hasRegistry">{{ cluster.kubernetes_work_dir }}/04.registry</li></ul></div>
+        <div>
+          <h2>安全清理规则</h2>
+          <ul>
+            <li>失败或中断的最近安装任务也可以按其安装快照执行重置</li>
+            <li>仅在安装记录证明 Helm 已执行时，才清理 KubeFoundry 受管组件</li>
+            <li>如果受管基线配置已被人工修改，重置将停止并保留现有内容</li>
+          </ul>
+        </div>
       </section>
       <section class="reset-confirmation" aria-labelledby="reset-confirmation-title">
         <h2 id="reset-confirmation-title">强确认</h2>

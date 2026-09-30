@@ -1,0 +1,48 @@
+#k8s的服务暴露
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: rocketmq-exporter
+  name: rocketmq-exporter
+  namespace: kubemate-monitoring-system
+spec:
+  ports:
+    - port: 5557
+      protocol: TCP
+      targetPort: 5557
+      name: rocketmq-exporter
+  selector:
+    app: rocketmq-exporter
+  sessionAffinity: None
+  type: ClusterIP
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: rocketmq-exporter
+  namespace: kubemate-monitoring-system
+  labels:
+    app: rocketmq-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rocketmq-exporter
+  template:
+    metadata:
+      labels:
+        app: rocketmq-exporter
+    spec:
+      containers:
+        - name: rocketmq-exporter
+          image: 38.62.44.40:5000/prom/rocketmq-exporter
+          ports:
+            - name: exporter-port
+              containerPort: 5557
+              protocol: TCP
+          env:
+            - name: rocketmq.config.namesrvaddr
+              value: 'rocketmq-namesrv.scpoc:9876'
+          resources: { }
+      restartPolicy: Always

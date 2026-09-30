@@ -8,6 +8,8 @@
 # 版本：1.0.0
 #===============================================================================
 
+source ./managed_config.sh
+
 # 参数1: 主控制节点IP（由exec_script注入）
 PRIMARY_CP_IP="$1"
 
@@ -44,8 +46,10 @@ if [ $? -ne 0 ]; then
 fi
 
 # 配置kubectl
-mkdir -p $HOME/.kube
-cp /etc/kubernetes/admin.conf $HOME/.kube/config
-chown $(id -u):$(id -g) $HOME/.kube/config
+mkdir -p "$HOME/.kube"
+kf_install_replacement /etc/kubernetes/admin.conf "$HOME/.kube/config" kubectl.config 0600 || {
+    log_error "kubectl 配置存在未受管变更"
+    exit 1
+}
 
 log_success "控制节点 ${LOCAL_IP} 添加完成"

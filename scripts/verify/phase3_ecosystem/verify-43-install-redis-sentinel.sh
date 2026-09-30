@@ -1,83 +1,114 @@
 #!/bin/bash
 
-#===============================================================================
-# 脚本名称：verify-43-install-redis-sentinel.sh
-# 功能：验证Redis哨兵模式安装
-# 执行机器：管理节点（远程验证主控制节点）
-# 作者：KubeFoundry Team
-# 版本：1.0.0
-#===============================================================================
+set -o nounset -o pipefail
 
-source "${PROJECT_ROOT}/scripts/lib/logger.sh"
-source "${PROJECT_ROOT}/scripts/lib/config.sh"
+missing() { printf '[INFO] %s\n' "$1"; exit 10; }
+error() { printf '[ERROR] %s\n' "$1" >&2; exit 20; }
+kube() {
+    local duration="$1"
+    shift
+    timeout --foreground "${duration}" env KUBECONFIG="${KF_KUBECONFIG}" \
+        kubectl --request-timeout="${duration}" "$@"
+    local status=$?
+    case "${status}" in 124|137) printf '[ERROR] Kubernetes API 验证超时\n' >&2; exit 21 ;; esac
+    return "${status}"
+}
 
-PASS=0
-FAIL=0
+namespace=redis-sentinel
+release=kubefoundry-redis
+secret=kubefoundry-redis-auth
+selector='app.kubernetes.io/instance=kubefoundry-redis,app.kubernetes.io/name=redis'
+command_timeout=${KF_VERIFY_COMMAND_TIMEOUT:-30s}
+rollout_timeout=${KF_VERIFY_ROLLOUT_TIMEOUT:-180s}
+[ -n "${KF_KUBECONFIG:-}" ] && [ -r "${KF_KUBECONFIG}" ] || error "Kubernetes 管理配置不可读"
+command -v kubectl >/dev/null 2>&1 || error "验证工具不可用: kubectl"
+command -v helm >/dev/null 2>&1 || error "验证工具不可用: helm"
+kube "${command_timeout}" get --raw=/readyz >/dev/null 2>&1 || error "Kubernetes API 验证异常"
+storage_class=${KF_REDIS_STORAGE_CLASS:-}
+if [ -z "${storage_class}" ]; then
+    storage_class=$(kube "${command_timeout}" get storageclass \
+        -o jsonpath='{range .items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")]}{.metadata.name}{"\n"}{end}' 2>/dev/null) \
+        || error "Redis StorageClass 查询失败"
+fi
+[ "$(printf '%s\n' "${storage_class}" | sed '/^$/d' | wc -l)" -eq 1 ] \
+    || error "Redis StorageClass 不唯一"
 
-check_pass() { PASS=$((PASS + 1)); log_success "[PASS] $1"; }
-check_fail() { FAIL=$((FAIL + 1)); log_error  "[FAIL] $1"; }
+release_status=$(timeout --foreground "${command_timeout}" env KUBECONFIG="${KF_KUBECONFIG}" \
+    helm status "${release}" --namespace "${namespace}" -o json 2>/dev/null) || missing "Redis Helm release 不存在"
+printf '%s\n' "${release_status}" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"deployed"' \
+    || missing "Redis Helm release 未处于 deployed 状态"
 
-log_info "===== 验证：Redis哨兵模式安装 ====="
+kube "${command_timeout}" get statefulset kubefoundry-redis-node --namespace "${namespace}" \
+    >/dev/null 2>&1 || missing "Redis StatefulSet 不存在"
+kube "${rollout_timeout}" rollout status statefulset/kubefoundry-redis-node \
+    --namespace "${namespace}" --timeout="${rollout_timeout}" >/dev/null 2>&1 \
+    || missing "Redis StatefulSet 未就绪"
 
+replicas=$(kube "${command_timeout}" get statefulset kubefoundry-redis-node \
+    --namespace "${namespace}" -o jsonpath='{.spec.replicas}|{.status.readyReplicas}' 2>/dev/null)
+[ "${replicas}" = '3|3' ] || missing "Redis 期望 3 个 Pod，当前副本状态为 ${replicas:-未知}"
 
-# 等待redis Pod就绪（最多120秒）
-log_info "等待redis Pod启动（最多120秒）..."
-wait_count=0
-while [ $wait_count -lt 12 ]; do
-    running=$(ssh_exec_capture "$primary_cp" \
-        "kubectl get pods -n redis-sentinel --no-headers 2>/dev/null | grep -c 'Running' || true" | tr -d '[:space:]')
-    if [ "$running" -ge 1 ]; then
-        log_success "redis Pod已就绪 (${running} 个)"
-        break
-    fi
-    log_info "redis Pod启动中... (${running:-0} 个已Running)"
-    sleep 10
-    wait_count=$((wait_count + 1))
+mapfile -t pods < <(kube "${command_timeout}" get pods --namespace "${namespace}" \
+    --selector "${selector}" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null)
+[ "${#pods[@]}" -eq 3 ] || missing "Redis Pod 数量不是 3"
+
+pvc_status=$(kube "${command_timeout}" get pvc --namespace "${namespace}" \
+    --selector 'app.kubernetes.io/instance=kubefoundry-redis' \
+    -o jsonpath='{range .items[*]}{.status.phase}|{.spec.storageClassName}{"\n"}{end}' 2>/dev/null) \
+    || error "Redis PVC 状态查询失败"
+[ "$(printf '%s\n' "${pvc_status}" | sed '/^$/d' | wc -l)" -eq 3 ] \
+    || missing "Redis PVC 数量不是 3"
+while IFS='|' read -r phase pvc_storage_class; do
+    [ -z "${phase}" ] && continue
+    [ "${phase}" = Bound ] && [ "${pvc_storage_class}" = "${storage_class}" ] \
+        || missing "Redis PVC 未全部 Bound 或 StorageClass 不正确"
+done <<< "${pvc_status}"
+
+managed_by=$(kube "${command_timeout}" get secret "${secret}" --namespace "${namespace}" \
+    -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}' 2>/dev/null) \
+    || missing "Redis 密码 Secret 不存在"
+component_group=$(kube "${command_timeout}" get secret "${secret}" --namespace "${namespace}" \
+    -o jsonpath='{.metadata.labels.kubefoundry\.io/component-group}' 2>/dev/null) \
+    || missing "Redis 密码 Secret 不存在"
+[ "${managed_by}" = kubefoundry ] && [ "${component_group}" = redis_sentinel ] \
+    || error "Redis 密码 Secret 所有权异常"
+password_base64=$(kube "${command_timeout}" get secret "${secret}" --namespace "${namespace}" \
+    -o jsonpath='{.data.redis-password}' 2>/dev/null) || error "Redis 密码读取失败"
+[ -n "${password_base64}" ] || error "Redis 密码为空"
+printf '%s' "${password_base64}" | base64 --decode >/dev/null 2>&1 \
+    || error "Redis 密码编码无效"
+
+redis_cli() {
+    local pod="$1" container="$2"
+    shift 2
+    printf '%s' "${password_base64}" | base64 --decode | \
+        kube "${command_timeout}" exec -i "${pod}" --namespace "${namespace}" -c "${container}" -- \
+            sh -c 'REDISCLI_AUTH=$(cat); export REDISCLI_AUTH; exec redis-cli "$@"' sh "$@"
+}
+
+sentinel_info=$(redis_cli "${pods[0]}" sentinel -p 26379 SENTINEL master kubefoundry-master 2>/dev/null) \
+    || missing "Sentinel 无法查询 master"
+quorum=$(printf '%s\n' "${sentinel_info}" | awk 'previous == "quorum" { print; exit } { previous = $0 }')
+[ "${quorum}" = 2 ] || missing "Sentinel quorum 不是 2"
+master_address=$(redis_cli "${pods[0]}" sentinel -p 26379 SENTINEL get-master-addr-by-name \
+    kubefoundry-master 2>/dev/null) || missing "Sentinel 无法识别当前 master"
+[ "$(printf '%s\n' "${master_address}" | sed '/^$/d' | wc -l)" -eq 2 ] \
+    || missing "Sentinel 返回的 master 地址无效"
+[ "$(printf '%s\n' "${master_address}" | tail -n 1)" = 6379 ] \
+    || missing "Sentinel 返回的 master 端口无效"
+
+master_count=0
+replica_count=0
+for pod in "${pods[@]}"; do
+    role=$(redis_cli "${pod}" redis ROLE 2>/dev/null | head -n 1) \
+        || missing "Redis 复制角色查询失败: ${pod}"
+    case "${role}" in
+        master) master_count=$((master_count + 1)) ;;
+        slave|replica) replica_count=$((replica_count + 1)) ;;
+        *) missing "Redis 返回未知复制角色: ${pod}" ;;
+    esac
 done
+[ "${master_count}" -eq 1 ] && [ "${replica_count}" -eq 2 ] \
+    || missing "Redis 复制拓扑异常: master=${master_count}, replica=${replica_count}"
 
-# 1. redis-sentinel 命名空间存在
-result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get ns redis-sentinel --no-headers 2>/dev/null | grep -c 'Active' || true" | tr -d '[:space:]')
-if [ "$result" -ge 1 ]; then
-    check_pass "redis-sentinel 命名空间存在"
-else
-    check_fail "redis-sentinel 命名空间不存在"
-fi
-
-# 2. redis Pod 运行
-result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pods -n redis-sentinel --no-headers 2>/dev/null | grep -c 'Running' || true" | tr -d '[:space:]')
-if [ "$result" -ge 1 ]; then
-    check_pass "redis Pod 运行中 (${result} 个)"
-else
-    check_fail "redis Pod 未运行"
-fi
-
-# 3. redis helm release 存在
-result=$(ssh_exec_capture "$primary_cp" \
-    "helm list -n redis-sentinel 2>/dev/null | grep -c 'redis' || true" | tr -d '[:space:]')
-if [ "$result" -ge 1 ]; then
-    check_pass "redis helm release 存在"
-else
-    check_fail "redis helm release 未找到"
-fi
-
-# 4. redis PV 已绑定
-result=$(ssh_exec_capture "$primary_cp" \
-    "kubectl get pv --no-headers 2>/dev/null | grep 'redis' | grep -c 'Bound' || true" | tr -d '[:space:]')
-if [ "$result" -ge 1 ]; then
-    check_pass "redis PV 已绑定 (${result} 个)"
-else
-    check_fail "redis PV 未绑定"
-fi
-
-# 结果汇总
-log_separator
-log_info "验证结果：通过 ${PASS} 项，失败 ${FAIL} 项"
-if [ "$FAIL" -eq 0 ]; then
-    log_success "Redis哨兵模式验证通过"
-    exit 0
-else
-    log_error "Redis哨兵模式验证失败"
-    exit 1
-fi
+printf '[SUCCESS] Redis Sentinel release、3 Pod、quorum、复制链路和 PVC 已就绪\n'

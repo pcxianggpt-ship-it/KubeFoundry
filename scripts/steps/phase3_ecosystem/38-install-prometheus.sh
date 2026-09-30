@@ -39,21 +39,32 @@ mapfile -t worker_nodes < <(kubectl get nodes \
     exit 1
 }
 
-kubectl label "${worker_nodes[@]}" prom=true --overwrite=true
+kubectl label "${worker_nodes[@]}" kubefoundry.io/prometheus=true --overwrite=true
 
 rendered_pv=$(mktemp)
 trap 'rm -f -- "${rendered_pv}"' EXIT
-sed "s|/data/prom_data|${prom_data_dir}|g" \
+sed -e "s|/data/prom_data|${prom_data_dir}|g" \
+    -e 's|key: prom$|key: kubefoundry.io/prometheus|' \
     "${resource_dir}/promlocal-pv.yaml" > "${rendered_pv}"
 
-kubectl apply -f "${rendered_pv}"
-kubectl create -f "${resource_dir}/1-crd"
-kubectl apply -f "${resource_dir}/2-prometheusOperator"
-kubectl apply -f "${resource_dir}/3-prometheus"
-kubectl apply -f "${resource_dir}/4-nodeExporter"
-kubectl apply -f "${resource_dir}/5-kubeStateMetrics"
-kubectl apply -f "${resource_dir}/6-alertmanager"
-kubectl apply -f "${resource_dir}/7-kubernetesControlPlaneRule"
-kubectl apply -f "${resource_dir}/8-metrics-server-ha.yaml"
+phase3_apply_managed "${rendered_pv}"
+phase3_apply_managed "${resource_dir}/1-crd"
+phase3_apply_managed "${resource_dir}/2-prometheusOperator"
+phase3_apply_managed "${resource_dir}/3-prometheus"
+phase3_apply_managed "${resource_dir}/4-nodeExporter"
+phase3_apply_managed "${resource_dir}/5-kubeStateMetrics"
+phase3_apply_managed "${resource_dir}/6-alertmanager"
+kubectl wait --for=create service/alertmanager-operated \
+    --namespace kubemate-system --timeout=60s >/dev/null || {
+    log_error "Alertmanager 无头 Service 未创建"
+    exit 1
+}
+kubectl patch service alertmanager-operated --namespace kubemate-system \
+    --type=merge -p '{"spec":{"publishNotReadyAddresses":true}}' >/dev/null || {
+    log_error "Alertmanager 无头 Service 就绪地址配置失败"
+    exit 1
+}
+phase3_apply_managed "${resource_dir}/7-kubernetesControlPlaneRule"
+phase3_apply_managed "${resource_dir}/8-metrics-server-ha.yaml"
 
 log_success "Prometheus 监控组件安装命令执行完成"

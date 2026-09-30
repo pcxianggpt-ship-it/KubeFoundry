@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app: log-download
+  name: log-download
+  namespace: kubemate-system
+spec:
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: log-download
+  template:
+    metadata:
+      annotations:
+        amarsoft.kubemate/restartAt: 2024/07/13 13:56:38
+        deprecated.daemonset.template.generation: "3"
+        kubemate/inputTime: 2024/07/13 12:19:47
+        kubemate/inputUser: admin
+        kubemate/updateTime: 2024/07/13 12:19:47
+        kubemate/updateUser: admin
+      creationTimestamp: null
+      labels:
+        app: log-download
+    spec:
+      imagePullSecrets:
+      - name: global-registry
+      containers:
+        - env:
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
+          image: registry:5000/amarsoft/kubemate-log-download:1.1.0
+          imagePullPolicy: Always
+          name: log-download
+          ports:
+            - containerPort: 8080
+              name: web
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 5
+            httpGet:
+              path: /health
+              port: web
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+
+          resources:
+            limits:
+              cpu: 500m
+              memory: 200Mi
+            requests:
+              cpu: 250m
+              memory: 100Mi
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+            - mountPath: /data/log_root
+              name: applog
+              readOnly: true
+            - mountPath: /etc/localtime
+              name: host-local-time
+      dnsPolicy: ClusterFirst
+      imagePullSecrets:
+        - name: register22
+      enableServiceLinks: true
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext:
+        runAsGroup: 0
+        runAsUser: 0
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - hostPath:
+            type: ''
+            path: /data/log_root
+          name: applog
+        - hostPath:
+            type: ''
+            path: /etc/localtime
+          name: host-local-time
+  updateStrategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate

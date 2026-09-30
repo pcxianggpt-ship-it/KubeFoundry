@@ -69,6 +69,7 @@ public class ComponentMediaService {
             case "35-install-loki" -> new MediaLocation("directory", "helmapp/loki");
             case "48-install-alloy" -> new MediaLocation("directory", "helmapp/alloy");
             case "38-install-prometheus" -> new MediaLocation("directory", "prometheus");
+            case "43-install-redis-sentinel" -> new MediaLocation("directory", "helmapp/redis");
             default -> throw new IllegalArgumentException("No offline media mapping for step: " + stepKey);
         };
         Path source = projectRoot.resolve("kube-media").resolve("03.setup_file")

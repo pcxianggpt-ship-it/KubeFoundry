@@ -20,6 +20,11 @@ phase3_init() {
         log_error "任务组件资源目录不存在: ${KF_COMPONENT_RESOURCE_DIR}"
         return 1
     fi
+    if [ -n "${KF_COMPONENT_GROUP_KEY:-}" ] \
+            && [[ ! "${KF_COMPONENT_GROUP_KEY}" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+        log_error "组件组标识不安全: ${KF_COMPONENT_GROUP_KEY}"
+        return 1
+    fi
 }
 
 phase3_resource_path() {
@@ -39,18 +44,28 @@ phase3_helm_upgrade() {
     local chart="$3"
     shift 3
     local labels='app.kubernetes.io/managed-by=kubefoundry'
+    local -a atomic_args=()
+    if [ -n "${KF_COMPONENT_GROUP_KEY:-}" ]; then
+        labels+=",kubefoundry.io/component-group=${KF_COMPONENT_GROUP_KEY}"
+    fi
     if [[ "${KF_COMPONENT_MEDIA_SHA256:-}" =~ ^[0-9a-f]{64}$ ]]; then
         labels+=",kubefoundry.io/media-sha256=${KF_COMPONENT_MEDIA_SHA256:0:63}"
     fi
+    [ "${KF_HELM_ATOMIC:-0}" = 1 ] && atomic_args+=(--atomic)
     helm upgrade --install "${release}" "${chart}" --namespace "${namespace}" \
-        --create-namespace --wait --timeout "${KF_HELM_TIMEOUT:-10m}" --labels "${labels}" "$@"
+        --create-namespace --wait --timeout "${KF_HELM_TIMEOUT:-10m}" \
+        "${atomic_args[@]}" --labels "${labels}" "$@"
 }
 
 phase3_apply_managed() {
     local manifest="$1"
+    local -a labels=(app.kubernetes.io/managed-by=kubefoundry)
+    if [ -n "${KF_COMPONENT_GROUP_KEY:-}" ]; then
+        labels+=("kubefoundry.io/component-group=${KF_COMPONENT_GROUP_KEY}")
+    fi
     phase3_apply_crds_first "${manifest}"
     kubectl apply --server-side --field-manager=kubefoundry --force-conflicts -f "${manifest}"
-    kubectl label --overwrite -f "${manifest}" app.kubernetes.io/managed-by=kubefoundry
+    kubectl label --overwrite -f "${manifest}" "${labels[@]}"
 }
 
 phase3_apply_crds_first() {
@@ -160,14 +175,25 @@ phase3_wait_rollout() {
 
 phase3_registry_image_exists() {
     local image="$1"
-    local repository_and_tag repository tag
-    repository_and_tag="${image#registry:5000/}"
-    repository="${repository_and_tag%:*}"
-    tag="${repository_and_tag##*:}"
-    [ "${repository}" != "${repository_and_tag}" ] || return 1
+    local repository_and_reference repository reference
+    repository_and_reference="${image#registry:5000/}"
+    case "${repository_and_reference}" in
+        *@sha256:*)
+            repository="${repository_and_reference%@sha256:*}"
+            reference="sha256:${repository_and_reference##*@sha256:}"
+            [[ "${reference}" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+            ;;
+        *:*)
+            repository="${repository_and_reference%:*}"
+            reference="${repository_and_reference##*:}"
+            [ -n "${reference}" ] || return 1
+            ;;
+        *) return 1 ;;
+    esac
+    [ -n "${repository}" ] && [ "${repository}" != "${repository_and_reference}" ] || return 1
     curl --fail --silent --show-error --output /dev/null \
         --header 'Accept: application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json' \
-        "http://registry:5000/v2/${repository}/manifests/${tag}"
+        "http://registry:5000/v2/${repository}/manifests/${reference}"
 }
 
 phase3_redact() {

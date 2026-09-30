@@ -10,6 +10,10 @@
 
 primary_hostname="${PRIMARY_CONTROL_HOSTNAME:-k8sc1}"
 repo_config="${KF_YUM_HTTP_REPO_CONFIG:-/etc/yum.repos.d/k8s-http.repo}"
+[ ! -e "${repo_config}" ] || grep -Fqx '# Managed by KubeFoundry v0.3.2' "${repo_config}" || {
+    log_error "YUM Repo 配置已存在且不属于 KubeFoundry: ${repo_config}"
+    exit 1
+}
 metadata_url="http://${primary_hostname}/repo/repodata/repomd.xml"
 
 fail_step() {

@@ -7,6 +7,7 @@
 #===============================================================================
 
 if [ -f "./phase3.sh" ]; then source "./phase3.sh"; else source "${PROJECT_ROOT}/scripts/lib/phase3.sh"; fi
+if [ -f "./managed_config.sh" ]; then source "./managed_config.sh"; else source "${PROJECT_ROOT}/scripts/lib/managed_config.sh"; fi
 phase3_init
 : "${KF_NFS_SERVER:?缺少 NFS 服务地址}"
 : "${KF_NFS_SHARE_PATH:?缺少 NFS 共享目录}"
@@ -24,13 +25,14 @@ if [ "${KF_NFS_EXPORTS_MODE}" = "managed" ]; then
     }
     mkdir -p -- "${KF_NFS_SHARE_PATH}"
     systemctl enable --now nfs-server
-    if ! grep -qF "${managed_marker_begin}" "${exports_file}" 2>/dev/null; then
-        {
-            printf '%s\n' "${managed_marker_begin}"
-            printf '%s\n' "${export_entry}"
-            printf '%s\n' "${managed_marker_end}"
-        } >> "${exports_file}"
-    fi
+    exports_content="$(mktemp)"
+    trap 'rm -f "${exports_content}"' EXIT
+    printf '%s\n' "${export_entry}" > "${exports_content}"
+    kf_replace_managed_block "${exports_file}" "${managed_marker_begin}" \
+        "${managed_marker_end}" "${exports_content}" || {
+        log_error "NFS exports 受管标记不完整或配置写入失败"
+        exit 1
+    }
     exportfs -ra
     log_success "managed NFS exports 已幂等配置"
 elif [ "${KF_NFS_EXPORTS_MODE}" = "external" ]; then

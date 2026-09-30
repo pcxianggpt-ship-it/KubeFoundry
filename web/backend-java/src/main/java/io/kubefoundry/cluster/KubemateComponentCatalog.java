@@ -11,7 +11,7 @@ public final class KubemateComponentCatalog {
             new Group("traefik", "Traefik 网关", List.of("traefik"), true),
             new Group("storage_observability", "存储与日志套件", List.of("openebs", "minio", "loki", "alloy"), true),
             new Group("prometheus", "Prometheus 监控", List.of("prometheus", "metrics_server"), true),
-            new Group("redis_sentinel", "Redis 哨兵模式", List.of("redis_sentinel"), false));
+            new Group("redis_sentinel", "Redis 哨兵模式", List.of("redis_sentinel"), true));
 
     private static final Map<String, Group> BY_KEY = GROUPS.stream().collect(
             java.util.stream.Collectors.toUnmodifiableMap(Group::key, group -> group));

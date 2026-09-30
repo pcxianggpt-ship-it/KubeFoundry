@@ -16,6 +16,7 @@
 readonly POD_SUBNET="10.244.0.0/16"
 readonly SERVICE_SUBNET="10.96.0.0/16"
 readonly REGISTRY_ENDPOINT="registry:5000"
+source ./managed_config.sh
 
 log_info "开始初始化K8S集群..."
 
@@ -58,7 +59,16 @@ log_info "  镜像仓库: ${REGISTRY_ENDPOINT}/registry.k8s.io"
 
 # 5. 配置kubelet数据目录
 mkdir -p /tmp/k8s
-echo "KUBELET_EXTRA_ARGS='--root-dir=${KUBELET_ROOT}'" > /etc/sysconfig/kubelet
+kubelet_config="$(mktemp)"
+trap 'rm -f "${kubelet_config}"' EXIT
+{
+    printf '%s\n' '# Managed by KubeFoundry v0.3.2'
+    printf "KUBELET_EXTRA_ARGS='--root-dir=%s'\n" "${KUBELET_ROOT}"
+} > "${kubelet_config}"
+kf_install_replacement "${kubelet_config}" /etc/sysconfig/kubelet kubelet.sysconfig 0644 || {
+    log_error "kubelet 配置存在未受管变更"
+    exit 1
+}
 log_success "kubelet数据目录已配置: ${KUBELET_ROOT}"
 
 # 6. 生成cluster.yaml
@@ -168,9 +178,11 @@ if [ $? -ne 0 ]; then
 fi
 
 # 8. 配置kubectl
-mkdir -p $HOME/.kube
-cp /etc/kubernetes/admin.conf $HOME/.kube/config
-chown $(id -u):$(id -g) $HOME/.kube/config
+mkdir -p "$HOME/.kube"
+kf_install_replacement /etc/kubernetes/admin.conf "$HOME/.kube/config" kubectl.config 0600 || {
+    log_error "kubectl 配置存在未受管变更"
+    exit 1
+}
 export KUBECONFIG=/etc/kubernetes/admin.conf
 log_success "kubectl 已配置"
 

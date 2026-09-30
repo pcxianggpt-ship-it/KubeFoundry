@@ -1,0 +1,37 @@
+apiVersion: kubeadm.k8s.io/v1beta3
+bootstrapTokens:
+- groups:
+  - system:bootstrappers:kubeadm:default-node-token
+  token: abcdef.0123456789abcdef
+  ttl: 24h0m0s
+  usages:
+  - signing
+  - authentication
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: "192.168.62.211"
+  bindPort: 6443
+nodeRegistration:
+#  criSocket: /var/run/cri-dockerd.sock
+  imagePullPolicy: IfNotPresent
+  taints: null
+---
+apiServer:
+  timeoutForControlPlane: 4m0s
+apiVersion: kubeadm.k8s.io/v1beta3
+certificatesDir: /etc/kubernetes/pki
+clusterName: kubernetes
+controllerManager: {}
+dns: {}
+etcd:
+  local:
+    dataDir: /data/etcd_data #放在有足够空间的路径下
+imageRepository: registry:5000/google_containers   #指定为前面安装registry的库，ex:1.1.1.1:5000/k8s
+kind: ClusterConfiguration
+kubernetesVersion: v1.23.17 #指定安装版本
+controlPlaneEndpoint: "k8sc1:6443"  #开启该选项，以便后期升级为高可用集群
+networking:
+  dnsDomain: cluster.local
+  podSubnet: 10.42.0.0/16
+  serviceSubnet: 10.96.0.0/12
+scheduler: {}

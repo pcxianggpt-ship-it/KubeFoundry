@@ -7,6 +7,8 @@ import io.kubefoundry.cluster.ClusterService.ResourceNotFoundException;
 import io.kubefoundry.cluster.Node;
 import io.kubefoundry.cluster.NodeRepository;
 import io.kubefoundry.job.JobService;
+import io.kubefoundry.job.JobStep;
+import io.kubefoundry.job.JobStepRepository;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,11 +26,12 @@ public class ClusterResetService {
     private final InstallationSnapshotService snapshots;
     private final ResetPlanFactory plans;
     private final ClusterComponentStateRepository componentStates;
+    private final JobStepRepository jobSteps;
 
     public ClusterResetService(ClusterRepository clusters, NodeRepository nodes, JobService jobs,
             RemoteStepRunner runner, InstallerAdmission admission,
             InstallationSnapshotService snapshots, ResetPlanFactory plans,
-            ClusterComponentStateRepository componentStates) {
+            ClusterComponentStateRepository componentStates, JobStepRepository jobSteps) {
         this.clusters = clusters;
         this.nodes = nodes;
         this.jobs = jobs;
@@ -37,21 +40,26 @@ public class ClusterResetService {
         this.snapshots = snapshots;
         this.plans = plans;
         this.componentStates = componentStates;
+        this.jobSteps = jobSteps;
     }
 
     public long start(long clusterId, boolean acknowledged, String confirmationPhrase) {
         Cluster cluster = clusters.findById(clusterId)
                 .orElseThrow(() -> ResourceNotFoundException.cluster(clusterId));
         requireConfirmation(cluster, acknowledged, confirmationPhrase);
-        if (!cluster.isInstallationLocked()) {
-            throw new IllegalArgumentException("仅已成功安装并锁定的集群可以重置");
-        }
-        InstallationSnapshotPayload snapshot = snapshots.latestInstallPayload(clusterId);
+        InstallationSnapshotService.LatestInstallContext context = snapshots.latestInstallContext(clusterId);
+        requireResettableInstall(context);
+        InstallationSnapshotPayload snapshot = context.payload();
         List<SnapshotTarget> targets = resolveSnapshotTargets(clusterId, snapshot);
-        Set<String> componentGroups = ResetPlanFactory.componentGroups(snapshot,
-                componentStates.findByClusterIdOrderByComponentKey(clusterId));
+        List<io.kubefoundry.cluster.ClusterComponentState> states =
+                componentStates.findByClusterIdOrderByComponentKey(clusterId);
+        List<JobStep> evidenceSteps = cleanupEvidenceSteps(context.jobId(), states);
+        Set<String> componentGroups = ResetPlanFactory.componentGroups(snapshot, states, evidenceSteps);
         RuntimeSettings runtimeSettings = plans.runtimeSettings(snapshot, componentGroups);
-        InstallStep componentCleanup = componentGroups.isEmpty() ? null : plans.componentCleanupStep();
+        boolean helmInstalled = evidenceSteps.stream()
+                .anyMatch(step -> "29-install-helm".equals(step.getStepKey()) && isCompleted(step));
+        InstallStep componentCleanup = componentGroups.isEmpty() || !helmInstalled
+                ? null : plans.componentCleanupStep();
         InstallStep cleanup = plans.nodeCleanupStep();
         InstallStep verification = plans.nodeVerificationStep();
         return admission.submit(clusterId, () -> {
@@ -63,6 +71,31 @@ public class ClusterResetService {
             clusters.save(admittedCluster);
             return jobId;
         });
+    }
+
+    private static void requireResettableInstall(
+            InstallationSnapshotService.LatestInstallContext context) {
+        if (!Set.of("success", "failed", "interrupted", "partial_success")
+                .contains(context.jobStatus())) {
+            throw new IllegalArgumentException("最近安装任务未处于可重置终态: " + context.jobStatus());
+        }
+    }
+
+    private List<JobStep> cleanupEvidenceSteps(
+            long installJobId, List<io.kubefoundry.cluster.ClusterComponentState> states) {
+        Set<Long> jobIds = new java.util.LinkedHashSet<>();
+        jobIds.add(installJobId);
+        for (io.kubefoundry.cluster.ClusterComponentState state : states) {
+            if (state != null && state.getLastJobId() != null) jobIds.add(state.getLastJobId());
+        }
+        return jobIds.stream().flatMap(jobId -> jobSteps.findByJobIdOrderByOrder(jobId).stream())
+                .filter(ClusterResetService::isCompleted).toList();
+    }
+
+    private static boolean isCompleted(JobStep step) {
+        return step != null && ("success".equals(step.getStatus())
+                || ("skipped".equals(step.getStatus())
+                        && "PREVERIFY_SATISFIED".equals(step.getStatusReason())));
     }
 
     private static void requireConfirmation(

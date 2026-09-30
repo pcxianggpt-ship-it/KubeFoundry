@@ -10,7 +10,7 @@
         data-testid="save-components"
         type="primary"
         :icon="Check"
-        :disabled="locked || loading || saving || nfsInvalid"
+        :disabled="locked || loading || saving || nfsInvalid || minioInvalid"
         :loading="saving"
         @click="save"
       >保存并下一步</el-button>
@@ -80,6 +80,13 @@
             </div>
             <p v-if="nfsInvalid" class="form-error">启用 NFS 前，请填写完整且有效的 NFS 配置。</p>
           </el-form>
+
+          <MinioResourceForm
+            v-if="group.key === 'storage_observability' && group.enabled"
+            :config="group.config"
+            :errors="minioErrors"
+            :disabled="groupReadOnly(group)"
+          />
         </li>
       </ul>
     </template>
@@ -91,6 +98,8 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { Check, Refresh } from '@element-plus/icons-vue';
 import { listComponents, updateComponents } from '../api/client';
 import { safeErrorMessage } from '../utils/redaction';
+import MinioResourceForm from '../components/minio/MinioResourceForm.vue';
+import { minioConfigErrors, normalizeMinioConfig } from '../components/minio/minioConfig';
 
 const props = defineProps({ clusterId: { type: [String, Number], required: true }, locked: Boolean });
 const emit = defineEmits(['next']);
@@ -110,6 +119,10 @@ const nfsInvalid = computed(() => {
     || !isKubernetesName(config.storage_class)
     || !['managed', 'external'].includes(config.exports_mode);
 });
+const minioGroup = computed(() => groups.value.find((group) => group.key === 'storage_observability'));
+const minioErrors = computed(() => minioGroup.value?.enabled
+  ? minioConfigErrors(minioGroup.value.config) : {});
+const minioInvalid = computed(() => Object.keys(minioErrors.value).length > 0);
 
 onMounted(load);
 watch(() => props.clusterId, load);
@@ -128,7 +141,7 @@ async function load() {
 }
 
 async function save() {
-  if (props.locked || saving.value || nfsInvalid.value) return;
+  if (props.locked || saving.value || nfsInvalid.value || minioInvalid.value) return;
   saving.value = true;
   errorMessage.value = '';
   try {
@@ -149,11 +162,13 @@ async function save() {
 }
 
 function normalizeGroup(group) {
+  const config = group.key === 'storage_observability'
+    ? normalizeMinioConfig(group.config) : { ...(group.config || {}) };
   return {
     ...group,
     enabled: Boolean(group.enabled),
     components: Array.isArray(group.components) ? group.components : [],
-    config: { ...(group.config || {}) }
+    config
   };
 }
 

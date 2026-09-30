@@ -1,0 +1,38 @@
+sidecar:
+  image:
+    repository: registry:5000/kiwigrid/k8s-sidecar #镜像地址
+    tag: 1.24.3
+global:
+  image:
+    registry: registry:5000 #镜像地址，需要有镜像仓库需求对应的镜像
+test:
+  enabled: false
+monitoring:
+  selfMonitoring:
+    enabled: false
+    grafanaAgent:
+      installOperator: false
+  serviceMonitor:
+    enabled: false
+write:
+  persistence:
+    # -- Enable volume claims in pod spec
+    volumeClaimsEnabled: false
+backend:
+  persistence:
+    # -- Enable volume claims in pod spec
+    volumeClaimsEnabled: false
+loki:
+  auth_enabled: false
+  storage:
+    bucketNames:
+      chunks: chunks
+      ruler: ruler
+      admin: admin
+    type: s3
+    s3:
+      endpoint: minio-hl:9000 #minio服务地址
+      secretAccessKey: minioadmin #minio访问密码
+      accessKeyId: minioadmin #minio访问id
+      s3ForcePathStyle: true #s3路径类型
+      insecure: true #

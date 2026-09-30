@@ -61,16 +61,12 @@ if [ -f "${storage_class_file}" ]; then
         > "${rendered_storage_class}"
     phase3_apply_managed "${rendered_storage_class}"
 fi
-if helm status openebs --namespace kubemate-system >/dev/null 2>&1; then
-    log_info "OpenEBS Helm Release 已存在，跳过重复安装"
+if [ -f "${values_file}" ]; then
+    phase3_helm_upgrade openebs kubemate-system "${chart_file}" \
+        -f "${values_file}" -f "${openebs_path_values}"
 else
-    if [ -f "${values_file}" ]; then
-        helm install openebs --namespace kubemate-system "${chart_file}" \
-            -f "${values_file}" -f "${openebs_path_values}"
-    else
-        helm install openebs --namespace kubemate-system "${chart_file}" \
-            -f "${openebs_path_values}"
-    fi
+    phase3_helm_upgrade openebs kubemate-system "${chart_file}" \
+        -f "${openebs_path_values}"
 fi
 kubectl get storageclass >/dev/null
 deployments=$(kubectl get deployment --namespace kubemate-system --no-headers 2>/dev/null \

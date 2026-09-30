@@ -146,7 +146,7 @@ describe('安装流程', () => {
   it('确认页展示目标信息，只有点击开始安装才创建任务并跳转', async () => {
     getCluster.mockResolvedValue({ id: 42, name: '生产集群', k8s_version: '1.30.14', kubernetes_work_dir: '/data/k8s_install' });
     listNodes.mockResolvedValue({ items: [
-      { id: 1, hostname: 'cp-1', ip: '10.0.0.1', roles: ['control_plane', 'registry'], node_test_status: 'success' },
+      { id: 1, hostname: 'production-control-plane-registry-01', ip: '10.0.0.1', roles: ['control_plane', 'registry'], node_test_status: 'success' },
       { id: 2, hostname: 'worker-1', ip: '10.0.0.2', roles: ['worker'], node_test_status: 'success' }
     ] });
     getClusterSettings.mockResolvedValue({ paths: { install_media: '/opt/kf/media' }, advanced: { max_parallel_nodes: 2 } });
@@ -164,6 +164,11 @@ describe('安装流程', () => {
     expect(wrapper.text()).toContain('生产集群');
     expect(wrapper.text()).toContain('1.30.14');
     expect(wrapper.text()).toContain('2 个节点');
+    expect(wrapper.get('[data-testid="confirm-node-1"]').text()).toContain('production-control-plane-registry-01');
+    expect(wrapper.get('[data-testid="confirm-node-1"]').text()).toContain('10.0.0.1');
+    expect(wrapper.get('[data-testid="confirm-node-1"]').text()).toContain('控制节点、镜像仓库');
+    expect(wrapper.get('[data-testid="confirm-node-1"]').text()).toContain('免密已验证');
+    expect(wrapper.get('[data-testid="confirm-node-2"]').text()).toContain('10.0.0.2');
     expect(wrapper.text()).toContain('2 个单元、4 个步骤');
     expect(wrapper.text()).toContain('部署 NFS 组件');
     expect(startInstall).not.toHaveBeenCalled();
@@ -178,6 +183,27 @@ describe('安装流程', () => {
     await flushPromises();
     expect(startInstall).toHaveBeenCalledWith('42');
     expect(router.currentRoute.value.fullPath).toBe('/cluster-install/42/jobs/99');
+  });
+
+  it('节点 IP 为空或非法时明确报错并禁止开始安装', async () => {
+    getCluster.mockResolvedValue({ id: 42, name: '异常集群', k8s_version: '1.30.14' });
+    listNodes.mockResolvedValue({ items: [
+      { id: 1, hostname: 'missing-ip', ip: '', roles: ['control_plane'], node_test_status: 'success' },
+      { id: 2, hostname: 'invalid-ip', ip: '10.0.0.999', roles: ['worker'], node_test_status: 'failed' }
+    ] });
+    getClusterSettings.mockResolvedValue({ paths: { install_media: '/opt/kf/media' } });
+    getInstallPlan.mockResolvedValue({ items: [] });
+    listJobs.mockResolvedValue({ items: [{ id: 80, cluster_id: 42, job_type: 'precheck', status: 'success' }] });
+
+    const { wrapper } = await mountAt(InstallConfirmView, '/cluster-install/42/confirm');
+
+    expect(wrapper.get('[data-testid="install-scope-error"]').text()).toContain('missing-ip、invalid-ip');
+    expect(wrapper.get('[data-testid="confirm-node-1"]').text()).toContain('未配置');
+    expect(wrapper.get('[data-testid="confirm-node-2"]').text()).toContain('免密未验证');
+    await wrapper.get('[data-testid="confirm-install-risk"] input').setValue(true);
+    expect(wrapper.get('[data-testid="start-install"]').attributes('disabled')).toBeDefined();
+    await wrapper.get('[data-testid="start-install"]').trigger('click');
+    expect(startInstall).not.toHaveBeenCalled();
   });
 
   it('执行页刷新时先恢复任务快照，再订阅实时事件', async () => {

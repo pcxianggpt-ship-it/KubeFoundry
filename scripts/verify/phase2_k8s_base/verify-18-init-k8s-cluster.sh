@@ -14,6 +14,15 @@ kube() {
 }
 
 [ -n "${KF_NODE_HOSTNAME:-}" ] || error "验证缺少运行参数: KF_NODE_HOSTNAME"
+[ -f /etc/sysconfig/kubelet ] || missing "kubelet 受管配置不存在"
+grep -Fqx '# Managed by KubeFoundry v0.3.2' /etc/sysconfig/kubelet || \
+    missing "kubelet 受管标记缺失"
+manifest=/var/lib/kubefoundry/managed-config/manifest.tsv
+[ -f "${manifest}" ] || missing "kubelet 配置基线清单不存在"
+grep -Fq $'kubelet.sysconfig\t/etc/sysconfig/kubelet\t' "${manifest}" || \
+    missing "kubelet 配置基线记录缺失"
+grep -Fq $'kubectl.config\t'"${HOME}/.kube/config"$'\t' "${manifest}" || \
+    missing "kubectl 配置基线记录缺失"
 [ -s /etc/kubernetes/admin.conf ] || missing "Kubernetes 集群尚未初始化"
 for manifest in kube-apiserver kube-controller-manager kube-scheduler etcd; do
     [ -s "/etc/kubernetes/manifests/${manifest}.yaml" ] || missing "Kubernetes 静态 Pod 清单不完整: ${manifest}"

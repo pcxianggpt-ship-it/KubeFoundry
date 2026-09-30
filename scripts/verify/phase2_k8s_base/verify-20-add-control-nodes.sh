@@ -14,6 +14,10 @@ kube() {
 
 [ -n "${KF_NODE_HOSTNAME:-}" ] || error "验证缺少运行参数: KF_NODE_HOSTNAME"
 [ -s /etc/kubernetes/admin.conf ] || missing "当前控制节点尚未加入集群"
+manifest=/var/lib/kubefoundry/managed-config/manifest.tsv
+[ -f "${manifest}" ] || missing "kubectl 配置基线清单不存在"
+grep -Fq $'kubectl.config\t'"${HOME}/.kube/config"$'\t' "${manifest}" || \
+    missing "kubectl 配置基线记录缺失"
 command -v systemctl >/dev/null 2>&1 || error "验证工具不可用: systemctl"
 systemctl is-active --quiet kubelet || missing "kubelet 未运行"
 kube get --raw=/readyz >/dev/null 2>&1 || error "Kubernetes API 验证异常"

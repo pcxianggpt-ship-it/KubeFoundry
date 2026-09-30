@@ -50,6 +50,9 @@ for arch in x86_64 aarch64; do
         "${prefix}/scripts/steps/" \
         "${prefix}/scripts/steps/phase2_k8s_base/18-recover-k8s-keys.sh" \
         "${prefix}/scripts/lib/phase3.sh" \
+        "${prefix}/scripts/lib/managed_config.sh" \
+        "${prefix}/scripts/acceptance/v032-cluster-readiness.sh" \
+        "${prefix}/scripts/acceptance/redis-sentinel-failover.sh" \
         "${prefix}/scripts/verify/reset/verify-reset-kubernetes-node.sh" \
         "${prefix}/scripts/steps/reset/reset-kubemate-components.sh" \
         "${prefix}/templates/minio/kustomization.yaml" \
@@ -65,6 +68,7 @@ for arch in x86_64 aarch64; do
     for removed_cli_file in \
         "${prefix}/scripts/main.sh" \
         "${prefix}/scripts/steps/phase2_k8s_base/11-setup-ssh-login.sh" \
+        "${prefix}/scripts/steps/phase2_k8s_base/11b-setup-hostname.sh" \
         "${prefix}/scripts/verify/phase2_k8s_base/verify-11-setup-ssh-login.sh"; do
         if grep -Fq "${removed_cli_file}" <<< "${package_list}"; then
             fail "${arch} 包仍包含已停止支持的 CLI 文件 ${removed_cli_file}"
@@ -100,6 +104,7 @@ printf 'keep\n' > "${TEST_ROOT}/deployment/kube-media/keep.txt"
 [ -f "${TEST_ROOT}/deployment/scripts/steps/phase2_k8s_base/18-recover-k8s-keys.sh" ] ||
     fail "未安装 Kubernetes Join 凭据恢复脚本"
 [ ! -e "${TEST_ROOT}/deployment/scripts/lib/verify.sh" ] || fail "部署目录不应包含已删除的验证公共库"
+[ -f "${TEST_ROOT}/deployment/scripts/lib/managed_config.sh" ] || fail "未安装受管配置公共函数库"
 [ -f "${TEST_ROOT}/deployment/templates/minio/tenant.yaml" ] || fail "未安装 MinIO 配置模板"
 [ -f "${TEST_ROOT}/deployment/scripts/verify/reset/verify-reset-kubernetes-node.sh" ] ||
     fail "未安装重置验证脚本"

@@ -22,16 +22,24 @@
           <dt>Kubernetes 工作目录</dt><dd>{{ cluster.kubernetes_work_dir || '-' }}</dd>
           <dt>离线介质目录</dt><dd>{{ settings.paths?.install_media || '-' }}</dd>
         </dl></div>
-        <div><h2>节点清单</h2><ul class="confirm-node-list"><li v-for="node in nodes" :key="node.id"><strong>{{ node.hostname }}</strong><span>{{ roleLabel(node.roles) }}</span><el-tag type="success" size="small">免密已验证</el-tag></li></ul></div>
+        <div><h2>节点清单</h2><ul class="confirm-node-list" aria-label="安装目标节点">
+          <li v-for="node in nodes" :key="node.id" :class="{ 'is-invalid': !isValidIpv4(node.ip) }" :data-testid="`confirm-node-${node.id}`">
+            <strong :title="node.hostname">{{ node.hostname }}</strong>
+            <span class="confirm-node-ip"><small>IPv4</small>{{ node.ip || '未配置' }}</span>
+            <span>{{ roleLabel(node.roles) }}</span>
+            <el-tag :type="sshStatus(node.node_test_status).tone" size="small">{{ sshStatus(node.node_test_status).label }}</el-tag>
+          </li>
+        </ul></div>
       </section>
+      <el-alert v-if="scopeError" data-testid="install-scope-error" :title="scopeError" type="error" show-icon :closable="false" />
       <section class="confirm-install-plan" aria-labelledby="install-plan-heading">
         <div class="panel-heading"><div><h2 id="install-plan-heading">安装计划</h2><p>按部署单元组织，共 {{ deploymentUnits.length }} 个单元、{{ plan.length }} 个步骤。</p></div></div>
         <DeploymentUnitList :units="deploymentUnits" :selectable="false" aria-label="安装计划部署单元" />
       </section>
       <el-alert title="安装将修改目标服务器的软件包、网络、容器运行时和 Kubernetes 服务。任务开始后请勿关闭管理服务。" type="warning" show-icon :closable="false" />
       <footer class="confirm-actions">
-        <el-checkbox data-testid="confirm-install-risk" v-model="riskConfirmed">我已核对目标集群、节点范围和关键配置</el-checkbox>
-        <el-button data-testid="start-install" type="primary" :icon="VideoPlay" :loading="starting" :disabled="!riskConfirmed" @click="start">开始安装</el-button>
+        <div class="confirm-risk"><el-checkbox data-testid="confirm-install-risk" v-model="riskConfirmed">我已核对目标集群、节点范围和关键配置</el-checkbox><small v-if="!installationScopeValid">节点 IP 修正后才可开始安装</small></div>
+        <el-button data-testid="start-install" type="primary" :icon="VideoPlay" :loading="starting" :disabled="!riskConfirmed || !installationScopeValid" @click="start">开始安装</el-button>
       </footer>
     </template>
   </section>
@@ -59,9 +67,17 @@ const riskConfirmed = ref(false);
 const errorMessage = ref('');
 const backRoute = computed(() => ({ name: 'install-overview', params: { clusterId } }));
 const deploymentUnits = computed(() => groupDeploymentUnits(plan.value));
+const invalidNodes = computed(() => nodes.value.filter((node) => !isValidIpv4(node.ip)));
+const installationScopeValid = computed(() => nodes.value.length > 0 && invalidNodes.value.length === 0);
+const scopeError = computed(() => {
+  if (!nodes.value.length) return '安装范围中没有节点，无法开始安装。';
+  if (!invalidNodes.value.length) return '';
+  return `以下节点缺少合法 IPv4 地址：${invalidNodes.value.map((node) => node.hostname || `节点 #${node.id}`).join('、')}`;
+});
 const registrySummary = computed(() => {
   const registry = nodes.value.find((node) => node.roles?.includes('registry'));
-  return registry ? `${registry.hostname} (${registry.ip}:5000)` : '未找到 Registry 节点';
+  if (!registry) return '未找到 Registry 节点';
+  return `${registry.hostname} (${registry.ip ? `${registry.ip}:5000` : '未配置 IP'})`;
 });
 
 onMounted(load);
@@ -83,7 +99,7 @@ async function load() {
   finally { loading.value = false; }
 }
 async function start() {
-  if (!riskConfirmed.value || starting.value) return;
+  if (!riskConfirmed.value || !installationScopeValid.value || starting.value) return;
   starting.value = true; errorMessage.value = '';
   try {
     const accepted = await startInstall(clusterId);
@@ -93,5 +109,15 @@ async function start() {
 }
 function roleLabel(roles) {
   return (roles || []).map((role) => ({ control_plane: '控制节点', worker: '工作节点', registry: '镜像仓库' }[role] || role)).join('、');
+}
+function isValidIpv4(value) {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  const octets = value.trim().split('.');
+  return octets.length === 4 && octets.every((octet) => /^\d{1,3}$/.test(octet) && Number(octet) <= 255);
+}
+function sshStatus(status) {
+  return status === 'success'
+    ? { label: '免密已验证', tone: 'success' }
+    : { label: '免密未验证', tone: 'danger' };
 }
 </script>

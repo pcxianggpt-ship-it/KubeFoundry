@@ -7,6 +7,7 @@
 #===============================================================================
 
 if [ -f "./phase3.sh" ]; then source "./phase3.sh"; else source "${PROJECT_ROOT}/scripts/lib/phase3.sh"; fi
+if [ -f "./managed_config.sh" ]; then source "./managed_config.sh"; else source "${PROJECT_ROOT}/scripts/lib/managed_config.sh"; fi
 phase3_init
 : "${KF_NFS_SERVER:?缺少 NFS 服务地址}"
 : "${KF_NFS_SHARE_PATH:?缺少 NFS 共享目录}"
@@ -23,13 +24,14 @@ fstab_entry="${KF_NFS_SERVER}:${KF_NFS_SHARE_PATH} ${KF_NFS_WORKER_MOUNT_PATH} n
 fstab_file="${KF_NFS_FSTAB_FILE:-/etc/fstab}"
 
 mkdir -p -- "${KF_NFS_WORKER_MOUNT_PATH}"
-if ! grep -qF "${managed_marker_begin}" "${fstab_file}" 2>/dev/null; then
-    {
-        printf '%s\n' "${managed_marker_begin}"
-        printf '%s\n' "${fstab_entry}"
-        printf '%s\n' "${managed_marker_end}"
-    } >> "${fstab_file}"
-fi
+fstab_content="$(mktemp)"
+trap 'rm -f "${fstab_content}"' EXIT
+printf '%s\n' "${fstab_entry}" > "${fstab_content}"
+kf_replace_managed_block "${fstab_file}" "${managed_marker_begin}" \
+    "${managed_marker_end}" "${fstab_content}" || {
+    log_error "NFS fstab 受管标记不完整或配置写入失败"
+    exit 1
+}
 expected_source="${KF_NFS_SERVER}:${KF_NFS_SHARE_PATH}"
 if mountpoint -q -- "${KF_NFS_WORKER_MOUNT_PATH}"; then
     mounted_source=$(findmnt -n -o SOURCE --target "${KF_NFS_WORKER_MOUNT_PATH}" 2>/dev/null || true)

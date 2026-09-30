@@ -3,6 +3,7 @@ package io.kubefoundry.installer;
 import io.kubefoundry.cluster.Cluster;
 import io.kubefoundry.cluster.Node;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -68,6 +69,27 @@ class RuntimeEnvRendererTest {
                 "export KF_PRIMARY_CONTROL_HOSTNAME='cp-a'",
                 "export KF_PRIMARY_CONTROL_IP='10.0.0.30'")
                 .doesNotContain("export KF_PRIMARY_CONTROL_HOSTNAME='duplicate-control'");
+    }
+
+    @Test
+    void rendersOnlyWhitelistedMinioResourceValuesWithoutCredentials() {
+        Cluster cluster = new Cluster("minio-runtime");
+        Node node = node(cluster, "cp-a", "10.0.0.1", "control_plane", "amd64");
+        RuntimeSettings settings = new RuntimeSettings(Map.of(), Map.of(
+                "minio_pvc_size", "20Gi",
+                "minio_cpu_request", "500m",
+                "minio_cpu_limit", "2",
+                "minio_memory_request", "1Gi",
+                "minio_memory_limit", "4Gi"), Map.of());
+
+        String rendered = new RuntimeEnvRenderer().render(cluster, List.of(node), node, settings);
+
+        assertThat(rendered).contains(
+                "export KF_MINIO_PVC_SIZE='20Gi'",
+                "export KF_MINIO_CPU_REQUEST='500m'",
+                "export KF_MINIO_MEMORY_LIMIT='4Gi'")
+                .doesNotContainIgnoringCase("credential")
+                .doesNotContainIgnoringCase("secret");
     }
 
     static Node node(

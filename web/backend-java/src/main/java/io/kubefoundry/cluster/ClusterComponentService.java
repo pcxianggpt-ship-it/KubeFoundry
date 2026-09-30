@@ -47,10 +47,14 @@ public class ClusterComponentService {
         List<GroupResponse> groups = KubemateComponentCatalog.GROUPS.stream().map(definition -> {
             ClusterComponent component = configured.get(definition.key());
             ClusterComponentState state = actual.get(definition.key());
+            Map<String, Object> config = parseConfig(component == null ? "{}" : component.getConfigJson());
+            if (MinioComponentConfiguration.GROUP_KEY.equals(definition.key())) {
+                config = MinioComponentConfiguration.validate(config);
+            }
             return new GroupResponse(definition.key(), definition.name(),
                     component != null && component.isEnabled(), definition.available(), definition.components(),
                     state == null ? ClusterComponentState.NOT_INSTALLED : state.getStatus(),
-                    parseConfig(component == null ? "{}" : component.getConfigJson()));
+                    config);
         }).toList();
         return new ComponentsResponse(cluster.getComponentConfigVersion(), cluster.getComponentPrecheckStatus(), groups);
     }
@@ -130,6 +134,9 @@ public class ClusterComponentService {
 
     private String validateConfig(KubemateComponentCatalog.Group definition, Map<String, Object> config, boolean enabled) {
         Map<String, Object> values = config == null ? Map.of() : new LinkedHashMap<>(config);
+        if (MinioComponentConfiguration.GROUP_KEY.equals(definition.key())) {
+            return writeConfig(MinioComponentConfiguration.validate(values));
+        }
         if (!"nfs".equals(definition.key())) {
             if (!values.isEmpty()) throw invalid(definition.key() + " 组件组暂不接受配置字段");
             return writeConfig(values);

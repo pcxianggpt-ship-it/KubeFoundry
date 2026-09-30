@@ -1,0 +1,654 @@
+---
+apiVersion: a3cloudkm.amarsoft.com/v1alpha1
+kind: KMUser
+metadata:
+  name: admin
+spec:
+  label: 管理员
+  password: 06d220a9bc87f978ee7b9e31529bfd19e00e1dac4700658ee96e33873ca7
+  status: '1'
+  roles:
+    - system
+    - operator
+    - deployment
+---
+#kubemate账号角色
+apiVersion: a3cloudkm.amarsoft.com/v1alpha1
+kind: KMRole
+metadata:
+  name: system
+spec:
+  label: 管理
+  status: '1'
+  nodelete: true
+  rights:
+    - group: 系统管理-用户管理
+      labels:
+        - 用户列表
+        - 启用用户
+        - 禁用用户
+        - 密码重置
+        - 新建用户
+        - 删除用户
+        - 修改用户
+    - group: 系统管理-角色管理
+      labels:
+        - 角色列表
+        - 角色详情
+        - 新增角色
+        - 更新角色
+        - 删除角色
+        - 权限列表
+---
+#kubemate账号角色
+apiVersion: a3cloudkm.amarsoft.com/v1alpha1
+kind: KMRole
+metadata:
+  name: deployment
+spec:
+  nodelete: true
+  label: 项目部署
+  rights:
+    - group: 集群监控
+      labels:
+        - 事件列表
+        - 集群状态
+        - yaml部署
+    - group: 集群监控-集群信息-命名空间
+      labels:
+        - 命名空间列表
+        - 命名空间名称列表
+        - 命名空间详情
+        - 命名空间详情导出
+        - 更新容器资源限制
+        - 获取资源限制
+        - 导出所有资源
+    - group: 集群监控-工作负载-无状态发布
+      labels:
+        - 列表
+        - 部署详情
+        - 修改期望部署副本
+        - 部署详情导出
+        - 检查无状态部署是否存在
+        - 创建无状态部署
+        - 批量删除
+        - 更新
+        - 历史版本
+        - 历史版本详情
+        - 版本回退
+        - 自动伸缩
+    - group: 集群监控-工作负载-有状态部署
+      labels:
+        - 列表
+        - 部署详情
+        - 修改期望部署副本
+        - 部署详情导出
+        - 批量删除
+        - 更新
+        - 历史版本
+        - 历史版本详情
+        - 版本回退
+        - 创建部署
+    - group: 集群监控-工作负载-守护进程
+      labels:
+        - 列表
+        - 部署详情
+        - 部署详情导出
+        - 批量删除
+        - 更新
+        - 历史版本
+        - 历史版本详情
+        - 版本回退
+        - 创建部署
+    - group: 集群监控-工作负载-任务
+      labels:
+        - 列表
+        - 详情
+        - 导出
+        - 批量删除
+        - 更新
+        - 创建
+    - group: 集群监控-工作负载-定时任务
+      labels:
+        - 列表
+        - 详情
+        - 导出
+        - 根据定时任务查找任务列表
+        - 批量删除
+        - 更新
+        - 创建
+    - group: 集群监控-工作负载-容器荚
+      labels:
+        - 列表
+        - 状态
+        - 详情
+        - 删除
+        - 查看容器日志
+        - 导出
+        - 监控
+        - 高耗能容器荚
+    - group: 集群监控-工作负载-服务
+      labels:
+        - 列表
+        - 根据服务查询部署列表
+        - 根据服务查询容器荚列表
+        - 详情
+        - 导出
+        - 注解列表
+        - 注解修改
+        - 批量删除
+        - 更新
+        - 创建
+    - group: 集群监控-集群信息-应用路由配置
+      labels:
+        - 列表
+        - 详情
+        - 导出
+        - 批量删除
+        - 更新
+        - 创建
+    - group: 集群监控-集群信息-Traefik路由配置
+      labels:
+        - 列表
+        - 详情
+        - 导出
+        - 新增
+        - 更新
+        - 批量删除
+    - group: 集群监控-集群信息-配置字典
+      labels:
+        - 列表
+        - 详情
+        - 读取配置字典值
+        - 导出
+        - 配置字典详细列表
+        - 批量删除
+        - 更新
+        - 新增
+    - group: 集群监控-集群信息-保密配置
+      labels:
+        - 列表
+        - 详情
+        - 导出
+        - 查询工作空间下的镜像仓库配置
+        - 获取指定命名空间下的保密字典列表
+        - 批量删除
+        - 更新
+        - 新增
+    - group: 应用监控-应用观测-服务清单
+      labels:
+        - 服务列表
+        - api列表
+        - 慢方法列表
+        - api访问次数
+    - group: 应用监控-日志管理-日志查询
+      labels:
+        - 日志查询
+        - 日志格式列表
+        - ELK日志查询
+        - ELK dashboard
+        - ELK索引管理
+    - group: 应用监控-流控跟踪-网关流量
+      labels:
+        - 路由列表
+        - 网关聚合服务列表
+        - 后端服务详情
+        - 网关聚合服务详情
+        - 新增网关聚合服务
+        - 更新网关聚合服务
+        - 删除网关聚合服务
+        - 网关中间件列表
+        - 网关中间件明细
+        - 网关中间件选择
+        - 新增网关中间件
+        - 更新网关中间件
+        - 删除网关中间件
+        - 统计特征信息
+        - 统计http条件请求
+        - 统计http请求
+    - group: 应用监控-流控跟踪-应用拓扑
+      labels:
+        - 拓扑图
+    - group: 应用监控-流控跟踪-服务网格
+      labels:
+        - 聚合服务列表
+        - 聚合服务详情
+        - 新增聚合服务
+        - 更新聚合服务
+        - 删除聚合服务
+    - group: 集群监控-存储-存储卷
+      labels:
+        - 查询命名空间下的PVC列表
+        - 存储请求列表
+        - 存储请求详情
+        - 存储请求导出
+        - 存储请求批量删除
+        - 存储请求更新
+        - 存储请求新增
+        - 存储卷列表
+        - 存储卷详情
+        - 存储卷导出
+    - group: 集群监控-存储-存储类型
+      labels:
+        - 列表
+        - 详情
+        - 导出
+  status: '1'
+---
+#kubemate账号角色
+apiVersion: a3cloudkm.amarsoft.com/v1alpha1
+kind: KMRole
+metadata:
+  name: operator
+spec:
+  label: 运维
+  nodelete: true
+  status: '1'
+  rights:
+    - group: 集群监控
+      labels:
+        - 事件列表
+        - 集群状态
+        - yaml部署
+    - group: 集群监控-集群信息-节点
+      labels:
+        - 节点列表
+        - 节点详情
+        - 节点监控详情
+    - group: 集群监控-集群信息-命名空间
+      labels:
+        - 命名空间列表
+        - 命名空间名称列表
+        - 命名空间详情
+        - 命名空间详情导出
+        - 查询命名空间下的资源限制信息
+        - 删除
+        - 创建
+        - 更新容器资源限制
+        - 获取资源限制
+    - group: 集群监控-工作负载-无状态发布
+      labels:
+        - 列表
+        - 部署详情
+        - 修改期望部署副本
+        - 部署详情导出
+        - 检查无状态部署是否存在
+        - 批量删除
+        - 更新
+        - 历史版本
+        - 历史版本详情
+        - 版本回退
+        - 自动伸缩
+    - group: 集群监控-工作负载-有状态部署
+      labels:
+        - 列表
+        - 部署详情
+        - 修改期望部署副本
+        - 部署详情导出
+        - 批量删除
+        - 更新
+        - 历史版本
+        - 历史版本详情
+        - 版本回退
+    - group: 集群监控-工作负载-守护进程
+      labels:
+        - 列表
+        - 部署详情
+        - 部署详情导出
+        - 批量删除
+        - 更新
+        - 历史版本
+        - 历史版本详情
+        - 版本回退
+    - group: 集群监控-工作负载-任务
+      labels:
+        - 列表
+        - 详情
+        - 导出
+        - 批量删除
+        - 更新
+    - group: 集群监控-工作负载-定时任务
+      labels:
+        - 列表
+        - 详情
+        - 导出
+        - 根据定时任务查找任务列表
+        - 批量删除
+        - 更新
+    - group: 集群监控-工作负载-容器荚
+      labels:
+        - 列表
+        - 状态
+        - 详情
+        - 删除
+        - 查看容器日志
+        - 导出
+        - 监控
+        - 高耗能容器荚
+        - 删除已停止容器荚
+    - group: 集群监控-工作负载-服务
+      labels:
+        - 列表
+        - 根据服务查询部署列表
+        - 根据服务查询容器荚列表
+        - 详情
+        - 导出
+        - 注解列表
+        - 注解修改
+        - 批量删除
+        - 更新
+    - group: 集群监控-集群信息-应用路由配置
+      labels:
+        - 列表
+        - 详情
+        - 导出
+        - 批量删除
+        - 更新
+    - group: 集群监控-集群信息-Traefik路由配置
+      labels:
+        - 列表
+        - 详情
+        - 导出
+        - 新增
+        - 更新
+        - 批量删除
+    - group: 集群监控-集群信息-配置字典
+      labels:
+        - 列表
+        - 详情
+        - 读取配置字典值
+        - 导出
+        - 配置字典详细列表
+        - 批量删除
+        - 更新
+        - 新增
+    - group: 集群监控-集群信息-保密配置
+      labels:
+        - 列表
+        - 详情
+        - 导出
+        - 查询工作空间下的镜像仓库配置
+        - 获取指定命名空间下的保密字典列表
+        - 批量删除
+        - 更新
+        - 新增
+    - group: 数据卷声明
+      labels:
+        - 查询命名空间下的PVC列表
+
+    - group: 应用监控-应用观测-服务清单
+      labels:
+        - 服务列表
+        - api列表
+        - 慢方法列表
+        - api访问次数
+    - group: 应用监控-应用观测-服务监控
+      labels:
+        - 端点列表
+        - 实例列表
+        - topn查询
+        - 百分比响应延时
+        - 服务响应时间热力分布图
+        - 针对服务的图表列表信息
+        - 针对服务实例的图表列表信息
+        - 针对服务方法的图表列表信息
+    - group: 应用监控-应用观测-服务告警
+      labels:
+        - 服务告警列表
+    - group: 应用监控-日志管理-日志查询
+      labels:
+        - 日志查询
+        - 日志格式列表
+        - ELK日志查询
+        - ELK dashboard
+        - ELK索引管理
+    - group: 应用监控-流控跟踪-网关流量
+      labels:
+        - 路由列表
+        - 网关聚合服务列表
+        - 后端服务详情
+        - 网关聚合服务详情
+        - 新增网关聚合服务
+        - 更新网关聚合服务
+        - 删除网关聚合服务
+        - 网关中间件列表
+        - 网关中间件明细
+        - 网关中间件选择
+        - 新增网关中间件
+        - 更新网关中间件
+        - 删除网关中间件
+        - 统计特征信息
+        - 统计http条件请求
+        - 统计http请求
+    - group: 应用监控-流控跟踪-应用拓扑
+      labels:
+        - 拓扑图
+    - group: 应用监控-流控跟踪-链路追踪
+      labels:
+        - 数据列表
+        - 链路追踪数据
+
+    - group: 监控告警
+      labels:
+        - 告警规则+告警触发结果
+        - 异常监控目标
+    - group: 应用监控-流控跟踪-服务网格
+      labels:
+        - 聚合服务列表
+        - 聚合服务详情
+        - 新增聚合服务
+        - 更新聚合服务
+        - 删除聚合服务
+    - group: 集群监控-集群信息-自定义资源
+      labels:
+        - 资源定义列表
+        - 资源定义详情
+        - 资源定义删除
+        - 资源定义导出
+        - 资源定义创建
+        - 资源定义更新
+        - 资源对象列表
+        - 资源对象详情
+        - 资源对象删除
+        - 资源对象导出
+        - 资源对象创建
+        - 资源对象更新
+    - group: 集群监控-存储-存储类型
+      labels:
+        - 列表
+        - 详情
+        - 导出
+    - group: 集群监控-存储-存储卷
+      labels:
+        - 查询命名空间下的PVC列表
+        - 存储请求列表
+        - 存储请求详情
+        - 存储请求导出
+        - 存储请求批量删除
+        - 存储请求更新
+        - 存储请求新增
+        - 存储卷列表
+        - 存储卷详情
+        - 存储卷导出
+# crate kubemate namespace
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubemate-opt
+status:
+  phase: Active
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: skywalking
+  namespace: kubemate-system
+  annotations:
+    kubesphere.io/creator: admin
+data:
+  SW_AGENT_COLLECTOR_BACKEND_SERVICES: 'skywalking-oap.kubemate-system:11800'
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: kubemate-application
+  namespace: kubemate-system
+  annotations:
+    kubesphere.io/creator: admin
+data:
+  application-docker.yml: |-
+
+    k8s:
+      config: /amarsoft/metrics/etc/k8s_config.yml
+
+      prometheus:
+        api-url: http://prometheus-k8s.kubemate-system:9090
+        pod-url: http://prometheus-k8s.kubemate-system:9090 #pod监控用到的prometheus
+        step: 60 #采集间隔秒数
+        job-name: jvm
+        disk-root: /data
+      traefik:
+        api-url: http://traefik.kubemate-system
+        prometheus-job-name: traefik
+
+    app:
+      k8sgateway:
+        enable: true
+      kibana:
+        ui-url: http://kibana.kubemate-system:30056
+        enable: false
+      loki:
+        api-url: http://loki-read.kubemate-system:3100
+        enable: true
+        fmts:
+          - name: ALS9
+            label: ALS9
+            param-labels: '{"USER_ID":"用户编号","LEVEL":"级别","WASTE":"耗时(ms)"}'
+            #param-codes:定义数据比较格式：格式为key:value,value为对象时当作下拉框选择，value==lt表示<,gt表示>,lte表示<=,gte表示>=,lg表示value<? and value>?,lge表示value<=? and value>=?
+            param-codes: '{"USER_ID":"exp","WASTE":"gte","LEVEL":{"INFO":"Info","DEBUG":"Debug","WARN":"Warn","ERROR":"Error","TRACE":"Trace","FATAL":"Fatal"}}'
+            #exp: "[0-9:\\\\s\\\\-/]+\\\\|(?P<USER_ID>[0-9a-zA-Z]+)\\\\|(?P<APP>[0-9a-zA-Z\\\\-]+)\\\\|(?P<LEVEL>[a-zA-Z\\\\s]+)"
+            exp: "[0-9:\\\\-/]+\\\\s(?P<WASTE>[0-9]+)\\\\|(?P<USER_ID>[0-9a-zA-Z]+)\\\\|(?P<APP>[0-9a-zA-Z\\\\-]+)\\\\|(?P<LEVEL>[a-zA-Z\\\\s]+)"
+      skywalking:
+        api-url: http://skywalking-oap.kubemate-system:12800
+        utc0: true #skywalking默认时间为utc0,true的时候时间需要减8小时
+        service-match: __SERVICE_NAME.__NAMESPACE #skywalking服务名匹配
+      als:
+        api:
+          url: http://{SERVICE}.{NAMESPACE}:{PORT}/{SERVICE}/public/geturl
+          header-name: User-Id
+          header-value: admin
+
+    system:
+      jwt:
+        secret: kubemate@amarsoft.com
+      namespace: kubemate-system
+      pwd:
+        algorithm: sha256
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: kubemate-appx
+  namespace: kubemate-system
+  labels:
+    app: kubemate-app
+  annotations:
+    deployment.kubernetes.io/revision: '51'
+    kubesphere.io/creator: admin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kubemate-app
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: kubemate-app
+      annotations:
+        logging.kubesphere.io/logsidecar-config: '{}'
+    spec:
+      hostAliases:
+      - ip: 192.168.0.225
+        hostnames:
+          - "k8sc1"
+      volumes:
+        - name: kubemate-etc
+          configMap:
+            name: kubemate-etc
+            items:
+              - key: k8s_config.yml
+                path: k8s_config.yml
+            defaultMode: 420
+        - name: kubemate-application
+          configMap:
+            name: kubemate-application
+            items:
+              - key: application-docker.yml
+                path: application-docker.yml
+            defaultMode: 420
+      containers:
+        - name: kubemate
+          image: registry:5000/amarsoft/kubemate:1.30.2.7
+          ports:
+            - name: http-a3metrics
+              containerPort: 8083
+              protocol: TCP
+          resources:
+            limits:
+              cpu: 500m
+              memory: 2Gi
+            requests:
+              cpu: 100m
+              memory: 1Gi
+          volumeMounts:
+            - name: kubemate-etc
+              readOnly: true
+              mountPath: /amarsoft/metrics/etc
+            - name: kubemate-application
+              readOnly: true
+              mountPath: /amarsoft/metrics/application-docker.yml
+              subPath: application-docker.yml
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          imagePullPolicy: IfNotPresent
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      dnsPolicy: ClusterFirst
+      serviceAccountName: default
+      serviceAccount: default
+      securityContext: {}
+      schedulerName: default-scheduler
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
+      maxSurge: 25%
+  revisionHistoryLimit: 10
+  progressDeadlineSeconds: 600
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: kubemate-app
+  namespace: kubemate-system
+  labels:
+    app: kubemate-app
+  annotations:
+    kubesphere.io/creator: admin
+    traefik.ingress.kubernetes.io/affinity: 'true'
+    traefik.ingress.kubernetes.io/session-cookie-name: traefik-cookie
+spec:
+  ports:
+    - name: http-kubemate
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+      nodePort: 30088
+  selector:
+    app: kubemate-app
+  type: NodePort
+  sessionAffinity: None
+  externalTrafficPolicy: Cluster
+#------finish install kubemate------

@@ -37,6 +37,11 @@ public class RuntimeEnvRenderer {
         values.put("KF_K8S_VERSION", cluster.getKubernetesVersion());
         values.put("KF_KUBECONFIG", "/etc/kubernetes/admin.conf");
         values.put("KF_KUBELET_ROOT", settings.kubeletRoot());
+        values.put("KF_MINIO_CPU_LIMIT", settings.envValue("minio_cpu_limit"));
+        values.put("KF_MINIO_CPU_REQUEST", settings.envValue("minio_cpu_request"));
+        values.put("KF_MINIO_MEMORY_LIMIT", settings.envValue("minio_memory_limit"));
+        values.put("KF_MINIO_MEMORY_REQUEST", settings.envValue("minio_memory_request"));
+        values.put("KF_MINIO_PVC_SIZE", settings.envValue("minio_pvc_size"));
         values.put("KF_RESET_COMPONENT_GROUPS", settings.envValue("reset_component_groups"));
         values.put("KF_RESET_HELM_RELEASE_CHECKSUMS", settings.envValue("reset_helm_release_checksums"));
         values.put("KF_NODE_HOSTNAME", node.getHostname());

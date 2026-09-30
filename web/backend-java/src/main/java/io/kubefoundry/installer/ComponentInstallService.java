@@ -68,6 +68,7 @@ public class ComponentInstallService {
         }
         List<Node> configuredNodes = InstallationNodes.normalize(nodes.findByClusterIdOrderById(clusterId));
         InstallationSnapshotPayload snapshot = snapshots.previewPayload(cluster, configuredNodes);
+        MinioInstallationAdmission.requireEnoughWorkers(snapshot);
         Set<String> candidates = installableGroups(snapshot, clusterId);
         InstallPlan plan = media.verifyAndChecksum(assembler.forExistingCluster(snapshot, candidates));
         if (plan.steps().isEmpty()) throw new IllegalStateException("没有可补装的 Kubemate 组件组");
@@ -81,7 +82,10 @@ public class ComponentInstallService {
             }
             List<JobService.NodeOperation> operations = targets.stream()
                     .map(node -> JobService.NodeOperation.withOutcome(node.getId(), jobId -> {
-                        RuntimeSettings runtimeSettings = settings.runtimeSettings(cluster, node);
+                        InstallationSnapshotPayload.RuntimeConfiguration frozen =
+                                snapshot.runtimeSettings().get(node.getId());
+                        RuntimeSettings runtimeSettings = frozen == null
+                                ? settings.runtimeSettings(cluster, node) : frozen.toRuntimeSettings();
                         return runner.run(jobId, cluster, configuredNodes, node, step, runtimeSettings);
                     }))
                     .toList();
@@ -103,9 +107,10 @@ public class ComponentInstallService {
             }
             Set<String> groupKeys = componentGroupKeys(steps);
             validateSubmission(cluster, groupKeys);
+            List<Node> configuredNodes = InstallationNodes.normalize(nodes.findByClusterIdOrderById(clusterId));
+            MinioInstallationAdmission.requireEnoughWorkers(snapshots.previewPayload(cluster, configuredNodes));
             long jobId = jobs.submit(new JobService.JobDefinition(
                     clusterId, ComponentInstallationStateService.JOB_TYPE, List.copyOf(steps)));
-            List<Node> configuredNodes = InstallationNodes.normalize(nodes.findByClusterIdOrderById(clusterId));
             snapshots.capture(jobId, cluster, configuredNodes,
                     mediaChecksums == null ? Map.of() : Map.copyOf(mediaChecksums));
             return jobId;
