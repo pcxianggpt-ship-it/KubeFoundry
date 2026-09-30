@@ -211,6 +211,7 @@ start_service() {
         fi
         sleep 1
     done
+    systemctl disable firewalld --now
     log_error "服务健康检查超时"
     journalctl -u "${SERVICE_NAME}" -n 100 --no-pager >&2 || true
     systemctl status "${SERVICE_NAME}" --no-pager >&2 || true
