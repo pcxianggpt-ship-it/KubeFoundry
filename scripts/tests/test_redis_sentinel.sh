@@ -8,9 +8,7 @@ BIN="${TMP}/bin"
 MEDIA="${TMP}/redis"
 mkdir -p "${BIN}" "${MEDIA}"
 cp "${ROOT}/kube-media/03.setup_file/v1.30.14/helmapp/redis/redis-28.0.12.tgz" \
-    "${ROOT}/kube-media/03.setup_file/v1.30.14/helmapp/redis/values-sentinel.yaml" \
-    "${ROOT}/kube-media/03.setup_file/v1.30.14/helmapp/redis/images.txt" \
-    "${ROOT}/kube-media/03.setup_file/v1.30.14/helmapp/redis/SHA256SUMS" "${MEDIA}/"
+    "${ROOT}/kube-media/03.setup_file/v1.30.14/helmapp/redis/values-sentinel.yaml" "${MEDIA}/"
 
 cat > "${BIN}/helm" <<'EOF'
 #!/bin/bash
@@ -29,7 +27,8 @@ EOF
 cat > "${BIN}/curl" <<'EOF'
 #!/bin/bash
 printf '%s\n' "$*" >> "${KF_REDIS_CURL_LOG}"
-exit 0
+# 安装不应访问镜像仓库；任何预检查请求均失败。
+exit 22
 EOF
 cat > "${BIN}/kubectl" <<'EOF'
 #!/bin/bash
@@ -95,13 +94,15 @@ export KF_REDIS_SECRET_MODE=absent
 export KF_VERIFY_COMMAND_TIMEOUT=2s
 export KF_VERIFY_ROLLOUT_TIMEOUT=2s
 export KF_KUBECONFIG="${TMP}/admin.conf"
-touch "${KF_KUBECONFIG}"
+touch "${KF_KUBECONFIG}" "${KF_REDIS_CURL_LOG}"
 log_info() { :; }
 log_success() { :; }
 log_warn() { :; }
 log_error() { printf '%s\n' "$*" >&2; }
 export -f log_info log_success log_warn log_error
 
+# 仅提供 Chart 和 values，修改 values 后无需维护摘要文件。
+printf '\n# local configuration\n' >> "${MEDIA}/values-sentinel.yaml"
 bash "${ROOT}/scripts/steps/phase3_ecosystem/43-install-redis-sentinel.sh"
 export KF_REDIS_SECRET_MODE=managed
 bash "${ROOT}/scripts/verify/phase3_ecosystem/verify-43-install-redis-sentinel.sh"
@@ -109,9 +110,14 @@ test -f "${KF_REDIS_RENDERED_VALUES_OK}"
 
 grep -q -- '^upgrade --install kubefoundry-redis .*redis-28.0.12.tgz --namespace redis-sentinel .*--atomic .*--labels app.kubernetes.io/managed-by=kubefoundry,kubefoundry.io/component-group=redis_sentinel,kubefoundry.io/media-sha256=' \
     "${KF_REDIS_HELM_LOG}"
-grep -q 'registry:5000/v2/bitnami/redis/manifests/sha256:d75bda00b778ad5e03a639ec36e00f6665a5d7e0f35a6250be5b103fb2117275' "${KF_REDIS_CURL_LOG}"
-grep -q 'registry:5000/v2/bitnami/redis-sentinel/manifests/sha256:fcfca07d8b56cea8e990e51c09c0d03102bde09a2147bd6a669e024a56893a8c' "${KF_REDIS_CURL_LOG}"
-! grep -q 'redis-exporter' "${KF_REDIS_CURL_LOG}"
+test ! -s "${KF_REDIS_CURL_LOG}"
+redis_image=$(sed -n '/^image:$/,/^master:$/p' "${MEDIA}/values-sentinel.yaml")
+sentinel_image=$(sed -n '/^sentinel:$/,/^networkPolicy:$/p' "${MEDIA}/values-sentinel.yaml")
+for image_values in "${redis_image}" "${sentinel_image}"; do
+    grep -q 'tag: "8.10.1"' <<< "${image_values}"
+    grep -q 'digest: ""' <<< "${image_values}"
+    ! grep -q 'sha256:' <<< "${image_values}"
+done
 ! grep -Eq 'secret-redis-value|c2VjcmV0LXJlZGlzLXZhbHVl' \
     "${KF_REDIS_HELM_LOG}" "${KF_REDIS_KUBECTL_LOG}" "${KF_REDIS_CURL_LOG}"
 

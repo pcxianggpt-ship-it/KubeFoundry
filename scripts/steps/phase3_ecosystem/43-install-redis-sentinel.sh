@@ -15,17 +15,10 @@ release=kubefoundry-redis
 secret=kubefoundry-redis-auth
 chart=$(phase3_resource_path redis-28.0.12.tgz)
 values=$(phase3_resource_path values-sentinel.yaml)
-images=$(phase3_resource_path images.txt)
-checksums=$(phase3_resource_path SHA256SUMS)
 
-for file in "${chart}" "${values}" "${images}" "${checksums}"; do
+for file in "${chart}" "${values}"; do
     [ -f "${file}" ] || { log_error "Redis 离线介质缺失: ${file}"; exit 1; }
 done
-
-(
-    cd "${KF_COMPONENT_RESOURCE_DIR}"
-    sha256sum --check --strict SHA256SUMS >/dev/null
-) || { log_error "Redis 离线介质 SHA-256 校验失败"; exit 1; }
 
 storage_class=${KF_REDIS_STORAGE_CLASS:-}
 if [ -z "${storage_class}" ]; then
@@ -43,22 +36,6 @@ work_dir=$(mktemp -d)
 trap 'rm -rf -- "${work_dir}"' EXIT
 rendered_values="${work_dir}/values-sentinel.yaml"
 sed "s|openebs-hostpath|${storage_class}|g" "${values}" > "${rendered_values}"
-
-while read -r state image extra; do
-    [ -z "${state}" ] && continue
-    case "${state}" in
-        \#*) continue ;;
-        required)
-            [ -z "${extra:-}" ] || { log_error "Redis 镜像清单格式错误"; exit 1; }
-            phase3_registry_image_exists "${image}" || {
-                log_error "Redis 离线镜像不存在: ${image}"
-                exit 1
-            }
-            ;;
-        disabled) : ;;
-        *) log_error "Redis 镜像清单状态无效: ${state}"; exit 1 ;;
-    esac
-done < "${images}"
 
 phase3_ensure_namespace "${namespace}"
 

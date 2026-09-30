@@ -1,6 +1,6 @@
 # 状态 镜像；required 项必须在离线仓库中存在，disabled 项由当前 values 显式关闭。
-required registry:5000/bitnami/redis@sha256:d75bda00b778ad5e03a639ec36e00f6665a5d7e0f35a6250be5b103fb2117275
-required registry:5000/bitnami/redis-sentinel@sha256:fcfca07d8b56cea8e990e51c09c0d03102bde09a2147bd6a669e024a56893a8c
+required registry:5000/bitnami/redis:8.10.1
+required registry:5000/bitnami/redis-sentinel:8.10.1
 disabled registry:5000/bitnami/redis-exporter@sha256:09233726b19097ccbeb7a90347a7a0975c015de9efafaf2ac90d62dae241ca67
 disabled registry:5000/bitnami/os-shell@sha256:52f04d8e29dc3d77929fca8d75890c4cabe6182f650e0e921057a744559a9736
 disabled registry:5000/bitnami/kubectl@sha256:65447dcbb2813878e22265949a4ba4cca02f8d008ff3fe66a25354b511f28015

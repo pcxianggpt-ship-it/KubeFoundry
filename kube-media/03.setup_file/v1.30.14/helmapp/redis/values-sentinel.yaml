@@ -2,7 +2,7 @@ global:
   imageRegistry: registry:5000
   defaultStorageClass: openebs-hostpath
   security:
-    # 私有仓库改写会触发 Bitnami 的仓库名检查；镜像内容仍由下方 OCI digest 固定。
+    # 私有仓库改写会触发 Bitnami 的仓库名检查；运行镜像使用私有仓库中的固定版本标签。
     allowInsecureImages: true
 
 fullnameOverride: redis
@@ -24,8 +24,8 @@ auth:
 image:
   registry: registry-1.docker.io
   repository: bitnami/redis
-  tag: latest
-  digest: sha256:d75bda00b778ad5e03a639ec36e00f6665a5d7e0f35a6250be5b103fb2117275
+  tag: "8.10.1"
+  digest: ""
   pullPolicy: IfNotPresent
 
 master:
@@ -63,8 +63,8 @@ sentinel:
   image:
     registry: registry-1.docker.io
     repository: bitnami/redis-sentinel
-    tag: latest
-    digest: sha256:fcfca07d8b56cea8e990e51c09c0d03102bde09a2147bd6a669e024a56893a8c
+    tag: "8.10.1"
+    digest: ""
     pullPolicy: IfNotPresent
   masterSet: kubefoundry-master
   quorum: 2
