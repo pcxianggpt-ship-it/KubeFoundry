@@ -61,19 +61,19 @@ case "${args}" in
     done
     ;;
   *"label --overwrite"*) : ;;
-  *"get statefulset kubefoundry-redis-node"*"spec.replicas"*) printf '3|3' ;;
-  *"get statefulset kubefoundry-redis-node"*) : ;;
-  *"rollout status statefulset/kubefoundry-redis-node"*) : ;;
+  *"get statefulset redis-node"*"spec.replicas"*) printf '3|3' ;;
+  *"get statefulset redis-node"*) : ;;
+  *"rollout status statefulset/redis-node"*) : ;;
   *"get pods"*"app.kubernetes.io/instance=kubefoundry-redis"*)
-    printf 'kubefoundry-redis-node-0\nkubefoundry-redis-node-1\nkubefoundry-redis-node-2\n' ;;
+    printf 'redis-node-0\nredis-node-1\nredis-node-2\n' ;;
   *"get pvc"*"app.kubernetes.io/instance=kubefoundry-redis"*)
     printf 'Bound|nfs-storage\nBound|nfs-storage\nBound|nfs-storage\n' ;;
   *"exec -i"*"SENTINEL master kubefoundry-master"*)
-    printf 'name\nkubefoundry-master\nip\nkubefoundry-redis-node-0.kubefoundry-redis-headless.redis-sentinel.svc.cluster.local\nport\n6379\nquorum\n2\n' ;;
+    printf 'name\nkubefoundry-master\nip\nredis-node-0.redis-headless.redis-sentinel.svc.cluster.local\nport\n6379\nquorum\n2\n' ;;
   *"exec -i"*"SENTINEL get-master-addr-by-name kubefoundry-master"*)
-    printf 'kubefoundry-redis-node-0.kubefoundry-redis-headless.redis-sentinel.svc.cluster.local\n6379\n' ;;
-  *"exec -i kubefoundry-redis-node-0"*" ROLE"*) printf 'master\n' ;;
-  *"exec -i kubefoundry-redis-node-1"*" ROLE"*|*"exec -i kubefoundry-redis-node-2"*" ROLE"*)
+    printf 'redis-node-0.redis-headless.redis-sentinel.svc.cluster.local\n6379\n' ;;
+  *"exec -i redis-node-0"*" ROLE"*) printf 'master\n' ;;
+  *"exec -i redis-node-1"*" ROLE"*|*"exec -i redis-node-2"*" ROLE"*)
     printf 'slave\n' ;;
 esac
 exit 0
@@ -122,6 +122,7 @@ if bash "${ROOT}/scripts/steps/phase3_ecosystem/43-install-redis-sentinel.sh" >/
 fi
 
 grep -q '^architecture: replication$' "${MEDIA}/values-sentinel.yaml"
+grep -q '^fullnameOverride: redis$' "${MEDIA}/values-sentinel.yaml"
 grep -q '^  replicaCount: 3$' "${MEDIA}/values-sentinel.yaml"
 grep -q '^  quorum: 2$' "${MEDIA}/values-sentinel.yaml"
 grep -q '^    storageClass: openebs-hostpath$' "${MEDIA}/values-sentinel.yaml"

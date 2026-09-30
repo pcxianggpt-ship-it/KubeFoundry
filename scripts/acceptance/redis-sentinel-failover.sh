@@ -83,7 +83,7 @@ done
     exit 1
 }
 redis_cli "${new_master_pod}" redis DEL "${key}" >/dev/null
-kubectl rollout status statefulset/kubefoundry-redis-node --namespace "${namespace}" \
+kubectl rollout status statefulset/redis-node --namespace "${namespace}" \
     --timeout="${timeout_seconds}s" >/dev/null
 printf '[SUCCESS] Redis Sentinel 已从 %s 切换到 %s，读写数据保持正常\n' \
     "${old_master_pod}" "${new_master_pod}"

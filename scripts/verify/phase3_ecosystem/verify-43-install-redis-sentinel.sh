@@ -38,13 +38,13 @@ release_status=$(timeout --foreground "${command_timeout}" env KUBECONFIG="${KF_
 printf '%s\n' "${release_status}" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"deployed"' \
     || missing "Redis Helm release 未处于 deployed 状态"
 
-kube "${command_timeout}" get statefulset kubefoundry-redis-node --namespace "${namespace}" \
+kube "${command_timeout}" get statefulset redis-node --namespace "${namespace}" \
     >/dev/null 2>&1 || missing "Redis StatefulSet 不存在"
-kube "${rollout_timeout}" rollout status statefulset/kubefoundry-redis-node \
+kube "${rollout_timeout}" rollout status statefulset/redis-node \
     --namespace "${namespace}" --timeout="${rollout_timeout}" >/dev/null 2>&1 \
     || missing "Redis StatefulSet 未就绪"
 
-replicas=$(kube "${command_timeout}" get statefulset kubefoundry-redis-node \
+replicas=$(kube "${command_timeout}" get statefulset redis-node \
     --namespace "${namespace}" -o jsonpath='{.spec.replicas}|{.status.readyReplicas}' 2>/dev/null)
 [ "${replicas}" = '3|3' ] || missing "Redis 期望 3 个 Pod，当前副本状态为 ${replicas:-未知}"
 

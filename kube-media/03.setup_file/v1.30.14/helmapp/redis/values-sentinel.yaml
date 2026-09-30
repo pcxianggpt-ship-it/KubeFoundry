@@ -5,7 +5,7 @@ global:
     # 私有仓库改写会触发 Bitnami 的仓库名检查；镜像内容仍由下方 OCI digest 固定。
     allowInsecureImages: true
 
-fullnameOverride: kubefoundry-redis
+fullnameOverride: redis
 
 commonLabels:
   app.kubernetes.io/managed-by: kubefoundry

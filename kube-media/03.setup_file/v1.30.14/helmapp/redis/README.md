@@ -2,6 +2,10 @@
 
 运行时固定使用 Bitnami Redis Chart `28.0.12`，应用版本为 Redis `8.10.1`。部署拓扑为一个 master、两个 replica，每个 Redis Pod 同置一个 Sentinel，Sentinel quorum 为 2。
 
+资源名称固定为 StatefulSet `redis-node`、Pod `redis-node-0/1/2`、Service `redis` 和无头 Service `redis-headless`；Helm release 仍为 `kubefoundry-redis`，密码 Secret 仍为 `kubefoundry-redis-auth`。
+
+旧命名 `kubefoundry-redis-node` 的已安装集群不能直接重命名 Pod。此配置会改变 StatefulSet 和 PVC 名称，升级前必须完成数据备份与迁移；不要把普通 Helm 升级当作原地重命名。既有真实环境验收记录保留当时的实际名称。
+
 安装文件：
 
 - `redis-28.0.12.tgz`：冻结的 Bitnami Redis Helm Chart，Apache-2.0 许可证。

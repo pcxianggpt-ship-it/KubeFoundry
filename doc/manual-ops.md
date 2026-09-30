@@ -1120,6 +1120,8 @@ cat /etc/hosts | grep k8sc1
 
 使用 Bitnami Redis Chart `28.0.12` 和 Redis/Sentinel `8.10.1`，部署 3 个 Pod，动态选举 1 主 2 从，Sentinel quorum 为 2，每个 Redis Pod 申请一个 `8Gi` PVC。
 
+Pod 名称为 `redis-node-0/1/2`，Helm release 仍为 `kubefoundry-redis`。已有旧名称 `kubefoundry-redis-node-*` 的集群需先备份并迁移数据；修改此配置会改变 StatefulSet 和 PVC 名称，不能直接通过 Helm 升级完成原地重命名。
+
 以下命令在主控制节点 k8sc1 上逐条执行，某一步报错时先处理再继续。需要提前安装 Helm、配置 `registry:5000` 镜像仓库和 `nfs-storage` 动态存储类；使用其他存储类时替换下方的 `nfs-storage`。
 
 **1. 检查环境和介质**
@@ -1189,7 +1191,7 @@ helm upgrade --install kubefoundry-redis ./redis-28.0.12.tgz \
 ```bash
 helm status kubefoundry-redis -n redis-sentinel
 kubectl get pods,pvc,service -n redis-sentinel
-kubectl rollout status statefulset/kubefoundry-redis-node \
+kubectl rollout status statefulset/redis-node \
     -n redis-sentinel --timeout=180s
 ```
 
@@ -1200,7 +1202,7 @@ kubectl rollout status statefulset/kubefoundry-redis-node \
 进入 Sentinel 客户端，在提示时输入步骤 2 设置的密码：
 
 ```bash
-kubectl exec -it kubefoundry-redis-node-0 -n redis-sentinel -c sentinel -- \
+kubectl exec -it redis-node-0 -n redis-sentinel -c sentinel -- \
     redis-cli -p 26379 --askpass
 ```
 
@@ -1212,10 +1214,10 @@ SENTINEL GET-MASTER-ADDR-BY-NAME kubefoundry-master
 QUIT
 ```
 
-CKQUORUM 应返回 OK；第二条命令返回当前 master 的地址和 6379 端口。从地址中确认 Pod 名，例如 `kubefoundry-redis-node-0`。将下方 Pod 名替换为实际 master，再连接并输入相同密码：
+CKQUORUM 应返回 OK；第二条命令返回当前 master 的地址和 6379 端口。从地址中确认 Pod 名，例如 `redis-node-0`。将下方 Pod 名替换为实际 master，再连接并输入相同密码：
 
 ```bash
-kubectl exec -it kubefoundry-redis-node-0 -n redis-sentinel -c redis -- \
+kubectl exec -it redis-node-0 -n redis-sentinel -c redis -- \
     redis-cli --askpass
 ```
 
@@ -1231,7 +1233,7 @@ QUIT
 
 ROLE 应为 master，SET 返回 OK，GET 返回 manual-ok，DEL 返回 1。
 
-业务客户端使用 Sentinel 模式，集群内发现地址为 `kubefoundry-redis.redis-sentinel.svc.cluster.local:26379`，master 名为 `kubefoundry-master`。Redis 和 Sentinel 使用相同密码。master 会变化，客户端应通过 Sentinel 获取 master；集群外客户端还需要能解析和访问返回的 Pod 地址。
+业务客户端使用 Sentinel 模式，集群内发现地址为 `redis.redis-sentinel.svc.cluster.local:26379`，master 名为 `kubefoundry-master`。Redis 和 Sentinel 使用相同密码。master 会变化，客户端应通过 Sentinel 获取 master；集群外客户端还需要能解析和访问返回的 Pod 地址。
 
 **6. 故障切换演练（仅验收环境，可选）**
 
