@@ -24,7 +24,7 @@ validate_component_groups() {
 validate_release_checksums() {
     local checksums="${KF_RESET_HELM_RELEASE_CHECKSUMS:-}"
     [ -z "${checksums}" ] && return 0
-    [[ "${checksums}" =~ ^(alloy|loki|openebs|nfs-subdir-external-provisioner|kubefoundry-redis)=[0-9a-f]{64}(,(alloy|loki|openebs|nfs-subdir-external-provisioner|kubefoundry-redis)=[0-9a-f]{64})*$ ]] \
+    [[ "${checksums}" =~ ^(alloy|loki|openebs|nfs-subdir-external-provisioner|redis|kubefoundry-redis)=[0-9a-f]{64}(,(alloy|loki|openebs|nfs-subdir-external-provisioner|redis|kubefoundry-redis)=[0-9a-f]{64})*$ ]] \
         || fail "重置 Helm 校验和列表不安全"
 }
 
@@ -105,6 +105,7 @@ export KUBECONFIG
 
 # 仅清理当前安装快照或组件状态明确记录的组，顺序与安装依赖严格相反。
 if group_enabled redis_sentinel; then
+    uninstall_snapshot_release redis redis-sentinel
     uninstall_snapshot_release kubefoundry-redis redis-sentinel
     delete_managed_resources redis_sentinel redis-sentinel
     kubectl delete secret --namespace redis-sentinel \

@@ -31,7 +31,7 @@ export KF_RESET_HELM_LOG="${TMP}/helm.log"
 export KF_RESET_KUBECTL_LOG="${TMP}/kubectl.log"
 export KUBECONFIG="${TMP}/admin.conf"
 export KF_RESET_COMPONENT_GROUPS='nfs,kubemate,traefik,storage_observability,prometheus,redis_sentinel'
-export KF_RESET_HELM_RELEASE_CHECKSUMS='alloy=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,loki=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,openebs=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,nfs-subdir-external-provisioner=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,kubefoundry-redis=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+export KF_RESET_HELM_RELEASE_CHECKSUMS='alloy=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,loki=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,openebs=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,nfs-subdir-external-provisioner=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,redis=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,kubefoundry-redis=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 touch "${KUBECONFIG}"
 log_info() { :; }
 log_success() { :; }
@@ -45,6 +45,7 @@ grep -Fxq 'uninstall loki --namespace kubemate-system --wait --timeout 10m' "${K
 grep -Fxq 'uninstall openebs --namespace kubemate-system --wait --timeout 10m' "${KF_RESET_HELM_LOG}"
 grep -Fxq 'uninstall nfs-subdir-external-provisioner --namespace kubemate-system --wait --timeout 10m' \
     "${KF_RESET_HELM_LOG}"
+grep -Fxq 'uninstall redis --namespace redis-sentinel --wait --timeout 10m' "${KF_RESET_HELM_LOG}"
 grep -Fxq 'uninstall kubefoundry-redis --namespace redis-sentinel --wait --timeout 10m' \
     "${KF_RESET_HELM_LOG}"
 grep -Fq -- '--selector app.kubernetes.io/managed-by=kubefoundry,kubefoundry.io/component-group=redis_sentinel' \

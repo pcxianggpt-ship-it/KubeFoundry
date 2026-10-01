@@ -108,6 +108,6 @@ class ResetPlanFactoryTest {
                 java.util.Set.of("redis_sentinel"));
 
         assertThat(settings.envValue("reset_helm_release_checksums"))
-                .isEqualTo("kubefoundry-redis=" + "c".repeat(64));
+                .isEqualTo("redis=" + "c".repeat(64) + ",kubefoundry-redis=" + "c".repeat(64));
     }
 }

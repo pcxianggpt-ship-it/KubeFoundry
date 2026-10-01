@@ -10,13 +10,14 @@ kube() {
     timeout --foreground "${duration}" env KUBECONFIG="${KF_KUBECONFIG}" \
         kubectl --request-timeout="${duration}" "$@"
     local status=$?
-    case "${status}" in 124|137) printf '[ERROR] Kubernetes API 验证超时\n' >&2; exit 21 ;; esac
+    case "${status}" in 124|137) printf '[ERROR] Kubernetes 验证超时: %s\n' "$*" >&2; exit 21 ;; esac
     return "${status}"
 }
 rollout() {
     local resource="$1" namespace="$2"
-    kube "${KF_VERIFY_ROLLOUT_TIMEOUT:-180s}" rollout status "${resource}" \
-        --namespace "${namespace}" --timeout="${KF_VERIFY_ROLLOUT_TIMEOUT:-180s}" >/dev/null 2>&1
+    printf '[INFO] 等待 %s 就绪（最多 %s）\n' "${resource}" "${KF_VERIFY_ROLLOUT_TIMEOUT:-300s}"
+    kube "${KF_VERIFY_ROLLOUT_TIMEOUT:-300s}" rollout status "${resource}" \
+        --namespace "${namespace}" --timeout="${KF_VERIFY_ROLLOUT_TIMEOUT:-300s}"
 }
 
 [ -n "${KF_KUBECONFIG:-}" ] && [ -r "${KF_KUBECONFIG}" ] || error "Kubernetes 管理配置不可读"

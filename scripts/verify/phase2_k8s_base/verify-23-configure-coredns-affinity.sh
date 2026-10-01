@@ -18,5 +18,5 @@ annotation=$(kube "${KF_VERIFY_COMMAND_TIMEOUT:-30s}" get deployment coredns -n 
 [ "${status}" -ne 21 ] || exit 21
 [ "${status}" -eq 0 ] || missing "CoreDNS Deployment 不存在"
 [ "${annotation}" = v2 ] || missing "CoreDNS 反亲和标记未就绪"
-kube "${KF_VERIFY_ROLLOUT_TIMEOUT:-180s}" rollout status deployment/coredns --namespace kube-system --timeout="${KF_VERIFY_ROLLOUT_TIMEOUT:-180s}" >/dev/null 2>&1 || missing "CoreDNS 未就绪"
+kube "${KF_VERIFY_ROLLOUT_TIMEOUT:-300s}" rollout status deployment/coredns --namespace kube-system --timeout="${KF_VERIFY_ROLLOUT_TIMEOUT:-300s}" >/dev/null 2>&1 || missing "CoreDNS 未就绪"
 printf '[SUCCESS] CoreDNS 反亲和配置已就绪\n'

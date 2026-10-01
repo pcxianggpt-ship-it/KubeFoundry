@@ -11,8 +11,8 @@ if [ -f "./phase3.sh" ]; then source "./phase3.sh"; else source "${PROJECT_ROOT}
 phase3_init
 
 namespace=redis-sentinel
-release=kubefoundry-redis
-secret=kubefoundry-redis-auth
+release=redis
+secret=redis-auth
 chart=$(phase3_resource_path redis-28.0.12.tgz)
 values=$(phase3_resource_path values-sentinel.yaml)
 
@@ -20,22 +20,23 @@ for file in "${chart}" "${values}"; do
     [ -f "${file}" ] || { log_error "Redis 离线介质缺失: ${file}"; exit 1; }
 done
 
-storage_class=${KF_REDIS_STORAGE_CLASS:-}
-if [ -z "${storage_class}" ]; then
-    storage_class=$(kubectl get storageclass \
-        -o jsonpath='{range .items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")]}{.metadata.name}{"\n"}{end}')
+# 旧 release 的数据卷不能通过重命名原地迁移，避免创建第二套 Redis。
+if helm status kubefoundry-redis --namespace "${namespace}" >/dev/null 2>&1; then
+    log_error "检测到旧 Redis release，请先完成数据迁移或重置后再安装新命名版本"
+    exit 1
 fi
-[ "$(printf '%s\n' "${storage_class}" | sed '/^$/d' | wc -l)" -eq 1 ] \
-    && [[ "${storage_class}" =~ ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$ ]] \
+
+storage_class=${KF_REDIS_STORAGE_CLASS:-localpath}
+[[ "${storage_class}" =~ ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$ ]] \
     && kubectl get storageclass "${storage_class}" >/dev/null 2>&1 || {
-    log_error "Redis Sentinel 未找到唯一可用的 StorageClass"
+    log_error "Redis Sentinel 所需 StorageClass 不存在: ${storage_class}"
     exit 1
 }
 
 work_dir=$(mktemp -d)
 trap 'rm -rf -- "${work_dir}"' EXIT
 rendered_values="${work_dir}/values-sentinel.yaml"
-sed "s|openebs-hostpath|${storage_class}|g" "${values}" > "${rendered_values}"
+sed "s|localpath|${storage_class}|g" "${values}" > "${rendered_values}"
 
 phase3_ensure_namespace "${namespace}"
 

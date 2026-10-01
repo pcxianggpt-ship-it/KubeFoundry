@@ -54,8 +54,16 @@ phase3_apply_managed "${resource_dir}/3-prometheus"
 phase3_apply_managed "${resource_dir}/4-nodeExporter"
 phase3_apply_managed "${resource_dir}/5-kubeStateMetrics"
 phase3_apply_managed "${resource_dir}/6-alertmanager"
-kubectl wait --for=create service/alertmanager-operated \
-    --namespace kubemate-system --timeout=60s >/dev/null || {
+# Kubernetes 1.30 的 kubectl 不支持 wait --for=create，轮询 Operator 创建的 Service。
+alertmanager_service_ready=false
+for ((attempt = 0; attempt < 30; attempt++)); do
+    if kubectl get service alertmanager-operated --namespace kubemate-system >/dev/null 2>&1; then
+        alertmanager_service_ready=true
+        break
+    fi
+    sleep 2
+done
+[ "${alertmanager_service_ready}" = true ] || {
     log_error "Alertmanager 无头 Service 未创建"
     exit 1
 }

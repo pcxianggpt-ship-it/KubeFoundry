@@ -1,20 +1,26 @@
-# Redis Sentinel 离线介质
+# Redis Sentinel 离线安装介质
 
-运行时固定使用 Bitnami Redis Chart `28.0.12`，应用版本为 Redis `8.10.1`。部署拓扑为一个 master、两个 replica，每个 Redis Pod 同置一个 Sentinel，Sentinel quorum 为 2。
+使用 Bitnami Chart `28.0.12` 和 Redis、Sentinel `8.10.1` 镜像标签。安装不执行本地 SHA-256 或 Registry 镜像预检查，由 Kubernetes 拉取镜像并检查工作负载状态。
 
-资源名称固定为 StatefulSet `redis-node`、Pod `redis-node-0/1/2`、Service `redis` 和无头 Service `redis-headless`；Helm release 仍为 `kubefoundry-redis`，密码 Secret 仍为 `kubefoundry-redis-auth`。
+## 安装命名与存储
 
-旧命名 `kubefoundry-redis-node` 的已安装集群不能直接重命名 Pod。此配置会改变 StatefulSet 和 PVC 名称，升级前必须完成数据备份与迁移；不要把普通 Helm 升级当作原地重命名。既有真实环境验收记录保留当时的实际名称。
+| 项目 | 配置 |
+| --- | --- |
+| Helm release | `redis` |
+| StatefulSet | `redis-node` |
+| Pod | `redis-node-0/1/2` |
+| PVC | `redis-data-redis-node-0/1/2` |
+| Service / 无头 Service | `redis` / `redis-headless` |
+| 密码 Secret | `redis-auth` |
+| Sentinel masterSet | `redis-master` |
+| 默认 StorageClass | `localpath` |
 
-安装文件：
+`localpath` 是 OpenEBS 本地 hostpath 存储类，采用 `WaitForFirstConsumer` 延迟绑定，由 OpenEBS 安装步骤创建。Redis 不再自动选取集群默认存储类；缺少 `localpath` 时明确报错。需要明确指定其它存储类时可设置 `KF_REDIS_STORAGE_CLASS`。
 
-- `redis-28.0.12.tgz`：冻结的 Bitnami Redis Helm Chart，Apache-2.0 许可证。
-- `values-sentinel.yaml`：KubeFoundry 离线部署参数。
-- `images.txt`：供导入镜像时参考，安装不依赖此文件。
-- `SHA256SUMS`：介质摘要记录，安装不依赖此文件，也不执行本地 SHA-256 校验。
+验证脚本检查新命名的 release、StatefulSet、3 个 Pod、3 个 PVC、密码卷引用、Sentinel quorum 和 1 主 2 从复制拓扑；PVC 必须全部 Bound 且使用要求的存储类。
 
-所有运行时镜像均通过 `global.imageRegistry=registry:5000` 改写到私有仓库，Redis 与 Sentinel 均使用 `8.10.1` 版本标签，values 中显式清空 digest，安装时不再通过 Registry API 预检查镜像是否存在，由 Kubernetes 在实际拉取和 Helm 等待就绪时报告镜像错误。离线镜像经分架构导入或重新推送后，私有仓库的 manifest 摘要可能与上游多架构摘要不同；不得继续使用上游摘要作为本地拉取地址。私有仓库应保持此版本标签内容不变。当前配置只启用 Redis 与 Redis Sentinel 镜像；exporter、volume permissions、sysctl 和 kubectl 辅助镜像均显式关闭。
+## 已有集群
 
-该版本要求 Kubernetes 1.23+ 和 Helm 3.8+，与目标 Kubernetes v1.30.14 兼容。离线仓库须为目标节点架构导入 Redis 与 Sentinel `8.10.1` 镜像；混合架构集群须让该标签包含 linux/amd64 和 linux/arm64 manifest。Redis 7.2.5 已存在官方披露的高危漏洞，因此不再作为本版本准入基线。
+旧安装的 Pod/PVC 和 NFS 数据卷不能通过改名直接迁移。安装脚本遇到旧 release 时停止，避免建立第二套 Redis；应先备份并迁移数据，或执行明确授权的重置再全新安装。重置逻辑兼容新旧 release，并保留原有所有权和快照校验保护。
 
-目录中历史遗留的 `redis-ha/`、`allyaml/` 和 `redis-sentinel-pvc/` 不属于 v0.3.2 运行时方案，安装脚本不会搜索或使用这些目录，避免两套 Chart 混用。
+集群内部的工具所有权标签保持原约定，不影响资源显示名称。

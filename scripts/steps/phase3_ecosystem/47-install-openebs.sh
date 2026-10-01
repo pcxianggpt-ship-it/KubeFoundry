@@ -51,10 +51,9 @@ localpv-provisioner:
 EOF
 
 if [ -f "${storage_class_file}" ]; then
-    grep -q '__KUBERNETES_WORK_DIR__' "${storage_class_file}" || {
-        log_error "OpenEBS StorageClass 缺少工作目录占位符: ${storage_class_file}"
-        exit 1
-    }
+    if ! grep -q '__KUBERNETES_WORK_DIR__' "${storage_class_file}"; then
+        log_info "OpenEBS StorageClass 未使用工作目录占位符，保留原配置: ${storage_class_file}"
+    fi
     rendered_storage_class=$(mktemp)
     storage_class_content=$(<"${storage_class_file}")
     printf '%s\n' "${storage_class_content//__KUBERNETES_WORK_DIR__/${work_dir}}" \

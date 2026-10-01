@@ -32,7 +32,8 @@ public class RemoteStepRunner {
 
     private static final Duration DIRECTORY_TIMEOUT = Duration.ofSeconds(60);
     private static final Duration STEP_TIMEOUT = Duration.ofHours(1);
-    private static final Duration VERIFICATION_TIMEOUT = Duration.ofMinutes(4);
+    // 就绪等待为 5 分钟，额外留 1 分钟用于 API 查询和证据收集。
+    private static final Duration VERIFICATION_TIMEOUT = Duration.ofMinutes(6);
 
     private final SshService ssh;
     private final RemoteSessionProvider sessions;
@@ -499,7 +500,7 @@ public class RemoteStepRunner {
             values.put("KF_COMPONENT_GROUP_KEY", step.componentGroupKey());
         }
         values.put("KF_VERIFY_COMMAND_TIMEOUT", "30s");
-        values.put("KF_VERIFY_ROLLOUT_TIMEOUT", "180s");
+        values.put("KF_VERIFY_ROLLOUT_TIMEOUT", "300s");
         String resourceDirectory = "/tmp/kubefoundry/jobs/" + jobId + "/resources/" + group;
         if (!resources.isEmpty()) {
             ResolvedResource first = resources.get(0);

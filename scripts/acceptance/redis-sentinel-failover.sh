@@ -11,8 +11,8 @@ set -o errexit -o nounset -o pipefail
 : "${KUBECONFIG:=/etc/kubernetes/admin.conf}"
 export KUBECONFIG
 namespace=redis-sentinel
-selector='app.kubernetes.io/instance=kubefoundry-redis,app.kubernetes.io/name=redis'
-master_set=kubefoundry-master
+selector='app.kubernetes.io/instance=redis,app.kubernetes.io/name=redis'
+master_set=redis-master
 timeout_seconds=${KF_REDIS_FAILOVER_TIMEOUT_SECONDS:-240}
 [[ "${timeout_seconds}" =~ ^[0-9]+$ ]] && [ "${timeout_seconds}" -ge 30 ] || {
     printf '[ERROR] KF_REDIS_FAILOVER_TIMEOUT_SECONDS 必须是不小于 30 的整数\n' >&2
@@ -22,7 +22,7 @@ timeout_seconds=${KF_REDIS_FAILOVER_TIMEOUT_SECONDS:-240}
 password_file=$(mktemp)
 trap 'rm -f -- "${password_file}"' EXIT
 chmod 0600 "${password_file}"
-kubectl get secret kubefoundry-redis-auth --namespace "${namespace}" \
+kubectl get secret redis-auth --namespace "${namespace}" \
     -o jsonpath='{.data.redis-password}' | base64 --decode > "${password_file}"
 [ -s "${password_file}" ] || { printf '[ERROR] Redis 密码为空\n' >&2; exit 1; }
 printf '\n' >> "${password_file}"
@@ -48,7 +48,7 @@ printf '%s\n' "${pods[@]}" | grep -Fxq "${old_master_pod}" || {
     exit 1
 }
 
-key="kubefoundry:acceptance:$(date +%s):$$"
+key="redis:acceptance:$(date +%s):$$"
 value=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
 redis_cli "${old_master_pod}" redis SET "${key}" "${value}" >/dev/null
 [ "$(redis_cli "${old_master_pod}" redis GET "${key}")" = "${value}" ] || {

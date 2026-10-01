@@ -76,13 +76,14 @@ class ResetPlanFactory {
         paths.put("loki", "helmapp/loki");
         paths.put("openebs", "helmapp/openebs");
         paths.put("nfs-subdir-external-provisioner", "helmapp/nfs/nfs-subdir-external-provisioner");
+        paths.put("redis", "helmapp/redis");
         paths.put("kubefoundry-redis", "helmapp/redis");
         Set<String> enabled = componentGroups == null ? Set.of() : componentGroups;
         List<String> entries = new java.util.ArrayList<>();
         for (Map.Entry<String, String> entry : paths.entrySet()) {
             String group = switch (entry.getKey()) {
                 case "nfs-subdir-external-provisioner" -> "nfs";
-                case "kubefoundry-redis" -> "redis_sentinel";
+                case "redis", "kubefoundry-redis" -> "redis_sentinel";
                 default -> "storage_observability";
             };
             if (!enabled.contains(group)) continue;

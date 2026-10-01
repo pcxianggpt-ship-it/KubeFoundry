@@ -17,6 +17,7 @@ command -v helm >/dev/null 2>&1 || error "验证工具不可用: helm"
 run env KUBECONFIG="${KF_KUBECONFIG}" kubectl --request-timeout="${KF_VERIFY_COMMAND_TIMEOUT:-30s}" get --raw=/readyz >/dev/null 2>&1; status=$?; check_status "${status}"; [ "${status}" -eq 0 ] || error "Kubernetes API 验证异常"
 run env KUBECONFIG="${KF_KUBECONFIG}" helm status openebs --namespace kubemate-system >/dev/null 2>&1; status=$?; check_status "${status}"; [ "${status}" -eq 0 ] || missing "OpenEBS Helm Release 不存在"
 run env KUBECONFIG="${KF_KUBECONFIG}" kubectl --request-timeout="${KF_VERIFY_COMMAND_TIMEOUT:-30s}" get storageclass openebs-hostpath >/dev/null 2>&1; status=$?; check_status "${status}"; [ "${status}" -eq 0 ] || missing "OpenEBS StorageClass 不存在"
+run env KUBECONFIG="${KF_KUBECONFIG}" kubectl --request-timeout="${KF_VERIFY_COMMAND_TIMEOUT:-30s}" get storageclass localpath >/dev/null 2>&1; status=$?; check_status "${status}"; [ "${status}" -eq 0 ] || missing "Redis 所需 localpath StorageClass 不存在"
 pods=$(run env KUBECONFIG="${KF_KUBECONFIG}" kubectl --request-timeout="${KF_VERIFY_COMMAND_TIMEOUT:-30s}" get pods -n kubemate-system --no-headers 2>/dev/null); status=$?; check_status "${status}"; [ "${status}" -eq 0 ] || error "OpenEBS Pod 查询失败"
 printf '%s\n' "${pods}" | awk '$1 ~ /openebs/ && ($3 == "Running" || $3 == "Completed") { found=1 } END { exit !found }' || missing "OpenEBS Pod 未就绪"
 printf '[SUCCESS] OpenEBS 已就绪\n'

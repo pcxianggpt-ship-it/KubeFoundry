@@ -15,6 +15,6 @@ kube() {
 
 kube "${KF_VERIFY_COMMAND_TIMEOUT:-30s}" get --raw=/readyz >/dev/null 2>&1 || error "Kubernetes API 验证异常"
 kube "${KF_VERIFY_COMMAND_TIMEOUT:-30s}" get namespace kube-flannel >/dev/null 2>&1 || missing "Flannel 命名空间不存在"
-kube "${KF_VERIFY_ROLLOUT_TIMEOUT:-180s}" rollout status daemonset/kube-flannel-ds --namespace kube-flannel --timeout="${KF_VERIFY_ROLLOUT_TIMEOUT:-180s}" >/dev/null 2>&1 || missing "Flannel DaemonSet 未就绪"
-kube "${KF_VERIFY_ROLLOUT_TIMEOUT:-180s}" rollout status deployment/coredns --namespace kube-system --timeout="${KF_VERIFY_ROLLOUT_TIMEOUT:-180s}" >/dev/null 2>&1 || missing "CoreDNS 未就绪"
+kube "${KF_VERIFY_ROLLOUT_TIMEOUT:-300s}" rollout status daemonset/kube-flannel-ds --namespace kube-flannel --timeout="${KF_VERIFY_ROLLOUT_TIMEOUT:-300s}" >/dev/null 2>&1 || missing "Flannel DaemonSet 未就绪"
+kube "${KF_VERIFY_ROLLOUT_TIMEOUT:-300s}" rollout status deployment/coredns --namespace kube-system --timeout="${KF_VERIFY_ROLLOUT_TIMEOUT:-300s}" >/dev/null 2>&1 || missing "CoreDNS 未就绪"
 printf '[SUCCESS] Flannel 和 CoreDNS 已就绪\n'

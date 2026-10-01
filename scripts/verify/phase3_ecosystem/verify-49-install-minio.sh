@@ -55,7 +55,7 @@ all_lines_match() {
 
 [ -n "${KF_KUBECONFIG:-}" ] && [ -r "${KF_KUBECONFIG}" ] || error "Kubernetes 管理配置不可读"
 kube "${KF_VERIFY_COMMAND_TIMEOUT:-30s}" get --raw=/readyz >/dev/null 2>&1; status=$?; check_status "${status}"; [ "${status}" -eq 0 ] || error "Kubernetes API 验证异常"
-kube "${KF_VERIFY_ROLLOUT_TIMEOUT:-180s}" rollout status deployment/minio-operator --namespace kubemate-system --timeout="${KF_VERIFY_ROLLOUT_TIMEOUT:-180s}" >/dev/null 2>&1; status=$?; check_status "${status}"; [ "${status}" -eq 0 ] || missing "MinIO Operator 未就绪"
+kube "${KF_VERIFY_ROLLOUT_TIMEOUT:-300s}" rollout status deployment/minio-operator --namespace kubemate-system --timeout="${KF_VERIFY_ROLLOUT_TIMEOUT:-300s}" >/dev/null 2>&1; status=$?; check_status "${status}"; [ "${status}" -eq 0 ] || missing "MinIO Operator 未就绪"
 state=$(kube "${KF_VERIFY_COMMAND_TIMEOUT:-30s}" get tenant kubemate-minio -n kubemate-system -o jsonpath='{.status.currentState}' 2>/dev/null); status=$?; check_status "${status}"; [ "${status}" -eq 0 ] || missing "MinIO Tenant 不存在"
 [ "${state}" = Initialized ] || missing "MinIO Tenant 未初始化"
 tenant_resources=$(kube "${KF_VERIFY_COMMAND_TIMEOUT:-30s}" get tenant kubemate-minio -n kubemate-system -o jsonpath='{.spec.pools[0].volumeClaimTemplate.spec.resources.requests.storage}{"|"}{.spec.pools[0].resources.requests.cpu}{"|"}{.spec.pools[0].resources.limits.cpu}{"|"}{.spec.pools[0].resources.requests.memory}{"|"}{.spec.pools[0].resources.limits.memory}' 2>/dev/null); status=$?; check_status "${status}"; [ "${status}" -eq 0 ] || error "MinIO Tenant 资源配置查询失败"

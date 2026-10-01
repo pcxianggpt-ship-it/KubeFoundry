@@ -66,7 +66,8 @@ if [ -f "${values_file}" ]; then
         --set "backend.replicas=${loki_replicas}" \
         --set "loki.commonConfig.replication_factor=${loki_replicas}" \
         --set 'sidecar.image.repository=registry:5000/ghcr.io/kiwigrid/k8s-sidecar' \
-        --set 'loki.storage.s3.endpoint=kubemate-minio-hl:9000'
+        --set 'loki.storage.s3.endpoint=kubemate-minio-hl:9000' \
+        --set 'memberlist.service.publishNotReadyAddresses=true'
 else
     phase3_helm_upgrade loki kubemate-system "${chart_file}" -f "${loki_secret_values}" \
         --set "read.replicas=${loki_replicas}" \
@@ -74,7 +75,8 @@ else
         --set "backend.replicas=${loki_replicas}" \
         --set "loki.commonConfig.replication_factor=${loki_replicas}" \
         --set 'sidecar.image.repository=registry:5000/ghcr.io/kiwigrid/k8s-sidecar' \
-        --set 'loki.storage.s3.endpoint=kubemate-minio-hl:9000'
+        --set 'loki.storage.s3.endpoint=kubemate-minio-hl:9000' \
+        --set 'memberlist.service.publishNotReadyAddresses=true'
 fi
 deployments=$(kubectl get deployment --namespace kubemate-system --no-headers 2>/dev/null \
     | awk '$1 ~ /loki/ { print $1 }')

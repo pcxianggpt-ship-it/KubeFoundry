@@ -16,7 +16,7 @@ cat > "${BIN}/helm" <<'EOF'
 printf '%s\n' "$*" >> "${KF_STORAGE_HELM_LOG}"
 if [ "${1:-}" = "upgrade" ] && [ "${2:-}" = "--install" ] && [ "${3:-}" = "openebs" ]; then
     path_values="${!#}"
-    grep -q "basePath: \"${KF_K8S_HOME}/openebs-root\"" "${path_values}"
+    grep -q "basePath: \"${KF_K8S_HOME}/openebs-root\"" "${path_values}" || exit 1
 fi
 exit 0
 EOF
@@ -47,8 +47,9 @@ case "$*" in
 esac
 for argument in "$@"; do
   if [ -f "${argument}" ] && grep -q 'name: BasePath' "${argument}"; then
-    grep -q "value: ${KF_K8S_HOME}/openebs-root" "${argument}"
-    ! grep -q '__KUBERNETES_WORK_DIR__' "${argument}"
+    grep -Fq "value: ${KF_STORAGE_EXPECTED_BASE_PATH:-${KF_K8S_HOME}/openebs-root}" "${argument}" || exit 1
+    ! grep -q '__KUBERNETES_WORK_DIR__' "${argument}" || exit 1
+    cp "${argument}" "${KF_STORAGE_APPLIED_CLASS}"
   fi
 done
 exit 0
@@ -58,6 +59,7 @@ export PATH="${BIN}:${PATH}"
 export PROJECT_ROOT="${ROOT}"
 export KF_STORAGE_HELM_LOG="${TMP}/helm.log"
 export KF_STORAGE_KUBECTL_LOG="${TMP}/kubectl.log"
+export KF_STORAGE_APPLIED_CLASS="${TMP}/applied-storage-class.yaml"
 export KF_COMPONENT_RESOURCE_DIR="${TMP}/resources"
 export KF_ROLLOUT_TIMEOUT=1s
 export KF_NODE_HOSTNAME=cp-a
@@ -81,7 +83,8 @@ run_group() {
         openebs)
             printf 'chart' > "${KF_COMPONENT_RESOURCE_DIR}/openebs-4.2.0.tgz"
             printf '{}' > "${KF_COMPONENT_RESOURCE_DIR}/openebs-values.yaml"
-            printf 'apiVersion: storage.k8s.io/v1\nkind: StorageClass\nmetadata:\n  name: local-hostpath\nparameters:\n  name: BasePath\n  value: __KUBERNETES_WORK_DIR__/openebs-root\n' > "${KF_COMPONENT_RESOURCE_DIR}/openebssc.yaml"
+            cp "${ROOT}/kube-media/03.setup_file/v1.30.14/helmapp/openebs/openebssc.yaml" \
+                "${KF_COMPONENT_RESOURCE_DIR}/openebssc.yaml"
             ;;
         minio)
             printf 'apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: minio-operator\n' > "${KF_COMPONENT_RESOURCE_DIR}/minio-operator.yaml"
@@ -110,6 +113,19 @@ fi
 run_group openebs 47-install-openebs.sh
 export KF_OPENEBS_RELEASE_EXISTS=true
 run_group openebs 47-install-openebs.sh
+# 已渲染的配置可重复安装，不要求恢复占位符，也不覆盖自定义存储路径。
+cp "${ROOT}/kube-media/03.setup_file/v1.30.14/helmapp/openebs/openebssc.yaml" \
+    "${KF_COMPONENT_RESOURCE_DIR}/openebssc.yaml"
+export KF_STORAGE_EXPECTED_BASE_PATH="${TMP}/custom-openebs"
+sed -i "s|__KUBERNETES_WORK_DIR__/openebs-root|${KF_STORAGE_EXPECTED_BASE_PATH}|g" \
+    "${KF_COMPONENT_RESOURCE_DIR}/openebssc.yaml"
+cp "${KF_COMPONENT_RESOURCE_DIR}/openebssc.yaml" "${TMP}/original-storage-class.yaml"
+bash "${ROOT}/scripts/steps/phase3_ecosystem/47-install-openebs.sh"
+bash "${ROOT}/scripts/steps/phase3_ecosystem/47-install-openebs.sh"
+cmp "${TMP}/original-storage-class.yaml" "${KF_STORAGE_APPLIED_CLASS}"
+grep -q '  name: localpath$' "${KF_STORAGE_APPLIED_CLASS}"
+cmp "${TMP}/original-storage-class.yaml" "${KF_COMPONENT_RESOURCE_DIR}/openebssc.yaml"
+unset KF_STORAGE_EXPECTED_BASE_PATH
 export KF_MINIO_PVC_SIZE=20Gi KF_MINIO_CPU_REQUEST=500m KF_MINIO_CPU_LIMIT=3
 export KF_MINIO_MEMORY_REQUEST=1Gi KF_MINIO_MEMORY_LIMIT=6Gi
 run_group minio 49-install-minio.sh
@@ -122,9 +138,10 @@ grep -q -- '^upgrade --install openebs .*openebs-4.2.0.tgz --namespace kubemate-
     cat "${KF_STORAGE_HELM_LOG}" >&2
     exit 1
 }
-[ "$(grep -c -- '^upgrade --install openebs ' "${KF_STORAGE_HELM_LOG}")" -eq 2 ]
+[ "$(grep -c -- '^upgrade --install openebs ' "${KF_STORAGE_HELM_LOG}")" -eq 4 ]
 grep -q -- 'loki-5.45.0.tgz.*-f .*values.yaml -f /tmp/' "${KF_STORAGE_HELM_LOG}"
 grep -q -- '--set read.replicas=3 --set write.replicas=3 --set backend.replicas=3 --set loki.commonConfig.replication_factor=3 --set sidecar.image.repository=registry:5000/ghcr.io/kiwigrid/k8s-sidecar --set loki.storage.s3.endpoint=kubemate-minio-hl:9000' "${KF_STORAGE_HELM_LOG}"
+grep -q -- '--set memberlist.service.publishNotReadyAddresses=true' "${KF_STORAGE_HELM_LOG}"
 grep -q -- 'alloy-1.4.0.tgz.*-f .*alloy-values.yaml' "${KF_STORAGE_HELM_LOG}"
 grep -q -- 'apply --server-side --field-manager=kubefoundry --force-conflicts -f /tmp/' "${KF_STORAGE_KUBECTL_LOG}"
 grep -q -- 'apply -k .*resources' "${KF_STORAGE_KUBECTL_LOG}"
@@ -141,6 +158,7 @@ grep -q 'memory: 6Gi' "${TMP}/rendered-minio-tenant.yaml"
 ! grep -Eq 'ssh_exec|config_get|get_all_' "${ROOT}/scripts/steps/phase3_ecosystem/47-install-openebs.sh" "${ROOT}/scripts/steps/phase3_ecosystem/49-install-minio.sh" "${ROOT}/scripts/steps/phase3_ecosystem/35-install-loki.sh" "${ROOT}/scripts/steps/phase3_ecosystem/48-install-alloy.sh"
 ! grep -Eq -- '--dry-run' "${ROOT}/scripts/steps/phase3_ecosystem/47-install-openebs.sh" "${ROOT}/scripts/steps/phase3_ecosystem/35-install-loki.sh" "${ROOT}/scripts/steps/phase3_ecosystem/48-install-alloy.sh"
 grep -q 'application/vnd.oci.image.index.v1+json' "${ROOT}/scripts/lib/phase3.sh"
+grep -q 'storageclass.kubernetes.io/is-default-class: "false"' "${ROOT}/kube-media/03.setup_file/v1.30.14/helmapp/openebs/openebssc.yaml"
 grep -q 'value: __KUBERNETES_WORK_DIR__/openebs-root' "${ROOT}/kube-media/03.setup_file/v1.30.14/helmapp/openebs/openebssc.yaml"
 for file in minio-operator.yaml kustomization.yaml tenant.yaml; do
     [ -s "${ROOT}/kube-media/03.setup_file/v1.30.14/minio/${file}" ]

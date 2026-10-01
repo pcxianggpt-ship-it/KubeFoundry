@@ -1,10 +1,11 @@
 global:
   imageRegistry: registry:5000
-  defaultStorageClass: openebs-hostpath
+  defaultStorageClass: localpath
   security:
     # 私有仓库改写会触发 Bitnami 的仓库名检查；运行镜像使用私有仓库中的固定版本标签。
     allowInsecureImages: true
 
+# 固定新安装的 StatefulSet/Pod 名称为 redis-node、redis-node-0/1/2。
 fullnameOverride: redis
 
 commonLabels:
@@ -16,7 +17,7 @@ architecture: replication
 auth:
   enabled: true
   sentinel: true
-  existingSecret: kubefoundry-redis-auth
+  existingSecret: redis-auth
   existingSecretPasswordKey: redis-password
   usePasswordFiles: true
   usePasswordFileFromSecret: true
@@ -39,7 +40,7 @@ master:
       memory: 1Gi
   persistence:
     enabled: true
-    storageClass: openebs-hostpath
+    storageClass: localpath
     size: 8Gi
 
 replica:
@@ -55,7 +56,7 @@ replica:
       memory: 1Gi
   persistence:
     enabled: true
-    storageClass: openebs-hostpath
+    storageClass: localpath
     size: 8Gi
 
 sentinel:
@@ -66,7 +67,7 @@ sentinel:
     tag: "8.10.1"
     digest: ""
     pullPolicy: IfNotPresent
-  masterSet: kubefoundry-master
+  masterSet: redis-master
   quorum: 2
   persistence:
     enabled: false

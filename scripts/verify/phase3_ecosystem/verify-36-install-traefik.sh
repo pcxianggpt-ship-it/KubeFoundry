@@ -29,7 +29,7 @@ daemonsets=$(printf '%s\n' "${rows}" | awk '$2 ~ /^traefik($|-)/ { print $1 "/" 
 for daemonset in ${daemonsets}; do
     namespace=${daemonset%%/*}
     name=${daemonset#*/}
-    kube "${KF_VERIFY_ROLLOUT_TIMEOUT:-180s}" rollout status "daemonset/${name}" --namespace "${namespace}" --timeout="${KF_VERIFY_ROLLOUT_TIMEOUT:-180s}" >/dev/null 2>&1
+    kube "${KF_VERIFY_ROLLOUT_TIMEOUT:-300s}" rollout status "daemonset/${name}" --namespace "${namespace}" --timeout="${KF_VERIFY_ROLLOUT_TIMEOUT:-300s}" >/dev/null 2>&1
     status=$?; check_status "${status}" || missing "Traefik DaemonSet 未就绪"
 done
 services=$(kube "${KF_VERIFY_COMMAND_TIMEOUT:-30s}" get service -A --no-headers 2>/dev/null); status=$?

@@ -113,7 +113,10 @@ class RemoteStepRunnerTest {
         Path remoteStep = remoteRoot.resolve("tmp/kubefoundry/jobs/42/steps/test-step/cp-a");
         assertThat(remoteStep.resolve("runtime.env")).isRegularFile();
         assertThat(Files.readString(remoteStep.resolve("runtime.env")))
-                .contains("export KF_COMPONENT_GROUP_KEY='kubemate'");
+                .contains("export KF_COMPONENT_GROUP_KEY='kubemate'",
+                        "export KF_VERIFY_ROLLOUT_TIMEOUT='300s'");
+        assertThat((Duration) ReflectionTestUtils.getField(RemoteStepRunner.class, "VERIFICATION_TIMEOUT"))
+                .isGreaterThan(Duration.ofMinutes(5));
         assertThat(remoteStep.resolve("step.sh")).hasSameTextualContentAs(script);
         Path evidence = temporaryDirectory.resolve("data/jobs/42/evidence/test-step/cp-a");
         assertThat(evidence.resolve("runtime.env")).isRegularFile();

@@ -65,7 +65,7 @@ fi
 
 if [ "${expect_redis}" = 1 ]; then
     command -v helm >/dev/null 2>&1 || fail "缺少只读验收工具: helm"
-    helm status kubefoundry-redis --namespace redis-sentinel >/dev/null \
+    helm status redis --namespace redis-sentinel >/dev/null \
         || fail "Redis Sentinel Helm release 不可用"
     kubectl rollout status statefulset/redis-node \
         --namespace redis-sentinel --timeout=1s >/dev/null \
