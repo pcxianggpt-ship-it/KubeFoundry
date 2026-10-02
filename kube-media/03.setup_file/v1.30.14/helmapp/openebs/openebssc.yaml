@@ -9,6 +9,7 @@ metadata:
       - name: StorageType
         value: hostpath
       - name: BasePath
+        # 安装时替换为 ${KF_K8S_HOME}/openebs-root，与 Worker 目录准备步骤一致。
         value: __KUBERNETES_WORK_DIR__/openebs-root
 provisioner: openebs.io/local
 reclaimPolicy: Delete

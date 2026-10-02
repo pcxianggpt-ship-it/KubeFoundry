@@ -113,6 +113,14 @@ fi
 run_group openebs 47-install-openebs.sh
 export KF_OPENEBS_RELEASE_EXISTS=true
 run_group openebs 47-install-openebs.sh
+# 更换工作目录时，目录准备、StorageClass 和 Helm 路径必须同步变化。
+original_work_dir="${KF_K8S_HOME}"
+export KF_K8S_HOME="${TMP}/different-work"
+bash "${ROOT}/scripts/steps/phase3_ecosystem/46-prepare-storage-workers.sh"
+test -d "${KF_K8S_HOME}/openebs-root"
+run_group openebs 47-install-openebs.sh
+grep -Fq "value: ${KF_K8S_HOME}/openebs-root" "${KF_STORAGE_APPLIED_CLASS}"
+export KF_K8S_HOME="${original_work_dir}"
 # 已渲染的配置可重复安装，不要求恢复占位符，也不覆盖自定义存储路径。
 cp "${ROOT}/kube-media/03.setup_file/v1.30.14/helmapp/openebs/openebssc.yaml" \
     "${KF_COMPONENT_RESOURCE_DIR}/openebssc.yaml"
@@ -138,7 +146,7 @@ grep -q -- '^upgrade --install openebs .*openebs-4.2.0.tgz --namespace kubemate-
     cat "${KF_STORAGE_HELM_LOG}" >&2
     exit 1
 }
-[ "$(grep -c -- '^upgrade --install openebs ' "${KF_STORAGE_HELM_LOG}")" -eq 4 ]
+[ "$(grep -c -- '^upgrade --install openebs ' "${KF_STORAGE_HELM_LOG}")" -eq 5 ]
 grep -q -- 'loki-5.45.0.tgz.*-f .*values.yaml -f /tmp/' "${KF_STORAGE_HELM_LOG}"
 grep -q -- '--set read.replicas=3 --set write.replicas=3 --set backend.replicas=3 --set loki.commonConfig.replication_factor=3 --set sidecar.image.repository=registry:5000/ghcr.io/kiwigrid/k8s-sidecar --set loki.storage.s3.endpoint=kubemate-minio-hl:9000' "${KF_STORAGE_HELM_LOG}"
 grep -q -- '--set memberlist.service.publishNotReadyAddresses=true' "${KF_STORAGE_HELM_LOG}"
