@@ -106,6 +106,20 @@ class ClusterResetServiceTest {
                 .hasMessageContaining("未处于可重置终态");
     }
 
+    @Test
+    void retainsFailedSharedOpenEbsEvidenceBeforeAnyConsumerHasRun() {
+        Fixture fixture = fixture("failed");
+        JobStep helm = completedStep(fixture.cluster(), "29-install-helm", null, 1);
+        JobStep openEbs = completedStep(fixture.cluster(), "47-install-openebs", null, 2);
+        openEbs.markFailed();
+        when(fixture.jobSteps().findByJobIdOrderByOrder(70L)).thenReturn(List.of(helm, openEbs));
+
+        fixture.service().start(1L, true, "RESET production");
+
+        assertThat(capturedDefinition(fixture.jobs()).steps()).extracting(JobService.StepDefinition::name)
+                .containsExactly("清理 Kubemate 受管组件", "重置主控制节点", "验证重置结果");
+    }
+
     private static Fixture fixture(String installStatus) {
         ClusterRepository clusters = mock(ClusterRepository.class);
         NodeRepository nodes = mock(NodeRepository.class);

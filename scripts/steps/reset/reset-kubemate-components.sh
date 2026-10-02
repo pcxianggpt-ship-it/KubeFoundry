@@ -17,7 +17,7 @@ fail() {
 validate_component_groups() {
     local groups="${KF_RESET_COMPONENT_GROUPS:-}"
     [ -z "${groups}" ] && return 0
-    [[ "${groups}" =~ ^(nfs|kubemate|traefik|storage_observability|prometheus|redis_sentinel)(,(nfs|kubemate|traefik|storage_observability|prometheus|redis_sentinel))*$ ]] \
+    [[ "${groups}" =~ ^(nfs|kubemate|traefik|storage_observability|prometheus|redis_sentinel|openebs)(,(nfs|kubemate|traefik|storage_observability|prometheus|redis_sentinel|openebs))*$ ]] \
         || fail "重置组件组列表不安全"
 }
 
@@ -117,8 +117,12 @@ if group_enabled storage_observability; then
     uninstall_snapshot_release alloy kubemate-system
     uninstall_snapshot_release loki kubemate-system
     delete_managed_resources storage_observability kubemate-system
-    uninstall_snapshot_release openebs kubemate-system
     kubectl label nodes --all kubefoundry.io/minio- >/dev/null 2>&1 || true
+fi
+
+# 先清理所有消费者，再卸载共享 OpenEBS；仍需受管标签与快照校验和匹配。
+if group_enabled openebs || group_enabled storage_observability || group_enabled redis_sentinel; then
+    uninstall_snapshot_release openebs kubemate-system
 fi
 
 if group_enabled prometheus; then

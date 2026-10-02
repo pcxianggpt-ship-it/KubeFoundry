@@ -108,6 +108,15 @@ class ComponentMediaServiceTest {
                 "/resources/redis_sentinel/43-install-redis-sentinel");
     }
 
+    @Test
+    void resolvesOpenEbsAsSharedMediaWithoutAConsumerGroup() {
+        ComponentMediaService media = new ComponentMediaService(temporaryDirectory);
+        InstallStep.Resource resource = media.componentResource(snapshot("amd64"), null, "47-install-openebs");
+        assertThat(resource.localPath().toString().replace('\\', '/'))
+                .endsWith("kube-media/03.setup_file/vunknown/helmapp/openebs");
+        assertThat(resource.remotePath()).endsWith("/resources/shared/47-install-openebs");
+    }
+
     private static InstallationSnapshotPayload snapshot(String architecture) {
         Cluster cluster = new Cluster("component-media");
         ReflectionTestUtils.setField(cluster, "id", 1L);

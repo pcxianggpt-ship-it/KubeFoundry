@@ -52,5 +52,4 @@ else
 fi
 
 helm version --short >/dev/null
-helm list -A >/dev/null
 log_success "Helm 离线安装并验证完成"

@@ -136,12 +136,14 @@ cmp "${TMP}/original-storage-class.yaml" "${KF_COMPONENT_RESOURCE_DIR}/openebssc
 unset KF_STORAGE_EXPECTED_BASE_PATH
 export KF_MINIO_PVC_SIZE=20Gi KF_MINIO_CPU_REQUEST=500m KF_MINIO_CPU_LIMIT=3
 export KF_MINIO_MEMORY_REQUEST=1Gi KF_MINIO_MEMORY_LIMIT=6Gi
+openebs_install_count=$(grep -c '^upgrade --install openebs ' "${KF_STORAGE_HELM_LOG}")
 run_group minio 49-install-minio.sh
+[ "$(grep -c '^upgrade --install openebs ' "${KF_STORAGE_HELM_LOG}")" -eq "${openebs_install_count}" ]
 touch "${TMP}/admin.conf"
 KF_KUBECONFIG="${TMP}/admin.conf" bash "${ROOT}/scripts/verify/phase3_ecosystem/verify-49-install-minio.sh"
 run_group loki 35-install-loki.sh
 run_group alloy 48-install-alloy.sh
-grep -q -- '^upgrade --install openebs .*openebs-4.2.0.tgz --namespace kubemate-system .*--labels app.kubernetes.io/managed-by=kubefoundry.*-f .*openebs-values.yaml -f /tmp/' "${KF_STORAGE_HELM_LOG}" || {
+grep -q -- '^upgrade --install openebs .*openebs-4.2.0.tgz --namespace kubemate-system .*--labels app.kubernetes.io/managed-by=kubefoundry,kubefoundry.io/component-group=openebs.*-f .*openebs-values.yaml -f /tmp/' "${KF_STORAGE_HELM_LOG}" || {
     printf 'OpenEBS Helm 调用不符合预期:\n' >&2
     cat "${KF_STORAGE_HELM_LOG}" >&2
     exit 1

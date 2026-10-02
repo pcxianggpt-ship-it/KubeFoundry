@@ -14,7 +14,7 @@ const groups = [
   { key: 'nfs', name: 'NFS 存储', enabled: false, available: true, components: ['nfs_exports'], status: 'not_installed', config: {} },
   { key: 'kubemate', name: 'Kubemate 管理组件', enabled: false, available: true, components: ['kubemate_ui'], status: 'not_installed', config: {} },
   { key: 'traefik', name: 'Traefik 网关', enabled: true, available: true, components: ['traefik'], status: 'installed', config: {} },
-  { key: 'storage_observability', name: '存储与日志套件', enabled: true, available: true, components: ['openebs', 'minio', 'loki', 'alloy'], status: 'not_installed', config: {} },
+  { key: 'storage_observability', name: '存储与日志套件', enabled: true, available: true, components: ['minio', 'loki', 'alloy'], status: 'not_installed', config: {} },
   { key: 'prometheus', name: 'Prometheus 监控', enabled: false, available: true, components: ['prometheus'], status: 'not_installed', config: {} },
   { key: 'redis_sentinel', name: 'Redis 哨兵模式', enabled: false, available: true, components: ['redis_sentinel'], status: 'not_installed', config: {} }
 ];
@@ -35,7 +35,8 @@ describe('KubemateComponentsView', () => {
 
     expect(wrapper.findAll('.component-group')).toHaveLength(6);
     expect(wrapper.text()).toContain('存储与日志套件');
-    expect(wrapper.text()).toContain('OpenEBS');
+    expect(wrapper.text()).not.toContain('OpenEBS');
+    expect(wrapper.text()).toContain('MinIO');
     expect(wrapper.text()).toContain('已安装');
     expect(wrapper.text()).not.toContain('脚本待完善，当前版本不可安装。');
     expect(wrapper.get('[data-testid="group-switch-redis_sentinel"] input').attributes('disabled')).toBeUndefined();

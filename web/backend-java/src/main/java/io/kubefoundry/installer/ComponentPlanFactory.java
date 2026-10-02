@@ -48,10 +48,14 @@ public class ComponentPlanFactory {
 
         java.util.ArrayList<InstallStep> steps = new java.util.ArrayList<>();
         steps.add(script(snapshot, "29-install-helm", "安装 Helm", "primary_control_plane", null,
-                "serial", 1, true, InstallStage.COMPONENT_PREREQUISITE, 1));
+                "serial", 1, true, InstallStage.CONTAINER_RUNTIME, 2));
         steps.add(script(snapshot, "30-create-namespace", "创建 Kubemate 命名空间",
                 "primary_control_plane", null, "serial", 1, true,
-                InstallStage.COMPONENT_PREREQUISITE, 2));
+                InstallStage.COMPONENT_PREREQUISITE, 1));
+        if (enabled.contains("storage_observability") || enabled.contains("redis_sentinel")) {
+            steps.add(script(snapshot, "47-install-openebs", "安装 OpenEBS", "primary_control_plane", null,
+                    "serial", 1, true, InstallStage.COMPONENT_PREREQUISITE, 2));
+        }
         for (String key : enabled) steps.addAll(groupSteps(snapshot, key));
         return new InstallPlan(steps);
     }
@@ -72,14 +76,12 @@ public class ComponentPlanFactory {
             case "storage_observability" -> List.of(
                     script(snapshot, "46-prepare-storage-workers", "准备存储 Worker 目录", "workers", groupKey,
                             "parallel", 5, true, InstallStage.STORAGE_OBSERVABILITY, 1),
-                    script(snapshot, "47-install-openebs", "安装 OpenEBS", "primary_control_plane", groupKey,
-                            "serial", 1, true, InstallStage.STORAGE_OBSERVABILITY, 2),
                     script(snapshot, "49-install-minio", "安装 MinIO", "primary_control_plane", groupKey,
-                            "serial", 1, true, InstallStage.STORAGE_OBSERVABILITY, 3),
+                            "serial", 1, true, InstallStage.STORAGE_OBSERVABILITY, 2),
                     script(snapshot, "35-install-loki", "安装 Loki", "primary_control_plane", groupKey,
-                            "serial", 1, true, InstallStage.STORAGE_OBSERVABILITY, 4),
+                            "serial", 1, true, InstallStage.STORAGE_OBSERVABILITY, 3),
                     script(snapshot, "48-install-alloy", "安装 Alloy", "primary_control_plane", groupKey,
-                            "serial", 1, true, InstallStage.STORAGE_OBSERVABILITY, 5));
+                            "serial", 1, true, InstallStage.STORAGE_OBSERVABILITY, 4));
             case "prometheus" -> List.of(
                     script(snapshot, "37-prepare-prometheus-workers", "准备 Prometheus Worker 目录", "workers",
                             groupKey, "parallel", 5, true, InstallStage.PROMETHEUS, 1),

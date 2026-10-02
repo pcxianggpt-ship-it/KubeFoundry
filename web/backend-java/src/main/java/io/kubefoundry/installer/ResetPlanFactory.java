@@ -82,11 +82,14 @@ class ResetPlanFactory {
         List<String> entries = new java.util.ArrayList<>();
         for (Map.Entry<String, String> entry : paths.entrySet()) {
             String group = switch (entry.getKey()) {
+                case "openebs" -> "openebs";
                 case "nfs-subdir-external-provisioner" -> "nfs";
                 case "redis", "kubefoundry-redis" -> "redis_sentinel";
                 default -> "storage_observability";
             };
-            if (!enabled.contains(group)) continue;
+            boolean sharedStorage = "openebs".equals(group)
+                    && (enabled.contains("storage_observability") || enabled.contains("redis_sentinel"));
+            if (!enabled.contains(group) && !sharedStorage) continue;
             payload.mediaChecksums().entrySet().stream()
                     .filter(value -> value.getKey().endsWith(entry.getValue()))
                     .map(Map.Entry::getValue)
@@ -101,6 +104,9 @@ class ResetPlanFactory {
         if (payload == null) throw new IllegalArgumentException("重置缺少安装快照");
         Set<String> result = new LinkedHashSet<>();
         for (JobStep step : evidenceSteps == null ? List.<JobStep>of() : evidenceSteps) {
+            if (hasOpenEbsExecutionEvidence(step)) {
+                result.add("openebs");
+            }
             if (step != null && isCleanupGroup(step.getComponentGroupKey())
                     && Set.of("success", "skipped").contains(step.getStatus())) {
                 result.add(step.getComponentGroupKey());
@@ -113,6 +119,13 @@ class ResetPlanFactory {
             }
         }
         return Set.copyOf(result);
+    }
+
+    static boolean hasOpenEbsExecutionEvidence(JobStep step) {
+        return step != null && "47-install-openebs".equals(step.getStepKey())
+                && (Set.of("success", "failed", "running").contains(step.getStatus())
+                        || ("skipped".equals(step.getStatus())
+                                && "PREVERIFY_SATISFIED".equals(step.getStatusReason())));
     }
 
     private static boolean isCleanupGroup(String group) {

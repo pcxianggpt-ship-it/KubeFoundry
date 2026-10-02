@@ -52,7 +52,8 @@ public class ComponentMediaService {
 
     public InstallStep.Resource componentResource(
             InstallationSnapshotPayload snapshot, String groupKey, String stepKey) {
-        if (KubemateComponentCatalog.find(groupKey) == null) {
+        boolean sharedOpenEbs = groupKey == null && "47-install-openebs".equals(stepKey);
+        if (!sharedOpenEbs && KubemateComponentCatalog.find(groupKey) == null) {
             throw new IllegalArgumentException("Unknown component media group: " + groupKey);
         }
         String version = snapshot.kubernetesVersion();
@@ -75,7 +76,7 @@ public class ComponentMediaService {
         Path source = projectRoot.resolve("kube-media").resolve("03.setup_file")
                 .resolve("v" + version).resolve(location.relativePath()).normalize();
         requireWithinProject(source);
-        String remotePath = JOB_RESOURCE_ROOT + "/" + groupKey + "/" + stepKey;
+        String remotePath = JOB_RESOURCE_ROOT + "/" + (sharedOpenEbs ? "shared" : groupKey) + "/" + stepKey;
         return InstallStep.Resource.local(source, location.kind(), remotePath);
     }
 

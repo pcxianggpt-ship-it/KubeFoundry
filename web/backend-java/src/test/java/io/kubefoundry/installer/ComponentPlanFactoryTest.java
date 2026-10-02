@@ -41,10 +41,14 @@ class ComponentPlanFactoryTest {
         InstallPlan plan = factory.create(snapshot(List.of(group("storage_observability", true))));
 
         assertThat(plan.steps()).extracting(InstallStep::key).containsExactly(
-                "29-install-helm", "30-create-namespace", "46-prepare-storage-workers", "47-install-openebs",
+                "29-install-helm", "30-create-namespace", "47-install-openebs", "46-prepare-storage-workers",
                 "49-install-minio", "35-install-loki", "48-install-alloy");
-        assertThat(plan.steps().subList(2, 6)).extracting(InstallStep::componentGroupKey)
+        assertThat(plan.steps().subList(3, 7)).extracting(InstallStep::componentGroupKey)
                 .containsOnly("storage_observability");
+        assertThat(plan.require("47-install-openebs").componentGroupKey()).isNull();
+        assertThat(plan.require("47-install-openebs").stageKey()).isEqualTo("component_prerequisite");
+        assertThat(plan.steps().subList(3, 7)).extracting(InstallStep::stepOrderInStage)
+                .containsExactly(1, 2, 3, 4);
     }
 
     @Test
@@ -72,8 +76,17 @@ class ComponentPlanFactoryTest {
                 new BaseInstallPlanFactory(temporaryDirectory), componentPlans)
                 .forNewCluster(snapshot(List.of(group("traefik", true))));
         assertThat(combined.steps()).hasSize(19);
-        assertThat(combined.steps().get(14).key()).isEqualTo("web-verify-cluster-health");
-        assertThat(combined.steps().get(15).key()).isEqualTo("29-install-helm");
+        assertThat(combined.steps().get(6).key()).isEqualTo("16-install-containerd");
+        assertThat(combined.steps().get(7).key()).isEqualTo("29-install-helm");
+        assertThat(combined.steps().get(8).key()).isEqualTo("17-install-registry");
+        assertThat(combined.steps().get(15).key()).isEqualTo("web-verify-cluster-health");
+        assertThat(combined.steps().get(16).key()).isEqualTo("30-create-namespace");
+        assertThat(combined.require("29-install-helm").stageKey()).isEqualTo("container_runtime");
+        assertThat(combined.require("29-install-helm").stepOrderInStage()).isEqualTo(2);
+        assertThat(combined.steps()).filteredOn(step -> "29-install-helm".equals(step.key())).hasSize(1);
+        assertThat(new InstallPlanAssembler(new BaseInstallPlanFactory(temporaryDirectory), componentPlans)
+                .forNewCluster(disabled).steps()).extracting(InstallStep::key)
+                .doesNotContain("29-install-helm", "47-install-openebs");
         assertThat(combined.steps().get(18).key()).isEqualTo("44-setup-etcd-backup");
         assertThat(combined.steps().get(18).type()).isEqualTo(InstallStep.StepType.MAINTENANCE);
         assertThat(combined.steps().get(18).stageKey()).isEqualTo("etcd_backup");
@@ -104,7 +117,7 @@ class ComponentPlanFactoryTest {
                 "29-install-helm", "30-create-namespace", "32-configure-nfs-exports",
                 "32-install-nfs", "32-mount-nfs-workers");
         assertThat(plan.steps().subList(0, 2)).extracting(InstallStep::stageKey)
-                .containsOnly("component_prerequisite");
+                .containsExactly("container_runtime", "component_prerequisite");
         assertThat(plan.steps().subList(2, 5)).allSatisfy(step -> {
             assertThat(step.stageKey()).isEqualTo("nfs");
             assertThat(step.stageName()).isEqualTo("部署 NFS 组件");
@@ -124,13 +137,41 @@ class ComponentPlanFactoryTest {
         InstallPlan plan = factory.create(snapshot(List.of(group("redis_sentinel", true))));
 
         assertThat(plan.steps()).extracting(InstallStep::key).containsExactly(
-                "29-install-helm", "30-create-namespace", "43-install-redis-sentinel");
+                "29-install-helm", "30-create-namespace", "47-install-openebs", "43-install-redis-sentinel");
         assertThat(plan.require("43-install-redis-sentinel").componentGroupKey())
                 .isEqualTo("redis_sentinel");
         assertThat(plan.require("43-install-redis-sentinel").stageKey()).isEqualTo("redis_sentinel");
         assertThat(plan.require("43-install-redis-sentinel").resources()).singleElement()
                 .satisfies(resource -> assertThat(resource.localPath().toString().replace('\\', '/'))
                         .endsWith("kube-media/03.setup_file/vunknown/helmapp/redis"));
+    }
+
+    @Test
+    void sharesOpenEbsBetweenMinioAndRedisAndKeepsItForRedisOnlyRequests() {
+        ComponentPlanFactory factory = new ComponentPlanFactory(temporaryDirectory);
+        InstallationSnapshotPayload payload = snapshot(List.of(
+                group("storage_observability", true), group("redis_sentinel", true)));
+        InstallPlan both = factory.create(payload);
+        assertThat(both.steps()).filteredOn(step -> "47-install-openebs".equals(step.key())).hasSize(1);
+        assertThat(both.steps().get(2).key()).isEqualTo("47-install-openebs");
+        assertThat(both.require("47-install-openebs").stepOrderInStage()).isEqualTo(2);
+        assertThat(both.require("47-install-openebs").resources()).singleElement()
+                .satisfies(resource -> assertThat(resource.remotePath())
+                        .endsWith("/resources/shared/47-install-openebs"));
+        InstallPlan redisOnly = new InstallPlanAssembler(new BaseInstallPlanFactory(temporaryDirectory), factory)
+                .forExistingCluster(payload, java.util.Set.of("redis_sentinel"));
+        assertThat(redisOnly.steps()).extracting(InstallStep::key).containsExactly(
+                "29-install-helm", "30-create-namespace", "47-install-openebs", "43-install-redis-sentinel");
+        assertThat(redisOnly.steps()).extracting(InstallStep::componentGroupKey)
+                .doesNotContain("storage_observability");
+    }
+
+    @Test
+    void installsHelmWithoutRequiringTheNotYetInitializedKubernetesApi() throws Exception {
+        Path root = InstallPlanFactory.discoverProjectRoot(Path.of(""));
+        assertThat(java.nio.file.Files.readString(root.resolve(
+                "scripts/steps/phase3_ecosystem/29-install-helm.sh")))
+                .contains("helm version --short").doesNotContain("helm list", "kubectl");
     }
 
     private static InstallationSnapshotPayload snapshot(List<InstallationSnapshotPayload.ComponentGroup> groups) {

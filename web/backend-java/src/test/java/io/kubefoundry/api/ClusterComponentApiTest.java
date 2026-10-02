@@ -58,7 +58,10 @@ class ClusterComponentApiTest {
                 .andExpect(jsonPath("$.enabled").doesNotExist())
                 .andExpect(jsonPath("$.groups.length()").value(6))
                 .andExpect(jsonPath("$.groups[0].key").value("nfs"))
-                .andExpect(jsonPath("$.groups[3].components[0]").value("openebs"))
+                .andExpect(jsonPath("$.groups[3].components.length()").value(3))
+                .andExpect(jsonPath("$.groups[3].components[0]").value("minio"))
+                .andExpect(jsonPath("$.groups[3].components[1]").value("loki"))
+                .andExpect(jsonPath("$.groups[3].components[2]").value("alloy"))
                 .andExpect(jsonPath("$.groups[5].available").value(true));
     }
 

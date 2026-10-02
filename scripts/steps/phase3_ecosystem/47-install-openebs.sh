@@ -7,6 +7,8 @@
 #===============================================================================
 
 if [ -f "./phase3.sh" ]; then source "./phase3.sh"; else source "${PROJECT_ROOT}/scripts/lib/phase3.sh"; fi
+# OpenEBS 是 MinIO 和 Redis 的共享依赖，不归属单个业务组件组。
+KF_COMPONENT_GROUP_KEY=openebs
 phase3_init
 resource_dir=$(phase3_resource_path .)
 chart_file="${resource_dir}/openebs-4.2.0.tgz"

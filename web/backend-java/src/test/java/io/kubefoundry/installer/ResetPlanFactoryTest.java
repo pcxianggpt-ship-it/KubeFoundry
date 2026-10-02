@@ -110,4 +110,29 @@ class ResetPlanFactoryTest {
         assertThat(settings.envValue("reset_helm_release_checksums"))
                 .isEqualTo("redis=" + "c".repeat(64) + ",kubefoundry-redis=" + "c".repeat(64));
     }
+
+    @Test
+    void recordsSharedOpenEbsEvenWhenNoConsumerHasCompleted() {
+        InstallationSnapshotPayload payload = new InstallationSnapshotPayload(1L, "cluster", "v1", "/data/k8s",
+                "local", List.of(), 1L, List.of(), "v0.3.2", java.util.Map.of(
+                        "kube-media/03.setup_file/v1/helmapp/openebs", "d".repeat(64)));
+        io.kubefoundry.cluster.Cluster cluster = new io.kubefoundry.cluster.Cluster("cluster");
+        io.kubefoundry.job.JobStep step = new io.kubefoundry.job.JobStep(
+                new io.kubefoundry.job.Job(cluster, "install"), "OpenEBS", 1, null,
+                "47-install-openebs", "component_prerequisite", "Kubemate 公共准备", 5, 2);
+        assertThat(ResetPlanFactory.componentGroups(payload, List.of(), List.of(step))).isEmpty();
+        step.markSkipped("JOB_ABORTED");
+        assertThat(ResetPlanFactory.componentGroups(payload, List.of(), List.of(step))).isEmpty();
+        step.markRunning();
+        assertThat(ResetPlanFactory.componentGroups(payload, List.of(), List.of(step))).containsExactly("openebs");
+        step.markFailed();
+        assertThat(ResetPlanFactory.componentGroups(payload, List.of(), List.of(step))).containsExactly("openebs");
+        step.markSuccess();
+        java.util.Set<String> groups = ResetPlanFactory.componentGroups(payload, List.of(), List.of(step));
+        assertThat(groups).containsExactly("openebs");
+        assertThat(new ResetPlanFactory(".").runtimeSettings(payload, groups)
+                .envValue("reset_helm_release_checksums")).isEqualTo("openebs=" + "d".repeat(64));
+        assertThat(new ResetPlanFactory(".").runtimeSettings(payload, java.util.Set.of("redis_sentinel"))
+                .envValue("reset_helm_release_checksums")).isEqualTo("openebs=" + "d".repeat(64));
+    }
 }

@@ -89,7 +89,7 @@ public class ClusterResetService {
             if (state != null && state.getLastJobId() != null) jobIds.add(state.getLastJobId());
         }
         return jobIds.stream().flatMap(jobId -> jobSteps.findByJobIdOrderByOrder(jobId).stream())
-                .filter(ClusterResetService::isCompleted).toList();
+                .filter(step -> isCompleted(step) || ResetPlanFactory.hasOpenEbsExecutionEvidence(step)).toList();
     }
 
     private static boolean isCompleted(JobStep step) {

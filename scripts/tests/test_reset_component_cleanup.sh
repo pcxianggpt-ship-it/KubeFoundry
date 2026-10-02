@@ -70,6 +70,27 @@ bash "${ROOT}/scripts/steps/reset/reset-kubemate-components.sh"
 ! grep -Fq 'uninstall nfs-subdir-external-provisioner' "${KF_RESET_HELM_LOG}"
 unset KF_RESET_UNMANAGED_RELEASE
 
+for groups in redis_sentinel openebs; do
+    : > "${KF_RESET_HELM_LOG}"
+    export KF_RESET_COMPONENT_GROUPS="${groups}"
+    export KF_RESET_HELM_RELEASE_CHECKSUMS='openebs=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,redis=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    bash "${ROOT}/scripts/steps/reset/reset-kubemate-components.sh"
+    grep -Fxq 'uninstall openebs --namespace kubemate-system --wait --timeout 10m' "${KF_RESET_HELM_LOG}"
+    ! grep -Fq 'uninstall loki' "${KF_RESET_HELM_LOG}"
+    if [ "${groups}" = redis_sentinel ]; then
+        test "$(grep -nF 'uninstall redis ' "${KF_RESET_HELM_LOG}" | cut -d: -f1)" \
+            -lt "$(grep -nF 'uninstall openebs' "${KF_RESET_HELM_LOG}" | cut -d: -f1)"
+    else
+        ! grep -Fq 'uninstall redis ' "${KF_RESET_HELM_LOG}"
+    fi
+done
+
+# 共享依赖仍不得卸载外部管理的 release。
+: > "${KF_RESET_HELM_LOG}"
+KF_RESET_COMPONENT_GROUPS=openebs KF_RESET_UNMANAGED_RELEASE=1 \
+    bash "${ROOT}/scripts/steps/reset/reset-kubemate-components.sh"
+! grep -Fq 'uninstall openebs' "${KF_RESET_HELM_LOG}"
+
 # 仅加载节点重置脚本的函数定义，避免测试环境执行真实 kubeadm reset。
 source <(awk '/^require_safe_work_dir "\$\{KF_K8S_HOME:-\}"/{exit} {print}' \
     "${ROOT}/scripts/steps/reset/reset-kubernetes-node.sh")

@@ -264,14 +264,14 @@ v0.3.2 实现已使用 `# Managed by KubeFoundry v0.3.2` 标识本地与 HTTP Re
 | `stage_key` | 名称 | 包含内容 |
 | --- | --- | --- |
 | `host_preparation` | 主机与软件源准备 | YUM、主机名、Repo、依赖、kubeadm、环境 |
-| `container_runtime` | 部署容器运行时 | containerd 安装与验证 |
+| `container_runtime` | 部署容器运行时 | containerd、Helm 安装与验证 |
 | `registry` | 部署镜像仓库 | Registry 安装与验证 |
 | `kubernetes` | 部署 Kubernetes 集群 | 初始化、证书、节点加入、CNI、CoreDNS、健康检查 |
-| `component_prerequisite` | Kubemate 公共准备 | Helm、命名空间 |
+| `component_prerequisite` | Kubemate 公共准备 | 命名空间、OpenEBS（启用 MinIO 或 Redis 时） |
 | `nfs` | 部署 NFS 组件 | exports、Provisioner、Worker 挂载 |
 | `kubemate` | 部署 Kubemate 管理组件 | Kubemate UI |
 | `traefik` | 部署 Traefik 网关 | Traefik |
-| `storage_observability` | 部署存储与日志套件 | Worker 目录、OpenEBS、MinIO、Loki、Alloy |
+| `storage_observability` | 部署存储与日志套件 | Worker 目录、MinIO、Loki、Alloy |
 | `prometheus` | 部署 Prometheus 监控 | Worker 目录、Prometheus |
 | `redis_sentinel` | 部署 Redis Sentinel | Redis Sentinel Helm 部署 |
 | `etcd_backup` | 配置并验证 etcd 备份 | 最终备份单元 |

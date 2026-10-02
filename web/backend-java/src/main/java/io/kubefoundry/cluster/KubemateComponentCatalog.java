@@ -9,7 +9,7 @@ public final class KubemateComponentCatalog {
             new Group("nfs", "NFS 存储", List.of("nfs_exports", "nfs_provisioner", "worker_mount"), true),
             new Group("kubemate", "Kubemate 管理组件", List.of("kubemate_ui"), true),
             new Group("traefik", "Traefik 网关", List.of("traefik"), true),
-            new Group("storage_observability", "存储与日志套件", List.of("openebs", "minio", "loki", "alloy"), true),
+            new Group("storage_observability", "存储与日志套件", List.of("minio", "loki", "alloy"), true),
             new Group("prometheus", "Prometheus 监控", List.of("prometheus", "metrics_server"), true),
             new Group("redis_sentinel", "Redis 哨兵模式", List.of("redis_sentinel"), true));
 

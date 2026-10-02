@@ -29,9 +29,18 @@ public class InstallPlanAssembler {
     }
 
     public InstallPlan forNewCluster(InstallationSnapshotPayload snapshot) {
-        return InstallPlan.combine(
-                InstallPlan.combine(basePlans.create(), componentPlans.create(snapshot)),
-                maintenancePlan);
+        InstallPlan components = componentPlans.create(snapshot);
+        InstallStep helm = components.steps().stream()
+                .filter(step -> "29-install-helm".equals(step.key())).findFirst().orElse(null);
+        java.util.ArrayList<InstallStep> steps = new java.util.ArrayList<>();
+        for (InstallStep step : basePlans.create().steps()) {
+            steps.add(step);
+            if ("16-install-containerd".equals(step.key()) && helm != null) steps.add(helm);
+        }
+        components.steps().stream().filter(step -> !"29-install-helm".equals(step.key()))
+                .forEach(steps::add);
+        steps.addAll(maintenancePlan.steps());
+        return new InstallPlan(steps);
     }
 
     public InstallPlan forExistingCluster(InstallationSnapshotPayload snapshot, Set<String> groups) {
