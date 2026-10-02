@@ -72,15 +72,19 @@ public class EventService implements AutoCloseable {
         if (afterId < 0) throw new IllegalArgumentException("最后事件 ID 不能小于 0");
         SseEmitter emitter = new SseEmitter(0L);
         synchronized (lockFor(jobId)) {
-            List<JobEvent> replay = eventsAfter(jobId, afterId);
-            boolean terminal = false;
-            for (JobEvent event : replay) {
-                if (!send(emitter, event)) return emitter;
-                terminal = terminal || isTerminal(event);
-            }
-            if (terminal) {
-                emitter.complete();
-                return emitter;
+            // 补齐所有历史页后再订阅；与 publish 共用任务锁，避免遗漏交接期间的事件。
+            long cursor = afterId;
+            while (true) {
+                List<JobEvent> replay = eventsAfter(jobId, cursor);
+                if (replay.isEmpty()) break;
+                for (JobEvent event : replay) {
+                    if (!send(emitter, event)) return emitter;
+                    cursor = event.getId();
+                    if (isTerminal(event)) {
+                        emitter.complete();
+                        return emitter;
+                    }
+                }
             }
             CopyOnWriteArrayList<SseEmitter> jobSubscribers =
                     subscribers.computeIfAbsent(jobId, ignored -> new CopyOnWriteArrayList<>());

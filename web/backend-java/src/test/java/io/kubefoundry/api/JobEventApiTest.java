@@ -12,8 +12,12 @@ import io.kubefoundry.job.JobStep;
 import io.kubefoundry.job.JobStepNode;
 import io.kubefoundry.job.JobStepNodeRepository;
 import io.kubefoundry.job.JobStepRepository;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -78,6 +82,59 @@ class JobEventApiTest {
         assertThat(body).contains("id:" + second.getId(), "id:" + third.getId());
         assertThat(body.indexOf("id:" + second.getId()))
                 .isLessThan(body.indexOf("id:" + third.getId()));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 7})
+    void replaysAllPagesIncludingStepCompletionAndJobCompletion(int cursorIndex) throws Exception {
+        Job job = newJob("paged-replay");
+        List<Long> eventIds = new ArrayList<>();
+        for (int index = 0; index < 99; index++) {
+            eventIds.add(events.publish(job.getId(), "log.append", Map.of("message", "preparation")).getId());
+        }
+        eventIds.add(events.publish(job.getId(), "step.status", Map.of("step_id", 17, "status", "running")).getId());
+        eventIds.add(events.publish(job.getId(), "step.status", Map.of("step_id", 17, "status", "success")).getId());
+        for (int index = 0; index < 104; index++) {
+            eventIds.add(events.publish(job.getId(), "log.append", Map.of("message", "later steps")).getId());
+        }
+        eventIds.add(events.publish(job.getId(), "job.status", Map.of("status", "success")).getId());
+
+        var requestBuilder = get("/api/jobs/{jobId}/events", job.getId());
+        if (cursorIndex > 0) requestBuilder.header("Last-Event-ID", eventIds.get(cursorIndex - 1));
+        MvcResult started = mvc.perform(requestBuilder)
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        List<Long> replayedIds = started.getResponse().getContentAsString().lines()
+                .filter(line -> line.startsWith("id:"))
+                .map(line -> Long.parseLong(line.substring(3).trim()))
+                .toList();
+        assertThat(replayedIds).containsExactlyElementsOf(eventIds.subList(cursorIndex, eventIds.size()));
+        mvc.perform(asyncDispatch(started)).andExpect(status().isOk());
+    }
+
+    @Test
+    void subscribesToLiveEventsAfterReplayingMultiplePages() throws Exception {
+        Job job = newJob("paged-live");
+        List<Long> eventIds = new ArrayList<>();
+        for (int index = 0; index < 101; index++) {
+            eventIds.add(events.publish(job.getId(), "log.append", Map.of("message", "preparation")).getId());
+        }
+        eventIds.add(events.publish(job.getId(), "step.status", Map.of("step_id", 17, "status", "success")).getId());
+
+        MvcResult started = mvc.perform(get("/api/jobs/{jobId}/events", job.getId())
+                        .param("last_id", Long.toString(eventIds.get(0))))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+        eventIds.add(events.publish(job.getId(), "step.status", Map.of("step_id", 18, "status", "success")).getId());
+        eventIds.add(events.publish(job.getId(), "job.status", Map.of("status", "success")).getId());
+
+        MvcResult completed = mvc.perform(asyncDispatch(started)).andExpect(status().isOk()).andReturn();
+        List<Long> replayedIds = completed.getResponse().getContentAsString().lines()
+                .filter(line -> line.startsWith("id:"))
+                .map(line -> Long.parseLong(line.substring(3).trim()))
+                .toList();
+        assertThat(replayedIds).containsExactlyElementsOf(eventIds.subList(1, eventIds.size()));
     }
 
     @Test
