@@ -6,11 +6,11 @@ TMP=$(mktemp -d)
 trap 'rm -rf -- "${TMP}"' EXIT
 BIN="${TMP}/bin"
 mkdir -p "${BIN}"
-case "$(uname -m)" in
-    x86_64|amd64) cp "${ROOT}/tools/yq_linux_amd64" "${BIN}/yq" ;;
-    aarch64|arm64) cp "${ROOT}/tools/yq_linux_arm64" "${BIN}/yq" ;;
-    *) printf '不支持的 yq 测试架构\n' >&2; exit 1 ;;
-esac
+cat > "${BIN}/yq" <<'EOF'
+#!/bin/bash
+printf 'MinIO 安装不应调用 yq\n' >&2
+exit 127
+EOF
 cat > "${BIN}/helm" <<'EOF'
 #!/bin/bash
 printf '%s\n' "$*" >> "${KF_STORAGE_HELM_LOG}"
@@ -27,6 +27,15 @@ EOF
 cat > "${BIN}/kubectl" <<'EOF'
 #!/bin/bash
 printf '%s\n' "$*" >> "${KF_STORAGE_KUBECTL_LOG}"
+if [ "${1:-}" = apply ] && [ "${2:-}" = -k ]; then
+    cp "${3}/minio-resources-patch.yaml" "${KF_STORAGE_MINIO_PATCH}"
+    cp "${3}/tenant.yaml" "${KF_STORAGE_MINIO_SOURCE}"
+    printf '%s\n' "$3" > "${KF_STORAGE_MINIO_RENDER_DIR}"
+    if [ -n "${KF_STORAGE_KUSTOMIZE_BIN:-}" ]; then
+        "${KF_STORAGE_KUSTOMIZE_BIN}" kustomize "$3" > "${KF_STORAGE_MINIO_RENDERED}"
+    fi
+    [ "${KF_STORAGE_MINIO_APPLY_EXIT:-0}" -eq 0 ] || exit "${KF_STORAGE_MINIO_APPLY_EXIT}"
+fi
 case "$*" in
   *"get nodes"*) printf 'worker-a Ready worker 1m v1.30.14\nworker-b Ready worker 1m v1.30.14\nworker-c Ready worker 1m v1.30.14\nworker-d Ready worker 1m v1.30.14\n' ;;
   *"get --raw=/readyz"*) printf 'ok\n' ;;
@@ -60,6 +69,10 @@ export PROJECT_ROOT="${ROOT}"
 export KF_STORAGE_HELM_LOG="${TMP}/helm.log"
 export KF_STORAGE_KUBECTL_LOG="${TMP}/kubectl.log"
 export KF_STORAGE_APPLIED_CLASS="${TMP}/applied-storage-class.yaml"
+export KF_STORAGE_MINIO_PATCH="${TMP}/minio-resources-patch.yaml"
+export KF_STORAGE_MINIO_SOURCE="${TMP}/original-minio-tenant.yaml"
+export KF_STORAGE_MINIO_RENDER_DIR="${TMP}/minio-render-dir.txt"
+export KF_STORAGE_MINIO_RENDERED="${TMP}/rendered-minio-tenant.yaml"
 export KF_COMPONENT_RESOURCE_DIR="${TMP}/resources"
 export KF_ROLLOUT_TIMEOUT=1s
 export KF_NODE_HOSTNAME=cp-a
@@ -88,8 +101,8 @@ run_group() {
             ;;
         minio)
             printf 'apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: minio-operator\n' > "${KF_COMPONENT_RESOURCE_DIR}/minio-operator.yaml"
-            printf 'apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n- tenant.yaml\n' > "${KF_COMPONENT_RESOURCE_DIR}/kustomization.yaml"
-            printf 'apiVersion: minio.min.io/v2\nkind: Tenant\nmetadata:\n  name: kubemate-minio\nspec:\n  pools:\n    - resources:\n        requests:\n          cpu: 250m\n          memory: 512Mi\n        limits:\n          cpu: "2"\n          memory: 4Gi\n      volumeClaimTemplate:\n        spec:\n          resources:\n            requests:\n              storage: 10Gi\n' > "${KF_COMPONENT_RESOURCE_DIR}/tenant.yaml"
+            cp "${ROOT}/kube-media/03.setup_file/v1.30.14/minio/kustomization.yaml" \
+                "${ROOT}/kube-media/03.setup_file/v1.30.14/minio/tenant.yaml" "${KF_COMPONENT_RESOURCE_DIR}/"
             printf 'export MINIO_ROOT_USER="test-user"\nexport MINIO_ROOT_PASSWORD="test-password"\n' > "${KF_COMPONENT_RESOURCE_DIR}/tenant.env"
             ;;
         loki) printf 'chart' > "${KF_COMPONENT_RESOURCE_DIR}/loki-5.45.0.tgz"; printf '{}' > "${KF_COMPONENT_RESOURCE_DIR}/values.yaml" ;;
@@ -97,7 +110,9 @@ run_group() {
     esac
     bash "${ROOT}/scripts/steps/phase3_ecosystem/${script}"
     if [ "${group}" = minio ]; then
-        cp "${KF_COMPONENT_RESOURCE_DIR}/tenant.yaml" "${TMP}/rendered-minio-tenant.yaml"
+        cmp "${KF_COMPONENT_RESOURCE_DIR}/tenant.yaml" "${KF_STORAGE_MINIO_SOURCE}"
+        ! grep -q '^patches:' "${KF_COMPONENT_RESOURCE_DIR}/kustomization.yaml"
+        [ ! -d "$(cat "${KF_STORAGE_MINIO_RENDER_DIR}")" ]
     fi
 }
 
@@ -134,10 +149,32 @@ cmp "${TMP}/original-storage-class.yaml" "${KF_STORAGE_APPLIED_CLASS}"
 grep -q '  name: localpath$' "${KF_STORAGE_APPLIED_CLASS}"
 cmp "${TMP}/original-storage-class.yaml" "${KF_COMPONENT_RESOURCE_DIR}/openebssc.yaml"
 unset KF_STORAGE_EXPECTED_BASE_PATH
+unset KF_MINIO_PVC_SIZE KF_MINIO_CPU_REQUEST KF_MINIO_CPU_LIMIT \
+    KF_MINIO_MEMORY_REQUEST KF_MINIO_MEMORY_LIMIT || true
+run_group minio 49-install-minio.sh
+if [ -n "${KF_STORAGE_KUSTOMIZE_BIN:-}" ]; then
+    grep -q 'storage: 10Gi' "${KF_STORAGE_MINIO_RENDERED}"
+    grep -q 'cpu: 250m' "${KF_STORAGE_MINIO_RENDERED}"
+    grep -q 'cpu: "2"' "${KF_STORAGE_MINIO_RENDERED}"
+    grep -q 'memory: 512Mi' "${KF_STORAGE_MINIO_RENDERED}"
+    grep -q 'memory: 4Gi' "${KF_STORAGE_MINIO_RENDERED}"
+    grep -q 'servers: 4' "${KF_STORAGE_MINIO_RENDERED}"
+    grep -q 'kind: Secret' "${KF_STORAGE_MINIO_RENDERED}"
+fi
 export KF_MINIO_PVC_SIZE=20Gi KF_MINIO_CPU_REQUEST=500m KF_MINIO_CPU_LIMIT=3
 export KF_MINIO_MEMORY_REQUEST=1Gi KF_MINIO_MEMORY_LIMIT=6Gi
 openebs_install_count=$(grep -c '^upgrade --install openebs ' "${KF_STORAGE_HELM_LOG}")
 run_group minio 49-install-minio.sh
+# 重复安装仍从原介质生成补丁，且无需可用的 yq。
+bash "${ROOT}/scripts/steps/phase3_ecosystem/49-install-minio.sh"
+[ ! -d "$(cat "${KF_STORAGE_MINIO_RENDER_DIR}")" ]
+cmp "${KF_COMPONENT_RESOURCE_DIR}/tenant.yaml" "${KF_STORAGE_MINIO_SOURCE}"
+if KF_STORAGE_MINIO_APPLY_EXIT=1 bash "${ROOT}/scripts/steps/phase3_ecosystem/49-install-minio.sh" \
+        >/dev/null 2>&1; then
+    printf 'MinIO apply 失败未正确返回\n' >&2
+    exit 1
+fi
+[ ! -d "$(cat "${KF_STORAGE_MINIO_RENDER_DIR}")" ]
 [ "$(grep -c '^upgrade --install openebs ' "${KF_STORAGE_HELM_LOG}")" -eq "${openebs_install_count}" ]
 touch "${TMP}/admin.conf"
 KF_KUBECONFIG="${TMP}/admin.conf" bash "${ROOT}/scripts/verify/phase3_ecosystem/verify-49-install-minio.sh"
@@ -154,17 +191,24 @@ grep -q -- '--set read.replicas=3 --set write.replicas=3 --set backend.replicas=
 grep -q -- '--set memberlist.service.publishNotReadyAddresses=true' "${KF_STORAGE_HELM_LOG}"
 grep -q -- 'alloy-1.4.0.tgz.*-f .*alloy-values.yaml' "${KF_STORAGE_HELM_LOG}"
 grep -q -- 'apply --server-side --field-manager=kubefoundry --force-conflicts -f /tmp/' "${KF_STORAGE_KUBECTL_LOG}"
-grep -q -- 'apply -k .*resources' "${KF_STORAGE_KUBECTL_LOG}"
-grep -q -- 'label --overwrite -k .*resources app.kubernetes.io/managed-by=kubefoundry kubefoundry.io/component-group=storage_observability' \
+grep -q -- 'apply -k .*/tenant' "${KF_STORAGE_KUBECTL_LOG}"
+grep -q -- 'label --overwrite -k .*/tenant app.kubernetes.io/managed-by=kubefoundry kubefoundry.io/component-group=storage_observability' \
     "${KF_STORAGE_KUBECTL_LOG}"
 grep -q -- 'label nodes worker-a worker-b worker-c worker-d kubefoundry.io/minio=true --overwrite' "${KF_STORAGE_KUBECTL_LOG}"
 grep -q -- "wait --for=jsonpath={.status.currentState}=Initialized tenant/kubemate-minio --namespace kubemate-system --timeout 10m" "${KF_STORAGE_KUBECTL_LOG}"
-grep -q 'storage: 20Gi' "${TMP}/rendered-minio-tenant.yaml"
-grep -q 'cpu: 500m' "${TMP}/rendered-minio-tenant.yaml"
-grep -Eq 'cpu: "?3"?' "${TMP}/rendered-minio-tenant.yaml"
-grep -q 'memory: 1Gi' "${TMP}/rendered-minio-tenant.yaml"
-grep -q 'memory: 6Gi' "${TMP}/rendered-minio-tenant.yaml"
-! grep -Eq 'test-password|MINIO_ROOT_PASSWORD' "${TMP}/rendered-minio-tenant.yaml"
+grep -A1 '/requests/storage$' "${KF_STORAGE_MINIO_PATCH}" | grep -q 'value: "20Gi"'
+grep -A1 '/requests/cpu$' "${KF_STORAGE_MINIO_PATCH}" | grep -q 'value: "500m"'
+grep -A1 '/limits/cpu$' "${KF_STORAGE_MINIO_PATCH}" | grep -q 'value: "3"'
+grep -A1 '/requests/memory$' "${KF_STORAGE_MINIO_PATCH}" | grep -q 'value: "1Gi"'
+grep -A1 '/limits/memory$' "${KF_STORAGE_MINIO_PATCH}" | grep -q 'value: "6Gi"'
+! grep -Eq 'test-password|MINIO_ROOT_PASSWORD' "${KF_STORAGE_MINIO_PATCH}"
+if [ -n "${KF_STORAGE_KUSTOMIZE_BIN:-}" ]; then
+    grep -q 'storage: 20Gi' "${KF_STORAGE_MINIO_RENDERED}"
+    grep -q 'cpu: 500m' "${KF_STORAGE_MINIO_RENDERED}"
+    grep -Eq 'cpu: "?3"?' "${KF_STORAGE_MINIO_RENDERED}"
+    grep -q 'memory: 1Gi' "${KF_STORAGE_MINIO_RENDERED}"
+    grep -q 'memory: 6Gi' "${KF_STORAGE_MINIO_RENDERED}"
+fi
 ! grep -Eq 'ssh_exec|config_get|get_all_' "${ROOT}/scripts/steps/phase3_ecosystem/47-install-openebs.sh" "${ROOT}/scripts/steps/phase3_ecosystem/49-install-minio.sh" "${ROOT}/scripts/steps/phase3_ecosystem/35-install-loki.sh" "${ROOT}/scripts/steps/phase3_ecosystem/48-install-alloy.sh"
 ! grep -Eq -- '--dry-run' "${ROOT}/scripts/steps/phase3_ecosystem/47-install-openebs.sh" "${ROOT}/scripts/steps/phase3_ecosystem/35-install-loki.sh" "${ROOT}/scripts/steps/phase3_ecosystem/48-install-alloy.sh"
 grep -q 'application/vnd.oci.image.index.v1+json' "${ROOT}/scripts/lib/phase3.sh"

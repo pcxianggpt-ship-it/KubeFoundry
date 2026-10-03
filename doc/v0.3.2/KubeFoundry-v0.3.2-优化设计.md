@@ -335,7 +335,7 @@ KF_MINIO_MEMORY_REQUEST
 KF_MINIO_MEMORY_LIMIT
 ```
 
-安装脚本在任务工作目录复制 Tenant 模板后使用 `yq` 精确更新对应字段，不修改离线介质原文件，不使用未转义的 `sed` 拼接 YAML。渲染后的清单进入任务留痕但不得包含 MinIO 凭据。后置验证按快照期望值核对 Tenant CR、PVC 请求和 Pod resources，避免仅检查 Pod Running 就误判配置已生效。
+安装脚本沿用四节点 Tenant 的 `kubectl apply -k` 部署方式，在临时资源副本中通过 Kustomize JSON Patch 精确覆盖容量、CPU 和内存字段，无需 `yq`，不修改离线介质原文件。临时副本在脚本退出时清理，不输出包含 MinIO 凭据的渲染清单。后置验证按快照期望值核对 Tenant CR、PVC 请求和 Pod resources，避免仅检查 Pod Running 就误判配置已生效。
 
 已安装 MinIO 的资源调整不在 v0.3.2 范围；组件状态为 `installed/installing` 时继续只读。
 

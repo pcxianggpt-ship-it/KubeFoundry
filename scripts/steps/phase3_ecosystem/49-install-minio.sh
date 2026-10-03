@@ -34,15 +34,40 @@ fi
 : "${KF_MINIO_CPU_LIMIT:=2}"
 : "${KF_MINIO_MEMORY_REQUEST:=512Mi}"
 : "${KF_MINIO_MEMORY_LIMIT:=4Gi}"
-export KF_MINIO_PVC_SIZE KF_MINIO_CPU_REQUEST KF_MINIO_CPU_LIMIT
-export KF_MINIO_MEMORY_REQUEST KF_MINIO_MEMORY_LIMIT
-yq eval -i '
-  .spec.pools[0].volumeClaimTemplate.spec.resources.requests.storage = strenv(KF_MINIO_PVC_SIZE) |
-  .spec.pools[0].resources.requests.cpu = strenv(KF_MINIO_CPU_REQUEST) |
-  .spec.pools[0].resources.limits.cpu = strenv(KF_MINIO_CPU_LIMIT) |
-  .spec.pools[0].resources.requests.memory = strenv(KF_MINIO_MEMORY_REQUEST) |
-  .spec.pools[0].resources.limits.memory = strenv(KF_MINIO_MEMORY_LIMIT)
-' "${tenant_manifest}"
+
+# 沿用 kubectl apply -k；在临时副本覆盖资源参数，不依赖 yq 或改写介质。
+work_dir=$(mktemp -d)
+trap 'rm -rf -- "${work_dir}"' EXIT
+tenant_dir="${work_dir}/tenant"
+mkdir -p "${tenant_dir}"
+cp -a "${resource_dir}/." "${tenant_dir}/"
+cat >> "${tenant_dir}/kustomization.yaml" <<'EOF'
+
+patches:
+  - target:
+      group: minio.min.io
+      version: v2
+      kind: Tenant
+      name: kubemate-minio
+    path: minio-resources-patch.yaml
+EOF
+cat > "${tenant_dir}/minio-resources-patch.yaml" <<EOF
+- op: add
+  path: /spec/pools/0/volumeClaimTemplate/spec/resources/requests/storage
+  value: "${KF_MINIO_PVC_SIZE}"
+- op: add
+  path: /spec/pools/0/resources/requests/cpu
+  value: "${KF_MINIO_CPU_REQUEST}"
+- op: add
+  path: /spec/pools/0/resources/limits/cpu
+  value: "${KF_MINIO_CPU_LIMIT}"
+- op: add
+  path: /spec/pools/0/resources/requests/memory
+  value: "${KF_MINIO_MEMORY_REQUEST}"
+- op: add
+  path: /spec/pools/0/resources/limits/memory
+  value: "${KF_MINIO_MEMORY_LIMIT}"
+EOF
 
 minio_image="registry:5000/quay.io/minio/minio:RELEASE.2024-03-05T04-48-44Z"
 phase3_registry_image_exists "${minio_image}" || {
@@ -66,8 +91,8 @@ kubectl get storageclass openebs-hostpath >/dev/null 2>&1 || {
     exit 1
 }
 kubectl label nodes "${minio_nodes[@]:0:4}" kubefoundry.io/minio=true --overwrite
-kubectl apply -k "${resource_dir}"
-kubectl label --overwrite -k "${resource_dir}" \
+kubectl apply -k "${tenant_dir}"
+kubectl label --overwrite -k "${tenant_dir}" \
     app.kubernetes.io/managed-by=kubefoundry \
     kubefoundry.io/component-group="${KF_COMPONENT_GROUP_KEY:-storage_observability}"
 
