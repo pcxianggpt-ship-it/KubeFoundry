@@ -44,6 +44,7 @@ class InstallResumeServiceTest {
     @Autowired ComponentInstallService componentInstalls;
     @Autowired ComponentInstallationStateService componentStates;
     @Autowired InstallResumeService resumes;
+    @Autowired ClusterSettingsService settings;
 
     @MockBean JobExecutor executor;
 
@@ -57,6 +58,7 @@ class InstallResumeServiceTest {
         jdbc.update("delete from cluster_component_states");
         jdbc.update("delete from cluster_components");
         jdbc.update("delete from cluster_settings");
+        jdbc.update("delete from app_settings");
         jdbc.update("delete from node_roles");
         jdbc.update("delete from nodes");
         jdbc.update("delete from clusters");
@@ -94,6 +96,55 @@ class InstallResumeServiceTest {
                 .isEqualTo(sourceStepIds);
         assertThat(snapshots.findByJobId(resumedJobId).orElseThrow().getSnapshotJson())
                 .isEqualTo(sourceSnapshot);
+    }
+
+    @Test
+    void resumesUnchangedSnapshotWithMinioRuntimeParameters() throws Exception {
+        Path mediaRoot = Path.of("target/install-resume-media/kube-media/03.setup_file/v1.30.14");
+        for (String directory : java.util.List.of("helmapp/openebs", "minio", "helmapp/loki", "helmapp/alloy")) {
+            Path chart = mediaRoot.resolve(directory);
+            Files.createDirectories(chart);
+            Files.writeString(chart.resolve("Chart.yaml"), "name: test\n", StandardCharsets.UTF_8);
+        }
+        Cluster cluster = preparedCluster("minio-runtime", false);
+        for (int index = 2; index <= 4; index++) {
+            Node worker = new Node(cluster);
+            worker.update("worker-minio-" + index, "10.0.0." + (10 + index), "", "worker", "root", 22);
+            worker.replaceRoles(java.util.Set.of("worker"));
+            worker.completeNodeTest("kylin", "V10", "amd64");
+            nodes.saveAndFlush(worker);
+        }
+        components.saveAndFlush(new ClusterComponent(cluster, "storage_observability", true,
+                "{\"minio_pvc_size\":\"20Gi\",\"minio_cpu_request\":\"500m\"}"));
+        states.saveAndFlush(new ClusterComponentState(cluster, "storage_observability"));
+        long sourceJobId = installs.start(cluster.getId());
+        Job source = jobs.findById(sourceJobId).orElseThrow();
+        source.markFailed();
+        jobs.saveAndFlush(source);
+        String frozen = snapshots.findByJobId(sourceJobId).orElseThrow().getSnapshotJson();
+        componentStates.complete(source, false);
+        assertThat(frozen).contains("\"minio_pvc_size\":\"20Gi\"");
+
+        long resumedJobId = resumes.resume(cluster.getId(), sourceJobId);
+
+        assertThat(jobs.findById(resumedJobId).orElseThrow().getSourceJob().getId()).isEqualTo(sourceJobId);
+        assertThat(snapshots.findByJobId(resumedJobId).orElseThrow().getSnapshotJson()).isEqualTo(frozen);
+    }
+
+    @Test
+    void stillRejectsChangedGlobalRuntimeSettingsWithoutCreatingAJob() {
+        Cluster cluster = preparedCluster("runtime-drift", false);
+        long sourceJobId = installs.start(cluster.getId());
+        Job source = jobs.findById(sourceJobId).orElseThrow();
+        source.markFailed();
+        jobs.saveAndFlush(source);
+        long before = jobs.count();
+        settings.updateGlobalSettings(java.util.Map.of("env", java.util.Map.of("containerd_root", "/data/changed")));
+
+        assertThatThrownBy(() -> resumes.resume(cluster.getId(), sourceJobId))
+                .isInstanceOf(InstallResumeException.class)
+                .hasMessageContaining("安装路径或运行参数已变化");
+        assertThat(jobs.count()).isEqualTo(before);
     }
 
     @Test

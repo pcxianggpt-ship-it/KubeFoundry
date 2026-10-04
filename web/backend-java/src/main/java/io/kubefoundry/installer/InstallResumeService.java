@@ -14,7 +14,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.TreeMap;
 import org.springframework.stereotype.Service;
 
 /** Creates a new immutable-snapshot-driven job from an eligible terminal installation job. */
@@ -33,7 +32,6 @@ public class InstallResumeService {
     private final InstallPlanAssembler assembler;
     private final InstallPlanFactory plans;
     private final RemoteStepRunner runner;
-    private final ClusterSettingsService settings;
     private final ComponentMediaService media;
 
     public InstallResumeService(
@@ -45,7 +43,6 @@ public class InstallResumeService {
             InstallPlanAssembler assembler,
             InstallPlanFactory plans,
             RemoteStepRunner runner,
-            ClusterSettingsService settings,
             ComponentMediaService media) {
         this.clusters = clusters;
         this.nodes = nodes;
@@ -55,7 +52,6 @@ public class InstallResumeService {
         this.assembler = assembler;
         this.plans = plans;
         this.runner = runner;
-        this.settings = settings;
         this.media = media;
     }
 
@@ -140,11 +136,9 @@ public class InstallResumeService {
         if (!snapshot.nodes().equals(current.nodes())) {
             throw changed("节点身份、SSH 参数、架构或凭据已变化");
         }
-        Map<Long, InstallationSnapshotPayload.RuntimeConfiguration> currentSettings = new TreeMap<>();
-        for (Node node : configuredNodes) {
-            currentSettings.put(node.getId(), InstallationSnapshotPayload.RuntimeConfiguration.from(
-                    settings.runtimeSettings(cluster, node)));
-        }
+        // 与创建安装快照共用参数生成逻辑，包含已启用组件注入的运行参数。
+        Map<Long, InstallationSnapshotPayload.RuntimeConfiguration> currentSettings =
+                snapshots.previewPayload(cluster, configuredNodes).runtimeSettings();
         if (!snapshot.runtimeSettings().equals(currentSettings)) {
             throw changed("安装路径或运行参数已变化");
         }
