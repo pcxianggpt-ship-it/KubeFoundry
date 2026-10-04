@@ -33,6 +33,15 @@ export function stepStatusTone(status, reason = '') {
   return jobStatusTone(status);
 }
 
+// 展示颜色独立于任务状态：执行中使用蓝色，验证跳过仍为绿色，依赖跳过为灰色。
+export function executionStatusTone(status, reason = '') {
+  if (['success', 'partial_success', 'verified'].includes(status)
+      || (status === 'skipped' && reason === 'PREVERIFY_SATISFIED')) return 'success';
+  if (['failed', 'interrupted'].includes(status)) return 'error';
+  if (status === 'running') return 'running';
+  return 'pending';
+}
+
 export function verificationMessage(message = '') {
   if (message === 'PREVERIFY_SATISFIED') return '执行前验证通过，已安全跳过安装';
   if (message.startsWith('PREVERIFY_FAILED')) return '执行前验证失败';

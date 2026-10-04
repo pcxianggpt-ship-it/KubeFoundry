@@ -2,7 +2,6 @@
   <section class="page-view cluster-list-view">
     <header class="page-header">
       <div>
-        <p class="page-eyebrow">{{ mode === 'install' ? '集群安装' : '集群配置' }}</p>
         <h1>{{ mode === 'install' ? '集群安装' : '集群配置' }}</h1>
         <p>{{ mode === 'install' ? '查看预检查、安装任务和远程重置状态。' : '维护集群信息、服务器节点和 Kubemate 配置。' }}</p>
       </div>

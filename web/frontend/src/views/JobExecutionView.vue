@@ -1,41 +1,74 @@
 <template>
   <section class="page-view job-execution-view">
-    <header class="workspace-header execution-header">
-      <div><RouterLink v-if="job.cluster_id" class="back-link" :to="clusterRoute"><ArrowLeft />返回安装概览</RouterLink><p class="page-eyebrow">{{ jobTypeLabel }}任务 #{{ job.id || route.params.jobId }}</p><h1>{{ cluster.name || '集群任务进度' }}</h1></div>
-      <div class="execution-header-actions">
-        <el-button v-if="resumeAvailable" data-testid="resume-install-job" type="primary" :loading="resuming" :disabled="resuming" @click="resumeJob">续跑任务</el-button>
-        <span class="status-label" :class="`status-label--${statusTone}`"><component :is="statusIcon" />{{ jobStatusLabel(job.status) }}</span>
+    <div class="execution-toolbar">
+      <nav class="execution-breadcrumb" aria-label="当前位置">
+        <RouterLink :to="{ name: 'cluster-install-list' }">集群安装</RouterLink>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">{{ cluster.name || '集群任务' }}</span>
+        <span v-if="job.id" class="execution-job-number">任务 #{{ job.id }}</span>
+      </nav>
+      <RouterLink class="el-button" :to="{ name: 'cluster-install-list' }"><ArrowLeft aria-hidden="true" />返回集群</RouterLink>
+    </div>
+    <header class="execution-hero">
+      <div class="execution-heading-row">
+      <div class="execution-title-line">
+        <h1>{{ jobTypeLabel }}进度</h1>
+        <span v-if="!loading && !errorMessage" class="execution-current-status" :class="`execution-tone--${statusTone}`"><StepStatusIcon :status="job.status" />{{ currentStatusLabel }}</span>
       </div>
+      <div v-if="!loading && !errorMessage && resumeAvailable" class="execution-hero-actions">
+        <el-button data-testid="resume-install-job" type="primary" :loading="resuming" :disabled="resuming" @click="resumeJob">从失败处续跑</el-button>
+        <p class="field-hint">将创建新任务，当前记录保留。</p>
+      </div>
+      </div>
+      <div v-if="!loading && !errorMessage" class="execution-hero-meta">
+        <span>Kubernetes {{ cluster.k8s_version || '-' }}</span>
+        <span aria-hidden="true">·</span><span>{{ completedSteps }} / {{ stages.length }} 步骤</span>
+      </div>
+      <section v-if="!loading && !errorMessage" class="execution-overview" aria-label="整体进度">
+        <div class="progress-copy"><span class="visually-hidden">{{ completedSteps }} / {{ stages.length }} 个步骤已完成</span><span>{{ progress }}%</span></div>
+        <el-progress :percentage="progress" :show-text="false" :stroke-width="10" :status="progressState" />
+      </section>
     </header>
     <el-skeleton v-if="loading" :rows="9" animated aria-label="正在恢复安装任务" />
     <section v-else-if="errorMessage" class="state-panel state-panel--error" role="alert">
       <WarningFilled /><div><h2>任务恢复失败</h2><p>{{ errorMessage }}</p></div><el-button data-testid="retry-job" :icon="Refresh" @click="loadSnapshot(true)">重新加载</el-button>
     </section>
     <template v-else>
-      <section class="execution-overview">
-        <div class="progress-copy"><span>整体进度</span><strong>{{ completedSteps }}/{{ stages.length }} 个步骤</strong></div>
-        <el-progress :percentage="progress" :status="job.status === 'failed' ? 'exception' : ['success', 'partial_success'].includes(job.status) ? 'success' : undefined" />
-        <div class="execution-meta"><span>Kubernetes {{ cluster.k8s_version || '-' }}</span><span>{{ runModeLabel }}</span><span>{{ connected ? '实时连接中' : terminal ? '任务已结束' : '实时连接已中断' }}</span></div>
-      </section>
-      <el-alert v-if="resumeError" data-testid="resume-error" :title="resumeError" type="error" show-icon :closable="false" />
-      <section v-if="job.source_job_id" class="job-lineage" aria-label="续跑任务来源">
+      <el-alert v-if="resumeError" class="execution-notice" data-testid="resume-error" :title="resumeError" type="error" show-icon :closable="false" />
+      <section v-if="job.source_job_id" class="job-lineage execution-notice" aria-label="续跑任务来源">
         <div><strong>此任务由任务 #{{ job.source_job_id }} 续跑创建</strong><p>来源任务保持只读，可返回查看原失败现场。</p></div>
         <RouterLink class="el-button" :to="sourceJobRoute">查看来源任务</RouterLink>
       </section>
-      <el-alert v-if="job.status === 'failed'" :title="`${jobTypeLabel}任务失败，可定位首个失败节点查看诊断和日志。`" type="error" show-icon :closable="false">
-        <template #default><el-button data-testid="locate-failure" link type="primary" @click="locateFailure">定位失败位置</el-button></template>
-      </el-alert>
       <div class="execution-layout">
-        <aside class="execution-stage-panel"><div class="panel-heading"><h2>{{ jobTypeLabel }}部署单元</h2><span>{{ deploymentUnits.length }} 个单元 · {{ stages.length }} 个步骤</span></div><DeploymentUnitList :units="deploymentUnits" :selected-id="selectedStageId" :aria-label="`${jobTypeLabel}部署单元`" @select="selectStage" /></aside>
-        <main class="execution-detail">
-          <div class="execution-filters">
-            <el-select v-model="selectedStageId" placeholder="全部步骤" aria-label="按步骤筛选"><el-option label="全部步骤" value="" /><el-option v-for="stage in stages" :key="stage.id" :label="stage.name" :value="stage.id" /></el-select>
-            <el-select v-model="selectedNodeId" placeholder="全部节点" aria-label="按节点筛选"><el-option label="全部节点" value="" /><el-option v-for="node in nodeOptions" :key="node.node_id" :label="node.hostname" :value="node.node_id" /></el-select>
-            <el-button data-testid="refresh-job-snapshot" :icon="Refresh" @click="loadSnapshot(true)">刷新快照</el-button>
+        <aside class="execution-stage-panel">
+          <div class="panel-heading execution-stage-heading visually-hidden"><h2>{{ jobTypeLabel }}部署单元</h2><span>{{ deploymentUnits.length }} 个单元 · {{ stages.length }} 个步骤</span></div>
+          <div class="execution-stage-scroll" role="region" aria-label="部署步骤，可滚动查看" tabindex="0">
+          <DeploymentUnitList :units="deploymentUnits" :selected-id="selectedStageId" :aria-label="`${jobTypeLabel}部署单元`" @select="selectStage" />
+          <div v-if="!deploymentUnits.length" class="execution-empty" role="status">暂未生成部署步骤。</div>
           </div>
-          <NodeExecutionTable :nodes="visibleNodes" :selected-node-id="selectedNodeId" @select="selectNode" />
-          <LiveLogViewer :logs="filteredLogs" :connected="connected" :terminal="terminal" />
-        </main>
+          <div class="execution-stage-footer">
+            <RouterLink v-if="job.cluster_id" class="back-link" :to="clusterRoute"><ArrowLeft aria-hidden="true" />返回安装概览</RouterLink>
+            <small>{{ runModeLabel }}</small>
+          </div>
+        </aside>
+        <section class="execution-detail" aria-label="执行详情">
+          <div class="execution-node-heading">
+            <h2>节点执行情况</h2>
+            <el-button v-if="job.status === 'failed'" class="locate-failure-button" data-testid="locate-failure" link type="danger" @click="locateFailure">定位失败位置</el-button>
+            <span class="execution-updated">{{ updatedAt ? `更新于 ${updatedAt}` : '等待更新' }}</span>
+          </div>
+          <NodeExecutionTable :nodes="visibleNodes" :node-details="nodeDetails" :selected-node-id="selectedNodeId" @select="selectNode" />
+          <LiveLogViewer :logs="filteredLogs" :connected="connected" :terminal="terminal">
+            <template #tools>
+              <el-select v-model="selectedNodeId" class="log-node-filter" filterable :placeholder="`全部节点（${nodeOptions.length} 台）`" aria-label="按节点筛选">
+                <el-option :label="`全部节点（${nodeOptions.length} 台）`" value="" />
+                <el-option v-for="node in nodeOptions" :key="node.node_id" :label="node.hostname" :value="node.node_id" />
+              </el-select>
+              <el-select v-model="selectedStageId" placeholder="全部步骤" aria-label="按步骤筛选" @change="selectedNodeId = ''"><el-option label="全部步骤" value="" /><el-option v-for="stage in stages" :key="stage.id" :label="stage.name" :value="stage.id" /></el-select>
+              <el-button data-testid="refresh-job-snapshot" :icon="Refresh" aria-label="刷新任务快照" title="刷新快照" @click="loadSnapshot(true)" />
+            </template>
+          </LiveLogViewer>
+        </section>
       </div>
     </template>
   </section>
@@ -43,14 +76,15 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { ArrowLeft, CircleCheckFilled, Clock, Refresh, WarningFilled } from '@element-plus/icons-vue';
+import { ArrowLeft, Refresh, WarningFilled } from '@element-plus/icons-vue';
 import { RouterLink, useRoute, useRouter } from 'vue-router';
 import DeploymentUnitList from '../components/jobs/DeploymentUnitList.vue';
 import NodeExecutionTable from '../components/jobs/NodeExecutionTable.vue';
 import LiveLogViewer from '../components/jobs/LiveLogViewer.vue';
+import StepStatusIcon from '../components/jobs/StepStatusIcon.vue';
 import { groupDeploymentUnits } from '../components/jobs/deploymentUnits';
-import { canResumeJob, isTerminalJob, jobStatusLabel } from '../components/jobs/jobStatus';
-import { getCluster, getClusterJob, getJob, getJobLogs, getJobSteps, resumeInstallJob } from '../api/client';
+import { canResumeJob, executionStatusTone, isTerminalJob, jobStatusLabel } from '../components/jobs/jobStatus';
+import { getCluster, getClusterJob, getJob, getJobLogs, getJobSteps, listNodes, resumeInstallJob } from '../api/client';
 import { safeErrorMessage } from '../utils/redaction';
 
 const route = useRoute();
@@ -59,14 +93,16 @@ const job = ref({}); const cluster = ref({}); const stages = ref([]); const logs
 const loading = ref(true); const connected = ref(false); const errorMessage = ref('');
 const resuming = ref(false); const resumeError = ref('');
 const selectedStageId = ref(''); const selectedNodeId = ref('');
+const nodeDetails = ref([]); const updatedAt = ref('');
 let eventSource; let logId = 0; let loadSequence = 0;
 
 const terminal = computed(() => isTerminalJob(job.value.status));
 const completedSteps = computed(() => stages.value.filter((stage) => ['success', 'skipped'].includes(stage.status)).length);
 const progress = computed(() => stages.value.length ? Math.round(completedSteps.value / stages.value.length * 100) : 0);
 const deploymentUnits = computed(() => groupDeploymentUnits(stages.value));
-const statusTone = computed(() => ['success', 'partial_success'].includes(job.value.status) ? 'success' : terminal.value ? 'error' : 'running');
-const statusIcon = computed(() => ['success', 'partial_success'].includes(job.value.status) ? CircleCheckFilled : terminal.value ? WarningFilled : Clock);
+const statusTone = computed(() => executionStatusTone(job.value.status));
+const progressState = computed(() => ['failed', 'interrupted'].includes(job.value.status)
+  ? 'exception' : ['success', 'partial_success'].includes(job.value.status) ? 'success' : undefined);
 const clusterRoute = computed(() => ({ name: 'install-overview', params: { clusterId: String(job.value.cluster_id) } }));
 const sourceJobRoute = computed(() => ({ name: 'cluster-job-execution', params: {
   clusterId: String(job.value.cluster_id), jobId: String(job.value.source_job_id)
@@ -76,6 +112,7 @@ const runModeLabel = computed(() => job.value.run_mode === 'resume'
   ? `续跑任务${job.value.source_job_id ? ` · 来源 #${job.value.source_job_id}` : ''}`
   : '正常执行');
 const jobTypeLabel = computed(() => ({ install: '安装', component_install: '组件补装', reset: '重置', precheck: '预检查' }[job.value.job_type] || '集群'));
+const currentStatusLabel = computed(() => job.value.status === 'running' ? `正在${jobTypeLabel.value}` : `${jobTypeLabel.value}${jobStatusLabel(job.value.status)}`);
 const selectedStage = computed(() => stages.value.find((stage) => stage.id === selectedStageId.value));
 const visibleNodes = computed(() => selectedStage.value?.nodes || stages.value.flatMap((stage) => stage.nodes || []));
 const nodeOptions = computed(() => {
@@ -118,14 +155,17 @@ async function loadSnapshot(reconnect) {
       } });
       return;
     }
-    const [clusterPayload, stepPayload, logPayload] = await Promise.all([
-      getCluster(loadedJob.cluster_id), getJobSteps(requestedJobId), loadLogs(requestedJobId)
+    const [clusterPayload, stepPayload, logPayload, nodePayload] = await Promise.all([
+      getCluster(loadedJob.cluster_id), getJobSteps(requestedJobId), loadLogs(requestedJobId),
+      listNodes(loadedJob.cluster_id).catch(() => ({ items: [] }))
     ]);
     if (sequence !== loadSequence || requestedJobId !== String(route.params.jobId)) return;
     job.value = loadedJob;
     cluster.value = clusterPayload?.data || clusterPayload;
     stages.value = normalizeStages(items(stepPayload).sort((a, b) => a.order - b.order));
     logs.value = normalizeLogs(logPayload);
+    nodeDetails.value = items(nodePayload);
+    updatedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false });
     if (!selectedStageId.value) selectedStageId.value = (stages.value.find((stage) => ['running', 'failed', 'interrupted'].includes(stage.status)) || stages.value[0])?.id || '';
     if (reconnect && !isTerminalJob(job.value.status)) connect();
   } catch (error) { errorMessage.value = safeErrorMessage(error, '安装任务加载失败，请重试。'); }
@@ -161,6 +201,7 @@ function connect() {
 async function handleEvent(type, event, subscribedJobId) {
   if (subscribedJobId !== String(route.params.jobId)) return;
   const payload = parseEvent(event);
+  updatedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false });
   appendEventLog(type, payload);
   if (type === 'job.status') job.value.status = payload.status || job.value.status;
   if (type === 'step.status') { const stage = stages.value.find((item) => item.id === Number(payload.step_id)); if (stage) stage.status = payload.status; }

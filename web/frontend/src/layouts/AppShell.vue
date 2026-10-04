@@ -1,5 +1,7 @@
 <template>
   <div class="app-frame" @keydown.esc="closeNavigation(true)">
+    <a class="skip-link" href="#main-workspace">跳至主内容</a>
+    <RouterLink class="mobile-brand" :to="{ name: 'cluster-config-list' }">KubeFoundry</RouterLink>
     <button
       ref="menuButton"
       class="mobile-menu-button"
@@ -21,27 +23,24 @@
       :inert="isMobile && !navigationOpen ? '' : undefined"
     >
       <RouterLink class="brand-link" :to="{ name: 'cluster-config-list' }" @click="closeNavigation()">
-        <span class="brand-mark" aria-hidden="true">KF</span>
-        <span>
-          <strong>KubeFoundry</strong>
-          <small>集群运维工作台</small>
-        </span>
+        <strong>KubeFoundry</strong>
       </RouterLink>
+      <span class="app-version">v{{ version }}</span>
 
       <nav aria-label="主导航" class="primary-navigation">
-        <RouterLink :to="{ name: 'cluster-config-list' }" @click="closeNavigation()">
-          <Grid aria-hidden="true" />
+        <RouterLink :to="{ name: 'cluster-config-list' }" :class="{ 'is-section-active': route?.path.startsWith('/cluster-config') }" @click="closeNavigation()">
+          <Setting aria-hidden="true" />
           <span>集群配置</span>
         </RouterLink>
-        <RouterLink :to="{ name: 'cluster-install-list' }" @click="closeNavigation()">
-          <Promotion aria-hidden="true" />
+        <RouterLink :to="{ name: 'cluster-install-list' }" :class="{ 'is-section-active': route?.path.startsWith('/cluster-install') }" @click="closeNavigation()">
+          <Box aria-hidden="true" />
           <span>集群安装</span>
         </RouterLink>
       </nav>
 
-      <div class="sidebar-footer">
-        <span class="connection-indicator" aria-hidden="true"></span>
-        <span>控制台已就绪</span>
+      <div class="sidebar-connection" role="status">
+        <component :is="serviceConnected ? CircleCheckFilled : WarningFilled" :class="{ 'is-connected': serviceConnected }" aria-hidden="true" />
+        <span>{{ serviceConnected === null ? '正在连接' : serviceConnected ? '连接正常' : '服务未连接' }}</span>
       </div>
     </aside>
 
@@ -53,7 +52,7 @@
       @click="closeNavigation(true)"
     ></button>
 
-    <main class="app-main">
+    <main id="main-workspace" class="app-main" tabindex="-1">
       <slot>
         <RouterView />
       </slot>
@@ -63,22 +62,48 @@
 
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
-import { RouterLink, RouterView } from 'vue-router';
-import { Close, Grid, Menu, Promotion } from '@element-plus/icons-vue';
+import { RouterLink, RouterView, useRoute } from 'vue-router';
+import { Box, CircleCheckFilled, Close, Menu, Setting, WarningFilled } from '@element-plus/icons-vue';
+import { version } from '../../package.json';
+
+const route = useRoute();
 
 const navigationOpen = ref(false);
 const isMobile = ref(false);
 const menuButton = ref(null);
 let mediaQuery;
+const serviceConnected = ref(null);
+let healthTimer;
+let healthController;
+
+async function checkService() {
+  healthController = new AbortController();
+  const timeout = setTimeout(() => healthController.abort(), 5000);
+  try {
+    const response = await fetch('/api/health', { signal: healthController.signal });
+    const health = await response.json();
+    serviceConnected.value = response.ok && health.status === 'ok';
+  } catch {
+    serviceConnected.value = false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 onMounted(() => {
+  checkService();
+  healthTimer = setInterval(checkService, 30000);
   if (!window.matchMedia) return;
   mediaQuery = window.matchMedia('(max-width: 820px)');
   updateMobile(mediaQuery);
   mediaQuery.addEventListener?.('change', updateMobile);
 });
 
-onBeforeUnmount(() => mediaQuery?.removeEventListener?.('change', updateMobile));
+onBeforeUnmount(() => {
+  mediaQuery?.removeEventListener?.('change', updateMobile);
+  clearInterval(healthTimer);
+  healthController?.abort();
+});
 
 function updateMobile(event) {
   isMobile.value = event.matches;

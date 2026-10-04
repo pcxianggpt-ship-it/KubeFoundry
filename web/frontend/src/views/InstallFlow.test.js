@@ -267,6 +267,10 @@ describe('安装流程', () => {
     const { router, wrapper } = await mountAt(JobExecutionView, '/cluster-install/42/jobs/100');
 
     const button = wrapper.get('[data-testid="resume-install-job"]');
+    expect(wrapper.findAll('[data-testid="resume-install-job"]')).toHaveLength(1);
+    expect(wrapper.get('.execution-hero [data-testid="resume-install-job"]').exists()).toBe(true);
+    expect(wrapper.find('.execution-stage-footer [data-testid="resume-install-job"]').exists()).toBe(false);
+    expect(wrapper.get('.execution-stage-scroll').attributes('tabindex')).toBe('0');
     await button.trigger('click');
     await button.trigger('click');
     expect(resumeInstallJob).toHaveBeenCalledTimes(1);
@@ -351,5 +355,33 @@ describe('安装流程', () => {
     const { router } = await mountAt(JobExecutionView, '/jobs/101/execution');
 
     expect(router.currentRoute.value.fullPath).toBe('/cluster-install/42/jobs/101');
+  });
+
+  it('多节点使用可搜索下拉筛选日志，节点配置暂不可用时仍展示执行记录', async () => {
+    getJob.mockResolvedValue({ id: 105, cluster_id: 42, job_type: 'install', status: 'success' });
+    getCluster.mockResolvedValue({ id: 42, name: '测试集群' });
+    listNodes.mockRejectedValue(new Error('配置暂不可用'));
+    getJobSteps.mockResolvedValue({ items: [{ id: 10, name: '安装依赖', order: 1, status: 'success', nodes: [
+      { id: 100, node_id: 1, hostname: 'cp-1', status: 'success' },
+      ...Array.from({ length: 15 }, (_, index) => ({ id: 101 + index, node_id: 2 + index, hostname: `worker-${index + 1}`, status: 'success' }))
+    ] }] });
+    getJobLogs.mockResolvedValue({ items: [
+      { id: 1, node_id: 1, stage_id: 10, message: '主控节点已就绪' },
+      { id: 2, node_id: 2, stage_id: 10, message: '工作节点已就绪' }
+    ] });
+    const { wrapper } = await mountAt(JobExecutionView, '/cluster-install/42/jobs/105');
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+    const filter = wrapper.findComponent({ name: 'ElSelect' });
+    expect(wrapper.find('.log-node-tabs').exists()).toBe(false);
+    expect(filter.props('filterable')).toBe(true);
+    expect(filter.props('placeholder')).toBe('全部节点（16 台）');
+    filter.vm.$emit('update:modelValue', 2);
+    await flushPromises();
+    expect(wrapper.get('.live-log-viewer').text()).toContain('工作节点已就绪');
+    expect(wrapper.get('.live-log-viewer').text()).not.toContain('主控节点已就绪');
+    filter.vm.$emit('update:modelValue', '');
+    await flushPromises();
+    expect(wrapper.get('.live-log-viewer').text()).toContain('主控节点已就绪');
+    wrapper.unmount();
   });
 });
