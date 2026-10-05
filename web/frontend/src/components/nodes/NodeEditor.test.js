@@ -13,7 +13,7 @@ describe('NodeEditor', () => {
           id: 7,
           hostname: 'worker-1',
           ip: '10.0.0.7',
-          roles: ['worker'],
+          roles: ['worker', 'nfs_server'],
           ssh_user: 'root',
           ssh_port: 22,
           has_password: true
@@ -27,5 +27,6 @@ describe('NodeEditor', () => {
     await wrapper.get('[data-testid="save-node"]').trigger('click');
     const payload = wrapper.emitted('save')[0][0];
     expect(payload).not.toHaveProperty('password');
+    expect(payload.roles).toEqual(['worker']);
   });
 });

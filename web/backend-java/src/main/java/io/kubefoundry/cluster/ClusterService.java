@@ -1,11 +1,14 @@
 package io.kubefoundry.cluster;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.kubefoundry.credential.AesGcmCredentialCipher;
 import io.kubefoundry.credential.EncryptedCredential;
 import io.kubefoundry.job.JobRepository;
 import io.kubefoundry.installer.InstallerAdmission;
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import org.springframework.beans.factory.ObjectProvider;
@@ -22,18 +25,24 @@ public class ClusterService {
     private final JobRepository jobs;
     private final ObjectProvider<AesGcmCredentialCipher> credentialCipherProvider;
     private final InstallerAdmission admission;
+    private final ClusterComponentRepository components;
+    private final ObjectMapper mapper;
 
     public ClusterService(
             ClusterRepository clusters,
             NodeRepository nodes,
             JobRepository jobs,
             ObjectProvider<AesGcmCredentialCipher> credentialCipherProvider,
-            InstallerAdmission admission) {
+            InstallerAdmission admission,
+            ClusterComponentRepository components,
+            ObjectMapper mapper) {
         this.clusters = clusters;
         this.nodes = nodes;
         this.jobs = jobs;
         this.credentialCipherProvider = credentialCipherProvider;
         this.admission = admission;
+        this.components = components;
+        this.mapper = mapper;
     }
 
     @Transactional(readOnly = true)
@@ -78,7 +87,28 @@ public class ClusterService {
     @Transactional(readOnly = true)
     public List<NodeResponse> listNodes(long clusterId) {
         requireCluster(clusterId);
-        return nodes.findByClusterIdOrderById(clusterId).stream().map(NodeResponse::from).toList();
+        String nfsAddress = managedNfsServerAddress(clusterId);
+        return nodes.findByClusterIdOrderById(clusterId).stream().map(node -> {
+            List<String> roles = new ArrayList<>(node.getRoles().stream().sorted().toList());
+            // NFS 角色由已保存的组件配置决定，不写入可手工编辑的基础节点角色。
+            if (!node.isDraft() && !nfsAddress.isBlank() && nfsAddress.equals(node.getIp())) {
+                roles.add("nfs_server");
+            }
+            return NodeResponse.from(node, roles);
+        }).toList();
+    }
+
+    private String managedNfsServerAddress(long clusterId) {
+        return components.findByClusterIdAndComponentKey(clusterId, "nfs")
+                .filter(ClusterComponent::isEnabled).map(component -> {
+                    try {
+                        var config = mapper.readTree(component.getConfigJson());
+                        return config != null && "managed".equals(config.path("exports_mode").asText())
+                                ? config.path("server_address").asText("") : "";
+                    } catch (JsonProcessingException exception) {
+                        return "";
+                    }
+                }).orElse("");
     }
 
     @Transactional
@@ -357,8 +387,12 @@ public class ClusterService {
             @JsonProperty("node_test_message") String nodeTestMessage,
             String status) {
         static NodeResponse from(Node value) {
+            return from(value, value.getRoles().stream().sorted().toList());
+        }
+
+        static NodeResponse from(Node value, List<String> roles) {
             return new NodeResponse(value.getId(), value.getCluster().getId(), value.getHostname(),
-                    value.getIp(), value.getIpv6(), value.getRoles().stream().sorted().toList(), value.getSshUser(),
+                    value.getIp(), value.getIpv6(), roles, value.getSshUser(),
                     value.getSshPort(), value.hasPassword(), value.isDraft(),
                     value.getNodeTestStatus(), value.getOsType(), value.getOsVersion(),
                     value.getArchitecture(), value.getNodeTestMessage(), value.getStatus());

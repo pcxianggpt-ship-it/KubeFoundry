@@ -69,6 +69,8 @@ const form = reactive(emptyNode());
 
 watch(() => [props.modelValue, props.node], () => {
   Object.assign(form, emptyNode(), props.node || {});
+  // NFS 角色由组件配置分配，编辑节点时只提交基础角色。
+  form.roles = (Array.isArray(form.roles) ? form.roles : []).filter(role => role !== 'nfs_server');
   form.password = '';
 }, { immediate: true, deep: true });
 

@@ -23,18 +23,21 @@ public class ClusterComponentService {
     private final ClusterComponentStateRepository states;
     private final InstallerAdmission admission;
     private final ObjectMapper mapper;
+    private final NodeRepository nodes;
 
     public ClusterComponentService(
             ClusterRepository clusters,
             ClusterComponentRepository components,
             ClusterComponentStateRepository states,
             InstallerAdmission admission,
-            ObjectMapper mapper) {
+            ObjectMapper mapper,
+            NodeRepository nodes) {
         this.clusters = clusters;
         this.components = components;
         this.states = states;
         this.admission = admission;
         this.mapper = mapper;
+        this.nodes = nodes;
     }
 
     @Transactional(readOnly = true)
@@ -87,7 +90,7 @@ public class ClusterComponentService {
         }
         for (KubemateComponentCatalog.Group definition : KubemateComponentCatalog.GROUPS) {
             GroupRequest group = values.getOrDefault(definition.key(), new GroupRequest(definition.key(), false, Map.of()));
-            String config = validateConfig(definition, group.config(), group.enabled());
+            String config = validateConfig(clusterId, definition, group.config(), group.enabled());
             ClusterComponentState state = states.findByClusterIdAndComponentKey(clusterId, definition.key()).orElse(null);
             ClusterComponent old = components.findByClusterIdAndComponentKey(clusterId, definition.key()).orElse(null);
             if (state != null && (ClusterComponentState.INSTALLED.equals(state.getStatus())
@@ -132,7 +135,7 @@ public class ClusterComponentService {
         return existing.size() != KubemateComponentCatalog.GROUPS.size();
     }
 
-    private String validateConfig(KubemateComponentCatalog.Group definition, Map<String, Object> config, boolean enabled) {
+    private String validateConfig(long clusterId, KubemateComponentCatalog.Group definition, Map<String, Object> config, boolean enabled) {
         Map<String, Object> values = config == null ? Map.of() : new LinkedHashMap<>(config);
         if (MinioComponentConfiguration.GROUP_KEY.equals(definition.key())) {
             return writeConfig(MinioComponentConfiguration.validate(values));
@@ -163,6 +166,10 @@ public class ClusterComponentService {
             }
             String mode = (String) values.get("exports_mode");
             if (!mode.equals("managed") && !mode.equals("external")) throw invalid("NFS exports_mode 必须为 managed 或 external");
+            if (enabled && mode.equals("managed") && nodes.findByClusterIdOrderById(clusterId).stream()
+                    .noneMatch(node -> !node.isDraft() && server.equals(node.getIp()))) {
+                throw invalid("集群内部 NFS 服务器必须选择当前集群中已保存的节点");
+            }
         }
         return writeConfig(values);
     }

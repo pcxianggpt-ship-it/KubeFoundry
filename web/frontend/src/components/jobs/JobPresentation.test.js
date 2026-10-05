@@ -116,4 +116,21 @@ describe('安装任务界面', () => {
     await wrapper.get('button').trigger('click');
     expect(wrapper.emitted('select')).toEqual([[3]]);
   });
+
+  it('多角色各自显示标签，未知和缺失角色仍可辨认', () => {
+    const wrapper = mount(NodeExecutionTable, { props: {
+      nodes: [
+        { id: 1, node_id: 1, hostname: 'cp-1', status: 'success' },
+        { id: 2, node_id: 2, hostname: 'worker-1', status: 'success', roles: ['worker', 'nfs_server'] },
+        { id: 3, node_id: 3, hostname: 'other-1', status: 'success', roles: ['custom_role'] },
+        { id: 4, node_id: 4, hostname: 'unknown-1', status: 'success' }
+      ],
+      nodeDetails: [{ id: 1, roles: ['control_plane', 'registry'] }]
+    }, global: { stubs: { 'el-button': true } } });
+    expect(wrapper.get('[data-testid="job-node-1"]').findAll('.node-role-card').map(role => role.text())).toEqual(['控制平面', '镜像仓库']);
+    expect(wrapper.get('[data-testid="job-node-2"]').findAll('.node-role-card').map(role => role.text())).toEqual(['工作节点', 'NFS 服务器']);
+    expect(wrapper.get('[data-testid="job-node-3"] .node-role-card').text()).toBe('custom_role');
+    expect(wrapper.get('[data-testid="job-node-4"] .node-role-empty').text()).toBe('-');
+    expect(wrapper.findAll('.node-role-badges svg')).toHaveLength(4);
+  });
 });

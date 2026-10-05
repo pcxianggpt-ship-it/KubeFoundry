@@ -51,6 +51,7 @@ describe('NodeConfigView', () => {
     const roleCards = wrapper.findAll('.node-role-card');
     expect(roleCards).toHaveLength(3);
     expect(roleCards.map((card) => card.text())).toEqual(['控制节点', '镜像仓库', '工作节点']);
+    expect(roleCards.every(card => card.find('svg[aria-hidden="true"]').exists())).toBe(true);
     await wrapper.get('[data-testid="test-all-nodes"]').trigger('click');
     await flushPromises();
     expect(startNodeTest).toHaveBeenCalledWith(42);

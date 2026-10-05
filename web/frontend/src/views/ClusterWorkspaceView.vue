@@ -54,6 +54,7 @@
         <KubemateComponentsView
           v-else-if="activeStage === 'components'"
           :cluster-id="cluster.id"
+          :kubernetes-work-dir="cluster.kubernetes_work_dir"
           :locked="configurationLocked"
           @next="router.push({ name: 'cluster-config-workspace', params: { clusterId: cluster.id, stage: 'precheck' } })"
         />

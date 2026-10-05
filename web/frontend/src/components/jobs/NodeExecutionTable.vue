@@ -7,7 +7,12 @@
         <tr v-for="node in nodes" :key="node.id" :data-testid="`job-node-${node.id}`" :class="{ 'is-selected': node.node_id === selectedNodeId }">
           <td><strong>{{ node.hostname }}</strong></td>
           <td class="node-address">{{ detail(node).ip || '-' }}</td>
-          <td>{{ roleLabel(detail(node).roles) }}</td>
+          <td>
+            <div v-if="detail(node).roles?.length" class="node-role-badges">
+              <NodeRoleBadge v-for="role in detail(node).roles" :key="role" :role="role" />
+            </div>
+            <span v-else class="node-role-empty">-</span>
+          </td>
           <td><span class="node-execution-status" :class="`execution-tone--${executionStatusTone(node.status, node.message)}`"><span class="node-status-dot" aria-hidden="true"></span>{{ nodeLabel(node) }}</span></td>
           <td><el-button link type="primary" :aria-label="`查看 ${node.hostname} 日志`" @click="$emit('select', node.node_id)">查看日志</el-button></td>
         </tr>
@@ -23,6 +28,7 @@
 </template>
 
 <script setup>
+import NodeRoleBadge from '../nodes/NodeRoleBadge.vue';
 import { executionStatusTone, stepStatusLabel, verificationMessage } from './jobStatus';
 
 const props = defineProps({
@@ -35,8 +41,5 @@ defineEmits(['select']);
 function detail(node) { return props.nodeDetails.find(item => item.id === node.node_id) || node; }
 function nodeLabel(node) {
   return ({ success: '已完成', running: '运行中' })[node.status] || stepStatusLabel(node.status, node.message);
-}
-function roleLabel(roles = []) {
-  return roles.map(role => ({ control_plane: '控制平面', worker: '工作节点', registry: '镜像仓库', nfs_server: 'NFS 服务' })[role] || role).join('、') || '-';
 }
 </script>

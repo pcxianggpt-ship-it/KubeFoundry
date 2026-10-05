@@ -28,14 +28,12 @@
           <td>{{ node.ssh_user }}@{{ node.ip || '-' }}:{{ node.ssh_port }}</td>
           <td>
             <div class="node-role-cards" :aria-label="`节点角色：${roleLabel(node.roles)}`">
-              <span
+              <NodeRoleBadge
                 v-for="role in resolvedRoles(node.roles)"
                 :key="role"
-                class="node-role-card"
-                :class="`node-role-card--${role}`"
-              >
-                {{ roleMeta(role).label }}
-              </span>
+                :role="role"
+                :label="roleMeta(role).label"
+              />
             </div>
           </td>
           <td><span>{{ node.has_password ? '密码已保存' : '未保存密码' }}</span></td>
@@ -76,6 +74,7 @@
 
 <script setup>
 import { Delete, Edit } from '@element-plus/icons-vue';
+import NodeRoleBadge from './NodeRoleBadge.vue';
 import { nodeStatusLabel, nodeStatusTone } from './nodeStatus';
 
 defineProps({
@@ -97,7 +96,8 @@ function roleMeta(role) {
   return {
     control_plane: { label: '控制节点' },
     worker: { label: '工作节点' },
-    registry: { label: '镜像仓库' }
+    registry: { label: '镜像仓库' },
+    nfs_server: { label: 'NFS 服务器' }
   }[role] || { label: role };
 }
 </script>

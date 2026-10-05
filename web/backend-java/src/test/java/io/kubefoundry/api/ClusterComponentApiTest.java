@@ -1,5 +1,9 @@
 package io.kubefoundry.api;
 
+import io.kubefoundry.cluster.ClusterRepository;
+import io.kubefoundry.cluster.Node;
+import io.kubefoundry.cluster.NodeRepository;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,6 +14,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.contains;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -30,6 +35,12 @@ class ClusterComponentApiTest {
 
     @Autowired
     JdbcTemplate jdbc;
+
+    @Autowired
+    ClusterRepository clusters;
+
+    @Autowired
+    NodeRepository nodes;
 
     @BeforeEach
     void clearDatabase() {
@@ -167,6 +178,116 @@ class ClusterComponentApiTest {
                         .content("{\"groups\":[{\"key\":\"traefik\",\"enabled\":false,\"config\":{}}]}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("COMPONENT_GROUP_READ_ONLY"));
+    }
+
+    @Test
+    void assignsMovesAndRemovesNfsRoleFromSavedConfigurationWithoutChangingBaseRoles() throws Exception {
+        long clusterId = createCluster("nfs-role-assignment");
+        addNode(clusterId, "master", "10.0.0.1", false, "control_plane", "registry");
+        addNode(clusterId, "worker", "10.0.0.2", false, "worker");
+
+        mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
+                        .content(nfsRequest("managed", "10.0.0.1", true)))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/clusters/{id}/nodes", clusterId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].roles").value(contains("control_plane", "registry", "nfs_server")))
+                .andExpect(jsonPath("$.items[1].roles").value(contains("worker")));
+
+        mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
+                        .content(nfsRequest("managed", "10.0.0.2", true)))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/clusters/{id}/nodes", clusterId))
+                .andExpect(jsonPath("$.items[0].roles").value(contains("control_plane", "registry")))
+                .andExpect(jsonPath("$.items[1].roles").value(contains("worker", "nfs_server")));
+
+        // 外部 IP 即使与集群节点相同，也不应保留 NFS 角色。
+        mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
+                        .content(nfsRequest("external", "10.0.0.2", true)))
+                .andExpect(status().isOk());
+        assertBaseRolesOnly(clusterId);
+
+        mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
+                        .content(nfsRequest("managed", "10.0.0.2", true)))
+                .andExpect(status().isOk());
+        mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
+                        .content(nfsRequest("managed", "10.0.0.2", false)))
+                .andExpect(status().isOk());
+        assertBaseRolesOnly(clusterId);
+        assertThat(jdbc.queryForObject("select count(*) from node_roles where role = 'nfs_server'", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("select node_config_version from clusters where id = ?", Integer.class, clusterId)).isZero();
+    }
+
+    @Test
+    void rejectsNonMemberAndDraftNfsServersAndPreservesExistingAssignmentOnRejectedSaves() throws Exception {
+        long clusterId = createCluster("nfs-membership");
+        addNode(clusterId, "worker", "10.0.0.1", false, "worker");
+        addNode(clusterId, "draft", "10.0.0.3", true, "worker");
+        long otherCluster = createCluster("nfs-other-cluster");
+        addNode(otherCluster, "other", "10.0.0.2", false, "worker");
+        mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
+                        .content(nfsRequest("managed", "10.0.0.1", true)))
+                .andExpect(status().isOk());
+
+        for (String invalidAddress : List.of("10.0.0.2", "10.0.0.3", "10.0.0.99")) {
+            mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
+                            .content(nfsRequest("managed", invalidAddress, true)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("COMPONENT_CONFIG_INVALID"));
+        }
+        jdbc.update("update cluster_component_states set status = 'installed' where cluster_id = ? and component_key = 'nfs'", clusterId);
+        mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
+                        .content(nfsRequest("external", "10.0.0.99", true)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("COMPONENT_GROUP_READ_ONLY"));
+        mvc.perform(get("/api/clusters/{id}/nodes", clusterId))
+                .andExpect(jsonPath("$.items[0].roles").value(contains("worker", "nfs_server")))
+                .andExpect(jsonPath("$.items[1].roles").value(contains("worker")));
+        mvc.perform(get("/api/clusters/{id}/components", clusterId))
+                .andExpect(jsonPath("$.groups[0].config.server_address").value("10.0.0.1"))
+                .andExpect(jsonPath("$.configurationVersion").value(1));
+    }
+
+    @Test
+    void nodeEditingPreservesConfiguredNfsAssignmentAndCopiesDoNotInheritIt() throws Exception {
+        long clusterId = createCluster("nfs-edit-and-copy");
+        long nodeId = addNode(clusterId, "worker", "10.0.0.1", false, "worker");
+        mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
+                        .content(nfsRequest("managed", "10.0.0.1", true)))
+                .andExpect(status().isOk());
+        mvc.perform(put("/api/nodes/{id}", nodeId).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"roles\":[\"worker\",\"registry\"]}"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/clusters/{id}/nodes/copy", clusterId).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"node_ids\":[" + nodeId + "]}"))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/clusters/{id}/nodes", clusterId))
+                .andExpect(jsonPath("$.items[0].roles").value(contains("registry", "worker", "nfs_server")))
+                .andExpect(jsonPath("$.items[1].roles").value(contains("registry", "worker")))
+                .andExpect(jsonPath("$.items[1].is_draft").value(true));
+    }
+
+    private void assertBaseRolesOnly(long clusterId) throws Exception {
+        mvc.perform(get("/api/clusters/{id}/nodes", clusterId))
+                .andExpect(jsonPath("$.items[0].roles").value(contains("control_plane", "registry")))
+                .andExpect(jsonPath("$.items[1].roles").value(contains("worker")));
+    }
+
+    private long addNode(long clusterId, String hostname, String ip, boolean draft, String... roles) {
+        Node node = new Node(clusters.findById(clusterId).orElseThrow());
+        node.update(hostname, ip, "", null, "root", 22);
+        node.updateNormalizedIdentity(hostname, ip);
+        node.replaceRoles(List.of(roles));
+        node.markDraft(draft);
+        return nodes.saveAndFlush(node).getId();
+    }
+
+    private static String nfsRequest(String mode, String ip, boolean enabled) {
+        return """
+                {"groups":[{"key":"nfs","enabled":%s,"config":{
+                  "server_address":"%s","exports_mode":"%s","share_path":"/exports/k8s",
+                  "worker_mount_path":"/data/k8s/nfs","storage_class":"nfs-storage"}}]}
+                """.formatted(enabled, ip, mode);
     }
 
     private long createCluster(String name) throws Exception {

@@ -49,6 +49,7 @@
               :data-testid="`group-switch-${group.key}`"
               :aria-label="`启用 ${group.name}`"
               :disabled="groupReadOnly(group)"
+              @change="enabled => initializeNfs(group, enabled)"
             />
           </div>
 
@@ -59,23 +60,30 @@
             @submit.prevent
           >
             <div class="form-grid">
-              <el-form-item label="NFS 服务器地址" required>
-                <el-input v-model="group.config.server_address" placeholder="例如 10.0.0.10" :disabled="groupReadOnly(group)" />
+              <el-form-item class="component-nfs-location" label="NFS 服务器位置" required>
+                <el-radio-group v-model="group.config.exports_mode" data-testid="nfs-server-location" :disabled="groupReadOnly(group)" @change="group.config.server_address = ''">
+                  <el-radio-button value="managed">集群内部</el-radio-button>
+                  <el-radio-button value="external">集群外部</el-radio-button>
+                </el-radio-group>
+              </el-form-item>
+              <el-form-item v-if="group.config.exports_mode === 'managed'" label="NFS 服务器节点" required>
+                <el-select v-model="group.config.server_address" data-testid="nfs-server-node" filterable placeholder="请选择集群节点" aria-label="NFS 服务器节点" :disabled="groupReadOnly(group) || nodesLoading || Boolean(nodesError)">
+                  <el-option v-for="node in selectableNodes" :key="node.id" :value="node.ip" :label="`${node.hostname}（${node.ip}）`" />
+                </el-select>
+                <span v-if="nodesError" class="form-error">{{ nodesError }} <el-button link type="primary" :disabled="nodesLoading" @click="loadNodes">重试</el-button></span>
+                <span v-else-if="!nodesLoading && !selectableNodes.length" class="field-hint">请先在服务器节点页面添加并保存节点。</span>
+              </el-form-item>
+              <el-form-item v-else label="NFS 服务器 IP" required>
+                <el-input v-model="group.config.server_address" data-testid="nfs-server-ip" placeholder="例如 10.0.0.10" :disabled="groupReadOnly(group)" />
               </el-form-item>
               <el-form-item label="共享目录" required>
-                <el-input v-model="group.config.share_path" placeholder="例如 /exports/k8s" :disabled="groupReadOnly(group)" />
+                <el-input v-model="group.config.share_path" data-testid="nfs-share-path" :placeholder="defaultNfsRoot" :disabled="groupReadOnly(group)" />
               </el-form-item>
               <el-form-item label="Worker 挂载目录" required>
-                <el-input v-model="group.config.worker_mount_path" placeholder="例如 /data/k8s_install/nfs_root" :disabled="groupReadOnly(group)" />
+                <el-input v-model="group.config.worker_mount_path" data-testid="nfs-mount-path" :placeholder="defaultNfsRoot" :disabled="groupReadOnly(group)" />
               </el-form-item>
               <el-form-item label="StorageClass 名称" required>
-                <el-input v-model="group.config.storage_class" placeholder="nfs-storage" :disabled="groupReadOnly(group)" />
-              </el-form-item>
-              <el-form-item label="exports 管理模式" required>
-                <el-radio-group v-model="group.config.exports_mode" :disabled="groupReadOnly(group)">
-                  <el-radio-button value="managed">受管</el-radio-button>
-                  <el-radio-button value="external">外部</el-radio-button>
-                </el-radio-group>
+                <el-input v-model="group.config.storage_class" data-testid="nfs-storage-class" placeholder="nfs-storage" :disabled="groupReadOnly(group)" />
               </el-form-item>
             </div>
             <p v-if="nfsInvalid" class="form-error">启用 NFS 前，请填写完整且有效的 NFS 配置。</p>
@@ -96,28 +104,37 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue';
 import { Check, Refresh } from '@element-plus/icons-vue';
-import { listComponents, updateComponents } from '../api/client';
+import { listComponents, listNodes, updateComponents } from '../api/client';
 import { safeErrorMessage } from '../utils/redaction';
 import MinioResourceForm from '../components/minio/MinioResourceForm.vue';
 import { minioConfigErrors, normalizeMinioConfig } from '../components/minio/minioConfig';
 
-const props = defineProps({ clusterId: { type: [String, Number], required: true }, locked: Boolean });
+const props = defineProps({
+  clusterId: { type: [String, Number], required: true },
+  kubernetesWorkDir: { type: String, default: '/data/k8s_install' },
+  locked: Boolean
+});
 const emit = defineEmits(['next']);
 const groups = ref([]);
 const loading = ref(true);
 const saving = ref(false);
 const errorMessage = ref('');
+const nodes = ref([]);
+const nodesLoading = ref(false);
+const nodesError = ref('');
+let loadSequence = 0;
+let nodesSequence = 0;
+const selectableNodes = computed(() => nodes.value.filter(node => !node.is_draft && node.ip));
+const defaultNfsRoot = computed(() => `${(props.kubernetesWorkDir || '/data/k8s_install').replace(/\/+$/, '')}/nfs_root`);
 
 const nfsGroup = computed(() => groups.value.find((group) => group.key === 'nfs'));
 const nfsInvalid = computed(() => {
   const group = nfsGroup.value;
   if (!group?.enabled) return false;
   const config = group.config || {};
-  return !isIpv4(config.server_address)
-    || !isSafePath(config.share_path)
-    || !isSafePath(config.worker_mount_path)
-    || !isKubernetesName(config.storage_class)
-    || !['managed', 'external'].includes(config.exports_mode);
+  return invalidNfsConfig(config)
+    || (config.exports_mode === 'managed' && (nodesLoading.value || Boolean(nodesError.value)
+      || !selectableNodes.value.some(node => node.ip === config.server_address)));
 });
 const minioGroup = computed(() => groups.value.find((group) => group.key === 'storage_observability'));
 const minioErrors = computed(() => minioGroup.value?.enabled
@@ -128,16 +145,42 @@ onMounted(load);
 watch(() => props.clusterId, load);
 
 async function load() {
+  const sequence = ++loadSequence;
   loading.value = true;
   errorMessage.value = '';
+  const nodeLoad = loadNodes();
   try {
     const payload = await listComponents(props.clusterId);
-    groups.value = (payload?.groups || []).map(normalizeGroup);
+    if (sequence === loadSequence) groups.value = (payload?.groups || []).map(normalizeGroup);
   } catch (error) {
-    errorMessage.value = safeErrorMessage(error, '组件配置加载失败，请重新加载。');
+    if (sequence === loadSequence) errorMessage.value = safeErrorMessage(error, '组件配置加载失败，请重新加载。');
   } finally {
-    loading.value = false;
+    await nodeLoad;
+    if (sequence === loadSequence) loading.value = false;
   }
+}
+
+async function loadNodes() {
+  const sequence = ++nodesSequence;
+  nodesLoading.value = true;
+  nodesError.value = '';
+  nodes.value = [];
+  try {
+    const payload = await listNodes(props.clusterId);
+    if (sequence === nodesSequence) nodes.value = Array.isArray(payload) ? payload : payload?.items || [];
+  } catch (error) {
+    if (sequence === nodesSequence) nodesError.value = safeErrorMessage(error, '集群节点加载失败，请重试。');
+  } finally {
+    if (sequence === nodesSequence) nodesLoading.value = false;
+  }
+}
+
+function initializeNfs(group, enabled) {
+  if (group.key !== 'nfs' || !enabled) return;
+  group.config = {
+    server_address: '', share_path: defaultNfsRoot.value, worker_mount_path: defaultNfsRoot.value,
+    storage_class: 'nfs-storage', exports_mode: 'managed', ...group.config
+  };
 }
 
 async function save() {
@@ -149,7 +192,8 @@ async function save() {
       groups: groups.value.map((group) => ({
         key: group.key,
         enabled: group.enabled,
-        config: group.config
+        config: group.key === 'nfs' && !group.enabled && invalidNfsConfig(group.config)
+          ? {} : group.config
       }))
     });
     groups.value = (saved?.groups || groups.value).map(normalizeGroup);
@@ -164,16 +208,24 @@ async function save() {
 function normalizeGroup(group) {
   const config = group.key === 'storage_observability'
     ? normalizeMinioConfig(group.config) : { ...(group.config || {}) };
-  return {
+  const normalized = {
     ...group,
     enabled: Boolean(group.enabled),
     components: Array.isArray(group.components) ? group.components : [],
     config
   };
+  initializeNfs(normalized, normalized.enabled);
+  return normalized;
 }
 
 function groupReadOnly(group) {
-  return props.locked || !group.available || group.status === 'installed';
+  return props.locked || !group.available || ['installed', 'installing'].includes(group.status);
+}
+
+function invalidNfsConfig(config) {
+  return !isIpv4(config.server_address) || !isSafePath(config.share_path)
+    || !isSafePath(config.worker_mount_path) || !isKubernetesName(config.storage_class)
+    || !['managed', 'external'].includes(config.exports_mode);
 }
 
 function statusLabel(status) {

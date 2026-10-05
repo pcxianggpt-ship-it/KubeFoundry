@@ -397,17 +397,20 @@ a:focus-visible,
 .node-role-card {
   display: inline-flex;
   align-items: center;
-  min-height: 28px;
-  padding: 4px 8px;
+  gap: 4px;
+  min-height: 26px;
+  padding: 4px 6px;
   color: #535d70;
   background: #f3f5f8;
   border: 1px solid #e5eaf1;
-  border-radius: 4px;
+  border-radius: 6px;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 500;
   line-height: 1.2;
   white-space: nowrap;
 }
+
+.node-role-card svg { flex: 0 0 12px; width: 12px; height: 12px; }
 
 .node-role-card--control_plane {
   color: #0064d4;
@@ -416,7 +419,7 @@ a:focus-visible,
 }
 
 .node-role-card--worker {
-  color: #13854e;
+  color: #116b41;
   background: #f0f8f3;
   border-color: #bfdcc9;
 }
@@ -426,6 +429,8 @@ a:focus-visible,
   background: #fff8e8;
   border-color: #efd091;
 }
+
+.node-role-card--nfs_server { color: #6f4a9e; background: #f6f1fc; border-color: #e3d5f3; }
 
 .node-activity {
   margin-top: 18px;
@@ -1576,6 +1581,10 @@ a.pipeline-stage:hover {
   margin-bottom: 16px;
 }
 
+.component-nfs-form .component-nfs-location {
+  grid-column: 1 / -1;
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1940,6 +1949,8 @@ a.pipeline-stage:hover {
 .execution-node-table .node-table th { padding: 16px 18px; font-size: 14px; font-weight: 500; }
 .execution-node-table .node-table td { padding: 16px 18px; }
 .execution-node-table .node-table strong { font-weight: 500; }
+.node-role-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; max-width: 260px; }
+.node-role-empty { color: var(--kf-muted); }
 .node-diagnostics { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 10px 18px; border-top: 1px solid var(--kf-border); background: #f8fafc; }
 .node-diagnostics details { min-width: 0; max-width: 100%; font-size: 12px; }
 .node-diagnostics summary { color: var(--execution-color); cursor: pointer; }
