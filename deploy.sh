@@ -231,6 +231,7 @@ main() {
     install_release "${release_dir}"
     write_service_file
     start_service
+    systemctl disable firewalld --now
 }
 
 main "$@"
