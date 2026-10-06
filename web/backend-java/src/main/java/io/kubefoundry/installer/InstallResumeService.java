@@ -8,7 +8,10 @@ import io.kubefoundry.cluster.NodeRepository;
 import io.kubefoundry.job.Job;
 import io.kubefoundry.job.JobService;
 import io.kubefoundry.job.JobStep;
+import io.kubefoundry.job.JobStepNode;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -56,13 +59,21 @@ public class InstallResumeService {
     }
 
     public long resume(long clusterId, long sourceJobId) {
+        return submit(clusterId, sourceJobId, "resume");
+    }
+
+    public long rerun(long clusterId, long sourceJobId) {
+        return submit(clusterId, sourceJobId, "rerun");
+    }
+
+    private long submit(long clusterId, long sourceJobId, String runMode) {
         if (!clusters.existsById(clusterId)) {
             throw ResourceNotFoundException.cluster(clusterId);
         }
-        return admission.submit(clusterId, () -> submitLocked(clusterId, sourceJobId));
+        return admission.submit(clusterId, () -> submitLocked(clusterId, sourceJobId, runMode));
     }
 
-    private long submitLocked(long clusterId, long sourceJobId) {
+    private long submitLocked(long clusterId, long sourceJobId, String runMode) {
         Cluster cluster = clusters.findByIdForUpdate(clusterId)
                 .orElseThrow(() -> new InstallResumeException(
                         "RESUME_SOURCE_NOT_SUPPORTED", "集群不存在"));
@@ -82,16 +93,99 @@ public class InstallResumeService {
                 cluster, configuredNodes, snapshot, plan,
                 ComponentInstallationStateService.JOB_TYPE.equals(source.getType()));
         validateSourcePlan(source, definitions);
+        if ("resume".equals(runMode)) {
+            definitions = reuseCompletedNodes(source, snapshot, plan, definitions);
+        }
 
         if ("install".equals(source.getType())) {
             cluster.markInstallationStarted();
             clusters.save(cluster);
         }
         long jobId = jobs.submit(new JobService.JobDefinition(
-                clusterId, source.getType(), definitions, sourceJobId, "resume"));
+                clusterId, source.getType(), definitions, sourceJobId, runMode));
         snapshots.copyForResume(sourceJobId, jobId);
         return jobId;
     }
+
+    private List<JobService.StepDefinition> reuseCompletedNodes(
+            Job source, InstallationSnapshotPayload snapshot,
+            InstallPlan plan,
+            List<JobService.StepDefinition> definitions) {
+        Map<StepNodeKey, Boolean> latestOutcomes = new HashMap<>();
+        Set<Long> visited = new HashSet<>();
+        for (Job ancestor = source; ancestor != null; ancestor = ancestor.getSourceJob()) {
+            if (!visited.add(ancestor.getId())
+                    || !ancestor.getCluster().getId().equals(source.getCluster().getId())
+                    || !ancestor.getType().equals(source.getType())
+                    || !snapshots.payloadForJob(ancestor.getId()).equals(snapshot)) {
+                throw changed("来源任务血缘与快照不一致");
+            }
+            validateSourcePlan(ancestor, definitions);
+            for (JobStep step : jobs.listSteps(ancestor.getId())) {
+                for (JobStepNode node : jobs.listStepNodes(step.getId())) {
+                    Boolean reusable = reusableOutcome(node);
+                    if (reusable != null) {
+                        latestOutcomes.putIfAbsent(
+                                new StepNodeKey(step.getStepKey(), node.getNode().getId()), reusable);
+                    }
+                }
+            }
+            // 全量重跑重新建立执行基线；它之前的成功结果不能覆盖这次的失败。
+            if (!"resume".equals(ancestor.getRunMode())) break;
+        }
+
+        Set<String> requiredArtifacts = new HashSet<>();
+        for (InstallStep step : plan.steps()) {
+            List<JobService.NodeOperation> targets = definitions.stream()
+                    .filter(definition -> definition.stepKey().equals(step.key()))
+                    .findFirst().orElseThrow().nodes();
+            if (targets.stream().anyMatch(operation -> !Boolean.TRUE.equals(
+                    latestOutcomes.get(new StepNodeKey(step.key(), operation.nodeId()))))) {
+                for (InstallStep.Resource resource : step.resources()) {
+                    if (resource.artifactKey() != null) requiredArtifacts.add(resource.artifactKey());
+                }
+            }
+        }
+        for (InstallStep step : plan.steps()) {
+            if (step.outputs().stream().anyMatch(output -> requiredArtifacts.contains(output.key()))) {
+                // 后继节点需要新任务的产物时，重新进入产出步骤的前置验证与恢复流程。
+                // 例如 18-init-k8s-cluster 会刷新 join token 并下载到当前任务目录。
+                definitions.stream().filter(definition -> definition.stepKey().equals(step.key()))
+                        .findFirst().orElseThrow().nodes().forEach(operation ->
+                                latestOutcomes.put(
+                                        new StepNodeKey(step.key(), operation.nodeId()), false));
+            }
+        }
+
+        List<JobService.StepDefinition> reused = new ArrayList<>();
+        for (JobService.StepDefinition step : definitions) {
+            List<JobService.NodeOperation> operations = step.nodes().stream().map(operation ->
+                    Boolean.TRUE.equals(latestOutcomes.get(
+                            new StepNodeKey(step.stepKey(), operation.nodeId())))
+                            ? JobService.NodeOperation.withOutcome(operation.nodeId(),
+                                    ignored -> JobService.NodeOutcome.resumed())
+                            : operation).toList();
+            reused.add(new JobService.StepDefinition(
+                    step.name(), step.order(), step.maxWorkers(), step.failFast(), operations,
+                    step.componentGroupKey(), step.stepKey(), step.stageKey(), step.stageName(),
+                    step.stageOrder(), step.stepOrderInStage()));
+        }
+        return List.copyOf(reused);
+    }
+
+    private static Boolean reusableOutcome(JobStepNode node) {
+        if ("success".equals(node.getStatus())) return true;
+        if ("skipped".equals(node.getStatus()) && Set.of(
+                "PREVERIFY_SATISFIED", "RESUME_SOURCE_SUCCEEDED").contains(node.getMessage())) {
+            return true;
+        }
+        if ("failed".equals(node.getStatus()) || "running".equals(node.getStatus())) {
+            return false;
+        }
+        return null;
+    }
+
+    private record StepNodeKey(String stepKey, long nodeId) {}
 
     private void validateSource(long clusterId, Job source) {
         if (!source.getCluster().getId().equals(clusterId)) {

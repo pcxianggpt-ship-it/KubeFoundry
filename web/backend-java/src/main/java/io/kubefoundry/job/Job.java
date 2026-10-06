@@ -66,11 +66,11 @@ public class Job {
             throw new IllegalArgumentException("来源任务必须属于同一集群");
         }
         String normalizedRunMode = runMode == null || runMode.isBlank() ? "normal" : runMode.trim();
-        if (!java.util.Set.of("normal", "resume").contains(normalizedRunMode)) {
+        if (!java.util.Set.of("normal", "resume", "rerun").contains(normalizedRunMode)) {
             throw new IllegalArgumentException("不支持的任务运行模式: " + normalizedRunMode);
         }
-        if ("resume".equals(normalizedRunMode) && sourceJob == null) {
-            throw new IllegalArgumentException("续跑任务必须指定来源任务");
+        if (!"normal".equals(normalizedRunMode) && sourceJob == null) {
+            throw new IllegalArgumentException("续跑或重跑任务必须指定来源任务");
         }
         if ("normal".equals(normalizedRunMode) && sourceJob != null) {
             throw new IllegalArgumentException("普通任务不能指定来源任务");

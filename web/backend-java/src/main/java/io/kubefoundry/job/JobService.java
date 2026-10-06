@@ -265,10 +265,14 @@ public class JobService {
                     return;
                 }
                 List<JobStepNode> completedNodes = listStepNodes(step.getId());
+                boolean allNodesResumed = !completedNodes.isEmpty() && completedNodes.stream()
+                        .allMatch(item -> "skipped".equals(item.getStatus())
+                                && "RESUME_SOURCE_SUCCEEDED".equals(item.getMessage()));
                 boolean allNodesPreverified = !completedNodes.isEmpty() && completedNodes.stream()
                         .allMatch(item -> "skipped".equals(item.getStatus())
                                 && "PREVERIFY_SATISFIED".equals(item.getMessage()));
-                if (allNodesPreverified) step.markSkipped("PREVERIFY_SATISFIED");
+                if (allNodesResumed) step.markSkipped("RESUME_SOURCE_SUCCEEDED");
+                else if (allNodesPreverified) step.markSkipped("PREVERIFY_SATISFIED");
                 else step.markSuccess();
                 steps.saveAndFlush(step);
                 componentStates.onStepSucceeded(job, step.getComponentGroupKey());
@@ -445,11 +449,11 @@ public class JobService {
 
         public JobDefinition {
             runMode = runMode == null || runMode.isBlank() ? "normal" : runMode.trim();
-            if (!Set.of("normal", "resume").contains(runMode)) {
+            if (!Set.of("normal", "resume", "rerun").contains(runMode)) {
                 throw new IllegalArgumentException("不支持的任务运行模式: " + runMode);
             }
-            if ("resume".equals(runMode) && sourceJobId == null) {
-                throw new IllegalArgumentException("续跑任务必须指定来源任务");
+            if (!"normal".equals(runMode) && sourceJobId == null) {
+                throw new IllegalArgumentException("续跑或重跑任务必须指定来源任务");
             }
             if ("normal".equals(runMode) && sourceJobId != null) {
                 throw new IllegalArgumentException("普通任务不能指定来源任务");
@@ -593,6 +597,10 @@ public class JobService {
         public static NodeOutcome preverified(String logPath) {
             return new NodeOutcome(true, 0, "PREVERIFY_SATISFIED", logPath,
                     "skipped", "before");
+        }
+
+        public static NodeOutcome resumed() {
+            return new NodeOutcome(true, 0, "RESUME_SOURCE_SUCCEEDED", "", "skipped", null);
         }
 
         Map<String, Object> eventPayload(long nodeId, String hostname) {

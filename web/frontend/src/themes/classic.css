@@ -1698,6 +1698,14 @@ html:where([data-kf-theme="classic"]),
 :where([data-kf-theme="classic"]) .execution-hero-actions .field-hint {
   margin: 0;
 }
+:where([data-kf-theme="classic"]) .execution-retry-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+:where([data-kf-theme="classic"]) .execution-retry-buttons .el-button + .el-button {
+  margin-left: 0;
+}
 :where([data-kf-theme="classic"]) .execution-hero-meta {
   display: flex;
   flex-wrap: wrap;

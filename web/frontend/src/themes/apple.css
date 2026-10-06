@@ -1854,6 +1854,14 @@ html:where([data-kf-theme="apple"]),
 :where([data-kf-theme="apple"]) .execution-hero-actions .field-hint {
   margin: 0;
 }
+:where([data-kf-theme="apple"]) .execution-retry-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+:where([data-kf-theme="apple"]) .execution-retry-buttons .el-button + .el-button {
+  margin-left: 0;
+}
 :where([data-kf-theme="apple"]) .execution-hero-meta {
   display: flex;
   flex-wrap: wrap;

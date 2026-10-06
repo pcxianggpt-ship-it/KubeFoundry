@@ -20,6 +20,7 @@ const EXPECTED_EXPORTS = [
   'listComponents',
   'listJobs',
   'listNodes',
+  'rerunInstallJob',
   'resetCluster',
   'resumeInstallJob',
   'startComponentInstall',
@@ -50,6 +51,7 @@ describe('Java Web API 客户端契约', () => {
     await client.getCluster(7);
     await client.getClusterJob(7, 11);
     await client.resumeInstallJob(7, 11);
+    await client.rerunInstallJob(7, 11);
     await client.createCluster({ name: 'contract' });
     await client.updateCluster(7, { description: 'updated' });
     await client.resetCluster(7, true, 'RESET contract');
@@ -78,6 +80,7 @@ describe('Java Web API 客户端契约', () => {
       ['/api/clusters/7', 'GET'],
       ['/api/clusters/7/jobs/11', 'GET'],
       ['/api/clusters/7/jobs/11/resume', 'POST'],
+      ['/api/clusters/7/jobs/11/rerun', 'POST'],
       ['/api/clusters', 'POST'],
       ['/api/clusters/7', 'PUT'],
       ['/api/clusters/7/reset', 'POST'],

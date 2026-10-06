@@ -22,13 +22,14 @@ export function jobStatusTone(status) {
 
 export function stepStatusLabel(status, reason = '') {
   if (status !== 'skipped') return jobStatusLabel(status);
+  if (reason === 'RESUME_SOURCE_SUCCEEDED') return '已完成并复用';
   if (reason === 'PREVERIFY_SATISFIED') return '已验证并跳过';
   if (['JOB_ABORTED', 'COMPONENT_GROUP_PREVIOUS_STEP_FAILED'].includes(reason)) return '因依赖跳过';
   return jobStatusLabel(status);
 }
 
 export function stepStatusTone(status, reason = '') {
-  if (status === 'skipped' && reason === 'PREVERIFY_SATISFIED') return 'success';
+  if (status === 'skipped' && ['PREVERIFY_SATISFIED', 'RESUME_SOURCE_SUCCEEDED'].includes(reason)) return 'success';
   if (status === 'skipped') return 'info';
   return jobStatusTone(status);
 }
@@ -36,13 +37,14 @@ export function stepStatusTone(status, reason = '') {
 // 展示颜色独立于任务状态：执行中使用蓝色，验证跳过仍为绿色，依赖跳过为灰色。
 export function executionStatusTone(status, reason = '') {
   if (['success', 'partial_success', 'verified'].includes(status)
-      || (status === 'skipped' && reason === 'PREVERIFY_SATISFIED')) return 'success';
+      || (status === 'skipped' && ['PREVERIFY_SATISFIED', 'RESUME_SOURCE_SUCCEEDED'].includes(reason))) return 'success';
   if (['failed', 'interrupted'].includes(status)) return 'error';
   if (status === 'running') return 'running';
   return 'pending';
 }
 
 export function verificationMessage(message = '') {
+  if (message === 'RESUME_SOURCE_SUCCEEDED') return '来源任务已完成，断点续跑复用完成记录';
   if (message === 'PREVERIFY_SATISFIED') return '执行前验证通过，已安全跳过安装';
   if (message.startsWith('PREVERIFY_FAILED')) return '执行前验证失败';
   if (message.startsWith('POSTVERIFY_FAILED')) return '执行后验证失败';

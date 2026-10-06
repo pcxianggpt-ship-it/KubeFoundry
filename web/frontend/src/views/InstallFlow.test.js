@@ -20,6 +20,7 @@ import {
   listJobs,
   listNodes,
   resumeInstallJob,
+  rerunInstallJob,
   startComponentInstall,
   startInstall,
   startPrecheck
@@ -37,6 +38,7 @@ vi.mock('../api/client', () => ({
   listJobs: vi.fn(),
   listNodes: vi.fn(),
   resumeInstallJob: vi.fn(),
+  rerunInstallJob: vi.fn(),
   startComponentInstall: vi.fn(),
   startInstall: vi.fn(),
   startPrecheck: vi.fn()
@@ -269,14 +271,20 @@ describe('安装流程', () => {
     const { router, wrapper } = await mountAt(JobExecutionView, '/cluster-install/42/jobs/100');
 
     const button = wrapper.get('[data-testid="resume-install-job"]');
+    expect(button.text()).toBe('断点续跑');
+    expect(wrapper.get('[data-testid="rerun-install-job"]').text()).toBe('全量重跑');
     expect(wrapper.findAll('[data-testid="resume-install-job"]')).toHaveLength(1);
     expect(wrapper.get('.execution-hero [data-testid="resume-install-job"]').exists()).toBe(true);
     expect(wrapper.find('.execution-stage-footer [data-testid="resume-install-job"]').exists()).toBe(false);
     expect(wrapper.get('.execution-stage-scroll').attributes('tabindex')).toBe('0');
     await button.trigger('click');
     await button.trigger('click');
+    expect(wrapper.get('[data-testid="rerun-install-job"]').attributes('disabled')).toBeDefined();
+    await wrapper.get('[data-testid="rerun-install-job"]').trigger('click');
     expect(resumeInstallJob).toHaveBeenCalledTimes(1);
     expect(resumeInstallJob).toHaveBeenCalledWith(42, 100);
+    expect(rerunInstallJob).not.toHaveBeenCalled();
+    expect(startInstall).not.toHaveBeenCalled();
 
     acceptResume({ job_id: 101, source_job_id: 100, run_mode: 'resume' });
     await flushPromises();
@@ -309,8 +317,72 @@ describe('安装流程', () => {
     const { wrapper } = await mountAt(JobExecutionView, '/cluster-install/42/jobs/101');
 
     expect(wrapper.find('[data-testid="resume-install-job"]').exists()).toBe(false);
-    expect(wrapper.text()).toContain('此任务由任务 #100 续跑创建');
+    expect(wrapper.find('[data-testid="rerun-install-job"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain('此任务由任务 #100 断点续跑创建');
     expect(wrapper.get('.job-lineage a').attributes('href')).toBe('/cluster-install/42/jobs/100');
+  });
+
+  it('全量重跑独立提交并互斥禁用两个按钮，新任务显示正确来源', async () => {
+    getJob.mockImplementation(async (id) => ({
+      id: Number(id), cluster_id: 42, job_type: 'component_install',
+      status: Number(id) === 100 ? 'partial_success' : 'running',
+      ...(Number(id) === 101 ? { source_job_id: 100, run_mode: 'rerun' } : {})
+    }));
+    getCluster.mockResolvedValue({ id: 42, name: '生产集群' });
+    getJobSteps.mockResolvedValue({ items: [] });
+    getJobLogs.mockResolvedValue({ items: [] });
+    let acceptRerun;
+    rerunInstallJob.mockReturnValue(new Promise((resolve) => { acceptRerun = resolve; }));
+    const { router, wrapper } = await mountAt(JobExecutionView, '/cluster-install/42/jobs/100');
+
+    const button = wrapper.get('[data-testid="rerun-install-job"]');
+    await button.trigger('click');
+    await button.trigger('click');
+    expect(wrapper.get('[data-testid="resume-install-job"]').attributes('disabled')).toBeDefined();
+    await wrapper.get('[data-testid="resume-install-job"]').trigger('click');
+    expect(rerunInstallJob).toHaveBeenCalledTimes(1);
+    expect(rerunInstallJob).toHaveBeenCalledWith(42, 100);
+    expect(resumeInstallJob).not.toHaveBeenCalled();
+    expect(startInstall).not.toHaveBeenCalled();
+
+    acceptRerun({ job_id: 101, source_job_id: 100, run_mode: 'rerun' });
+    await flushPromises();
+    expect(router.currentRoute.value.fullPath).toBe('/cluster-install/42/jobs/101');
+    expect(wrapper.text()).toContain('此任务由任务 #100 全量重跑创建');
+    expect(wrapper.text()).toContain('全量重跑任务 · 来源 #100');
+    expect(wrapper.find('[data-testid="rerun-install-job"]').exists()).toBe(false);
+  });
+
+  it('全量重跑失败保留来源页，显示错误并允许重新提交', async () => {
+    getJob.mockResolvedValue({ id: 100, cluster_id: 42, job_type: 'install', status: 'interrupted' });
+    getCluster.mockResolvedValue({ id: 42, name: '生产集群' });
+    getJobSteps.mockResolvedValue({ items: [] });
+    getJobLogs.mockResolvedValue({ items: [] });
+    rerunInstallJob.mockRejectedValue(new Error('集群已有运行任务'));
+    const { router, wrapper } = await mountAt(JobExecutionView, '/cluster-install/42/jobs/100');
+
+    await wrapper.get('[data-testid="rerun-install-job"]').trigger('click');
+    await flushPromises();
+
+    expect(router.currentRoute.value.fullPath).toBe('/cluster-install/42/jobs/100');
+    expect(wrapper.get('[data-testid="resume-error"]').text()).toContain('集群已有运行任务');
+    expect(wrapper.get('[data-testid="resume-install-job"]').attributes('disabled')).toBeUndefined();
+    expect(wrapper.get('[data-testid="rerun-install-job"]').attributes('disabled')).toBeUndefined();
+  });
+
+  it('断点复用记录与执行前验证跳过分别展示', async () => {
+    getJob.mockResolvedValue({ id: 102, cluster_id: 42, job_type: 'install', status: 'running', run_mode: 'resume', source_job_id: 100 });
+    getCluster.mockResolvedValue({ id: 42, name: '生产集群' });
+    getJobSteps.mockResolvedValue({ items: [{
+      id: 10, name: '集群健康检查', order: 1, status: 'skipped', status_reason: 'RESUME_SOURCE_SUCCEEDED',
+      nodes: [{ id: 101, node_id: 1, hostname: 'cp-1', status: 'skipped', message: 'RESUME_SOURCE_SUCCEEDED' }]
+    }] });
+    getJobLogs.mockResolvedValue({ items: [] });
+    const { wrapper } = await mountAt(JobExecutionView, '/cluster-install/42/jobs/102');
+
+    expect(wrapper.text()).toContain('已完成并复用');
+    expect(wrapper.text()).toContain('来源任务已完成，断点续跑复用完成记录');
+    expect(wrapper.get('[data-testid="job-stage-10"] .step-status-icon').classes()).toContain('execution-tone--success');
   });
 
   it('区分前置验证跳过和依赖跳过，并显示安全阶段消息', async () => {

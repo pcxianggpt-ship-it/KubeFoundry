@@ -84,6 +84,7 @@ class ApiContractTest {
         job.markRunning();
         job = jobs.saveAndFlush(job);
         when(resumes.resume(cluster.getId(), job.getId())).thenReturn(77L);
+        when(resumes.rerun(cluster.getId(), job.getId())).thenReturn(78L);
         JobStep step = steps.saveAndFlush(new JobStep(job, "安装 containerd", 1));
 
         Path log = dataDirectory.resolve("jobs").resolve(job.getId().toString())
@@ -172,6 +173,12 @@ class ApiContractTest {
                 .andExpect(jsonPath("$.status").value("pending"))
                 .andExpect(jsonPath("$.source_job_id").value(job.getId()))
                 .andExpect(jsonPath("$.run_mode").value("resume"));
+        mvc.perform(post("/api/clusters/{clusterId}/jobs/{jobId}/rerun",
+                        cluster.getId(), job.getId()))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.job_id").value(78))
+                .andExpect(jsonPath("$.source_job_id").value(job.getId()))
+                .andExpect(jsonPath("$.run_mode").value("rerun"));
     }
 
     @Test

@@ -35,7 +35,7 @@ public class ComponentInstallationStateService {
             ClusterComponentState state = requireState(job, groupKey);
             if (!ClusterComponentState.NOT_INSTALLED.equals(state.getStatus())
                     && !ClusterComponentState.FAILED.equals(state.getStatus())
-                    && !("resume".equals(job.getRunMode())
+                    && !(Set.of("resume", "rerun").contains(job.getRunMode())
                             && ClusterComponentState.INSTALLED.equals(state.getStatus()))) {
                 throw new IllegalStateException("组件组当前不可安装: " + groupKey);
             }
@@ -148,7 +148,8 @@ public class ComponentInstallationStateService {
     private static boolean satisfied(JobStep step) {
         return "success".equals(step.getStatus())
                 || ("skipped".equals(step.getStatus())
-                        && "PREVERIFY_SATISFIED".equals(step.getStatusReason()));
+                        && Set.of("PREVERIFY_SATISFIED", "RESUME_SOURCE_SUCCEEDED")
+                                .contains(step.getStatusReason()));
     }
 
     public static boolean supportsJobType(String jobType) {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { copyNodes, getJob, resetCluster, resumeInstallJob, startInstall, startNodeTest, updateComponents } from './client';
+import { copyNodes, getJob, resetCluster, resumeInstallJob, rerunInstallJob, startInstall, startNodeTest, updateComponents } from './client';
 
 
 describe('API client', () => {
@@ -111,6 +111,19 @@ describe('API client', () => {
     expect(fetch).toHaveBeenCalledWith('/api/clusters/7/components', expect.objectContaining({
       method: 'PUT', body: JSON.stringify(configuration)
     }));
+  });
+
+  it('全量重跑使用独立端点，服务端决定完整步骤计划', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 202,
+      text: async () => JSON.stringify({ job_id: 19, source_job_id: 11, run_mode: 'rerun' })
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await expect(rerunInstallJob(7, 11)).resolves.toMatchObject({ run_mode: 'rerun', source_job_id: 11 });
+
+    expect(fetch).toHaveBeenCalledWith('/api/clusters/7/jobs/11/rerun', expect.objectContaining({ method: 'POST' }));
+    expect(fetch.mock.calls[0][1].body).toBeUndefined();
   });
 
 });

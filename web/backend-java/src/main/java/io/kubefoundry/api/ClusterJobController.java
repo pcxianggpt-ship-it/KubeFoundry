@@ -44,6 +44,15 @@ public class ClusterJobController {
         return new ResumeResponse(newJobId, "pending", jobId, "resume");
     }
 
+    @PostMapping("/{jobId}/rerun")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public ResumeResponse rerun(
+            @PathVariable long clusterId,
+            @PathVariable long jobId) {
+        long newJobId = resumes.rerun(clusterId, jobId);
+        return new ResumeResponse(newJobId, "pending", jobId, "rerun");
+    }
+
     public record ResumeResponse(
             @JsonProperty("job_id") long jobId,
             String status,

@@ -171,6 +171,12 @@ export function resumeInstallJob(clusterId, jobId) {
   });
 }
 
+export function rerunInstallJob(clusterId, jobId) {
+  return request(`/api/clusters/${clusterId}/jobs/${jobId}/rerun`, {
+    method: 'POST'
+  });
+}
+
 export function getJobSteps(jobId) {
   return request(`/api/jobs/${jobId}/steps`);
 }

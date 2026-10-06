@@ -112,7 +112,11 @@ function latest(type) { return jobs.value.filter((job) => job.job_type === type)
 function jobLabel(job) { return job ? `${jobTypeLabel(job.job_type)}${statusLabel(job.status)}` : '暂无任务'; }
 function jobTypeLabel(type) { return { precheck: '预检查', install: '安装', component_install: '组件补装', reset: '重置' }[type] || '任务'; }
 function statusLabel(status) { return { pending: '等待中', running: '执行中', success: '成功', partial_success: '部分成功', failed: '失败', interrupted: '已中断' }[status] || '未完成'; }
-function runModeLabel(job) { return job.run_mode === 'resume' ? `续跑自 #${job.source_job_id}` : '正常执行'; }
+function runModeLabel(job) {
+  if (job.run_mode === 'resume') return `断点续跑自 #${job.source_job_id}`;
+  if (job.run_mode === 'rerun') return `全量重跑自 #${job.source_job_id}`;
+  return '正常执行';
+}
 function jobRoute(job) { return { name: 'cluster-job-execution', params: { clusterId: clusterId.value, jobId: String(job.id) } }; }
 function formatTime(value) { return value ? new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'medium', hour12: false }).format(new Date(value)) : '-'; }
 function goToPrecheck() { if (installAvailable.value) router.push(precheckRoute.value); }

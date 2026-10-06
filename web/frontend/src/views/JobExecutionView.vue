@@ -16,8 +16,11 @@
         <span v-if="!loading && !errorMessage" class="execution-current-status" :class="`execution-tone--${statusTone}`"><StepStatusIcon :status="job.status" />{{ currentStatusLabel }}</span>
       </div>
       <div v-if="!loading && !errorMessage && resumeAvailable" class="execution-hero-actions">
-        <el-button data-testid="resume-install-job" type="primary" :loading="resuming" :disabled="resuming" @click="resumeJob">从失败处续跑</el-button>
-        <p class="field-hint">将创建新任务，当前记录保留。</p>
+        <div class="execution-retry-buttons">
+          <el-button data-testid="resume-install-job" type="primary" :loading="retryMode === 'resume'" :disabled="retrying" @click="retryJob('resume')">断点续跑</el-button>
+          <el-button data-testid="rerun-install-job" :loading="retryMode === 'rerun'" :disabled="retrying" @click="retryJob('rerun')">全量重跑</el-button>
+        </div>
+        <p class="field-hint">断点续跑复用已完成记录，全量重跑重新检查全部步骤。</p>
       </div>
       </div>
       <div v-if="!loading && !errorMessage" class="execution-hero-meta">
@@ -35,8 +38,8 @@
     </section>
     <template v-else>
       <el-alert v-if="resumeError" class="execution-notice" data-testid="resume-error" :title="resumeError" type="error" show-icon :closable="false" />
-      <section v-if="job.source_job_id" class="job-lineage execution-notice" aria-label="续跑任务来源">
-        <div><strong>此任务由任务 #{{ job.source_job_id }} 续跑创建</strong><p>来源任务保持只读，可返回查看原失败现场。</p></div>
+      <section v-if="job.source_job_id" class="job-lineage execution-notice" :aria-label="`${retryKind}任务来源`">
+        <div><strong>此任务由任务 #{{ job.source_job_id }} {{ retryKind }}创建</strong><p>来源任务保持只读，可返回查看原失败现场。</p></div>
         <RouterLink class="el-button" :to="sourceJobRoute">查看来源任务</RouterLink>
       </section>
       <div class="execution-layout">
@@ -84,14 +87,14 @@ import LiveLogViewer from '../components/jobs/LiveLogViewer.vue';
 import StepStatusIcon from '../components/jobs/StepStatusIcon.vue';
 import { groupDeploymentUnits } from '../components/jobs/deploymentUnits';
 import { canResumeJob, executionStatusTone, isTerminalJob, jobStatusLabel } from '../components/jobs/jobStatus';
-import { getCluster, getClusterJob, getJob, getJobLogs, getJobSteps, listNodes, resumeInstallJob } from '../api/client';
+import { getCluster, getClusterJob, getJob, getJobLogs, getJobSteps, listNodes, resumeInstallJob, rerunInstallJob } from '../api/client';
 import { safeErrorMessage } from '../utils/redaction';
 
 const route = useRoute();
 const router = useRouter();
 const job = ref({}); const cluster = ref({}); const stages = ref([]); const logs = ref([]);
 const loading = ref(true); const connected = ref(false); const errorMessage = ref('');
-const resuming = ref(false); const resumeError = ref('');
+const retryMode = ref(''); const resumeError = ref('');
 const selectedStageId = ref(''); const selectedNodeId = ref('');
 const nodeDetails = ref([]); const updatedAt = ref('');
 let eventSource; let logId = 0; let loadSequence = 0;
@@ -108,8 +111,10 @@ const sourceJobRoute = computed(() => ({ name: 'cluster-job-execution', params: 
   clusterId: String(job.value.cluster_id), jobId: String(job.value.source_job_id)
 } }));
 const resumeAvailable = computed(() => canResumeJob(job.value));
-const runModeLabel = computed(() => job.value.run_mode === 'resume'
-  ? `续跑任务${job.value.source_job_id ? ` · 来源 #${job.value.source_job_id}` : ''}`
+const retrying = computed(() => Boolean(retryMode.value));
+const retryKind = computed(() => job.value.run_mode === 'rerun' ? '全量重跑' : '断点续跑');
+const runModeLabel = computed(() => ['resume', 'rerun'].includes(job.value.run_mode)
+  ? `${retryKind.value}任务${job.value.source_job_id ? ` · 来源 #${job.value.source_job_id}` : ''}`
   : '正常执行');
 const jobTypeLabel = computed(() => ({ install: '安装', component_install: '组件补装', reset: '重置', precheck: '预检查' }[job.value.job_type] || '集群'));
 const currentStatusLabel = computed(() => job.value.status === 'running' ? `正在${jobTypeLabel.value}` : `${jobTypeLabel.value}${jobStatusLabel(job.value.status)}`);
@@ -227,21 +232,28 @@ function locateFailure() {
   if (!stage) return; selectedStageId.value = stage.id;
   const node = (stage.nodes || []).find((item) => item.status === 'failed'); selectedNodeId.value = node?.node_id || '';
 }
-async function resumeJob() {
-  if (!resumeAvailable.value || resuming.value) return;
-  resuming.value = true;
+async function retryJob(mode) {
+  if (!resumeAvailable.value || retrying.value) return;
+  const sourceJobId = job.value.id;
+  const clusterId = job.value.cluster_id;
+  const label = mode === 'rerun' ? '全量重跑' : '断点续跑';
+  retryMode.value = mode;
   resumeError.value = '';
   try {
-    const accepted = await resumeInstallJob(job.value.cluster_id, job.value.id);
+    const submit = mode === 'rerun' ? rerunInstallJob : resumeInstallJob;
+    const accepted = await submit(clusterId, sourceJobId);
+    if (String(route.params.jobId) !== String(sourceJobId)) return;
     const newJobId = accepted?.job_id || accepted?.id;
-    if (!newJobId) throw new Error('续跑请求已接受，但未返回新任务编号。');
+    if (!newJobId) throw new Error(`${label}请求已接受，但未返回新任务编号。`);
     await router.push({ name: 'cluster-job-execution', params: {
-      clusterId: String(job.value.cluster_id), jobId: String(newJobId)
+      clusterId: String(clusterId), jobId: String(newJobId)
     } });
   } catch (error) {
-    resumeError.value = safeErrorMessage(error, '续跑任务创建失败，请核对任务状态和集群配置。');
+    if (String(route.params.jobId) === String(sourceJobId)) {
+      resumeError.value = safeErrorMessage(error, `${label}任务创建失败，请核对任务状态和集群配置。`);
+    }
   } finally {
-    resuming.value = false;
+    retryMode.value = '';
   }
 }
 </script>

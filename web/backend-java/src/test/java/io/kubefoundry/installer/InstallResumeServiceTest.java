@@ -12,9 +12,19 @@ import io.kubefoundry.job.Job;
 import io.kubefoundry.job.JobExecutor;
 import io.kubefoundry.job.JobRepository;
 import io.kubefoundry.job.JobService;
+import io.kubefoundry.job.JobStep;
+import io.kubefoundry.job.JobStepNode;
+import io.kubefoundry.job.JobStepNodeRepository;
+import io.kubefoundry.job.JobStepRepository;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,12 +34,25 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest(properties = {
         "spring.datasource.url=jdbc:h2:mem:install-resume;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
         "spring.jpa.hibernate.ddl-auto=validate",
         "kubefoundry.project-dir=target/install-resume-media",
-        "kubefoundry.app-dir=target/install-resume-media"
+        "kubefoundry.app-dir=target/install-resume-media",
+        "kubefoundry.data-dir=target/install-resume-data"
 })
 class InstallResumeServiceTest {
     @Autowired JdbcTemplate jdbc;
@@ -39,14 +62,18 @@ class InstallResumeServiceTest {
     @Autowired ClusterComponentStateRepository states;
     @Autowired JobRepository jobs;
     @Autowired JobService jobService;
+    @Autowired JobStepRepository steps;
+    @Autowired JobStepNodeRepository stepNodes;
     @Autowired InstallationSnapshotRepository snapshots;
     @Autowired InstallService installs;
     @Autowired ComponentInstallService componentInstalls;
     @Autowired ComponentInstallationStateService componentStates;
     @Autowired InstallResumeService resumes;
     @Autowired ClusterSettingsService settings;
+    @Autowired PlatformTransactionManager transactionManager;
 
     @MockBean JobExecutor executor;
+    @MockBean RemoteStepRunner runner;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -224,6 +251,187 @@ class InstallResumeServiceTest {
     }
 
     @Test
+    void resumeReusesSuccessfulNodesButRerunExecutesThemAgain() throws Exception {
+        Cluster cluster = preparedCluster("execution-range", false);
+        long sourceId = installs.start(cluster.getId());
+        List<JobStep> planned = jobService.listSteps(sourceId).stream()
+                .filter(step -> !jobService.listStepNodes(step.getId()).isEmpty()).toList();
+        JobStep completed = planned.get(0);
+        JobStep failed = planned.get(1);
+        completed.markSuccess();
+        steps.saveAndFlush(completed);
+        for (JobStepNode node : jobService.listStepNodes(completed.getId())) {
+            node.complete(JobService.NodeOutcome.successful());
+            stepNodes.saveAndFlush(node);
+        }
+        failed.markFailed();
+        steps.saveAndFlush(failed);
+        for (JobStepNode node : jobService.listStepNodes(failed.getId())) {
+            node.markFailed("原任务失败");
+            stepNodes.saveAndFlush(node);
+        }
+        Job source = jobs.findById(sourceId).orElseThrow();
+        source.markFailed();
+        jobs.saveAndFlush(source);
+        executeSubmittedJobs();
+
+        long resumedId = resumes.resume(cluster.getId(), sourceId);
+
+        assertThat(jobs.findById(resumedId).orElseThrow().getStatus()).isEqualTo("success");
+        assertThat(jobService.listSteps(resumedId)).hasSameSizeAs(jobService.listSteps(sourceId));
+        assertThat(jobService.listSteps(resumedId).get(completed.getOrder() - 1).getStatusReason())
+                .isEqualTo("RESUME_SOURCE_SUCCEEDED");
+        verify(runner, never()).run(eq(resumedId), any(), anyList(), any(),
+                argThat(step -> completed.getStepKey().equals(step.key())), any(RuntimeSettings.class));
+        verify(runner, atLeastOnce()).run(eq(resumedId), any(), anyList(), any(),
+                argThat(step -> failed.getStepKey().equals(step.key())), any(RuntimeSettings.class));
+
+        long rerunId = resumes.rerun(cluster.getId(), sourceId);
+
+        assertThat(jobs.findById(rerunId).orElseThrow().getRunMode()).isEqualTo("rerun");
+        assertThat(jobs.findById(rerunId).orElseThrow().getSourceJob().getId()).isEqualTo(sourceId);
+        verify(runner, atLeastOnce()).run(eq(rerunId), any(), anyList(), any(),
+                argThat(step -> completed.getStepKey().equals(step.key())), any(RuntimeSettings.class));
+        assertThat(jobService.listStepNodes(
+                jobService.listSteps(sourceId).get(completed.getOrder() - 1).getId()))
+                .allSatisfy(node -> assertThat(node.getStatus()).isEqualTo("success"));
+    }
+
+    @Test
+    void secondResumeRecoversAncestorSuccessAfterFirstRunAborted() throws Exception {
+        Cluster cluster = preparedCluster("ancestor", false);
+        long sourceId = installs.start(cluster.getId());
+        List<JobStep> planned = jobService.listSteps(sourceId).stream()
+                .filter(step -> !jobService.listStepNodes(step.getId()).isEmpty()).toList();
+        JobStep completed = planned.get(0);
+        JobStep failed = planned.get(1);
+        JobStep laterCompleted = planned.get(planned.size() - 1);
+        for (JobStep step : List.of(completed, laterCompleted)) {
+            step.markSuccess();
+            steps.saveAndFlush(step);
+            for (JobStepNode node : jobService.listStepNodes(step.getId())) {
+                node.complete(JobService.NodeOutcome.successful());
+                stepNodes.saveAndFlush(node);
+            }
+        }
+        failed.markFailed();
+        steps.saveAndFlush(failed);
+        for (JobStepNode node : jobService.listStepNodes(failed.getId())) {
+            node.markFailed("原任务失败");
+            stepNodes.saveAndFlush(node);
+        }
+        Job source = jobs.findById(sourceId).orElseThrow();
+        source.markPartialSuccess();
+        jobs.saveAndFlush(source);
+        AtomicInteger failures = new AtomicInteger(1);
+        executeSubmittedJobs();
+        when(runner.run(anyLong(), any(), anyList(), any(), any(), any(RuntimeSettings.class))).thenAnswer(invocation -> {
+            InstallStep step = invocation.getArgument(4);
+            if (step.key().equals(failed.getStepKey()) && failures.getAndDecrement() > 0) {
+                return new JobService.NodeOutcome(false, 1, "本次执行失败", "");
+            }
+            return JobService.NodeOutcome.successful();
+        });
+
+        long firstId = resumes.resume(cluster.getId(), sourceId);
+        assertThat(jobs.findById(firstId).orElseThrow().getStatus()).isEqualTo("failed");
+        JobStep firstLater = jobService.listSteps(firstId).get(laterCompleted.getOrder() - 1);
+        assertThat(firstLater.getStatusReason()).isEqualTo("JOB_ABORTED");
+
+        long secondId = resumes.resume(cluster.getId(), firstId);
+
+        assertThat(jobs.findById(secondId).orElseThrow().getStatus()).isEqualTo("success");
+        verify(runner, never()).run(eq(secondId), any(), anyList(), any(),
+                argThat(step -> completed.getStepKey().equals(step.key())), any(RuntimeSettings.class));
+        verify(runner, never()).run(eq(secondId), any(), anyList(), any(),
+                argThat(step -> laterCompleted.getStepKey().equals(step.key())), any(RuntimeSettings.class));
+        verify(runner, atLeastOnce()).run(eq(secondId), any(), anyList(), any(),
+                argThat(step -> failed.getStepKey().equals(step.key())), any(RuntimeSettings.class));
+        assertThat(jobService.listSteps(secondId).get(laterCompleted.getOrder() - 1).getStatusReason())
+                .isEqualTo("RESUME_SOURCE_SUCCEEDED");
+    }
+
+    @Test
+    void resumeRechecksJoinProducerOnlyWhenAConsumerNeedsFreshArtifacts() throws Exception {
+        Cluster cluster = preparedCluster("artifacts", false);
+        long sourceId = installs.start(cluster.getId());
+        JobStep producer = jobService.listSteps(sourceId).stream()
+                .filter(step -> "18-init-k8s-cluster".equals(step.getStepKey()))
+                .findFirst().orElseThrow();
+        producer.markSuccess();
+        steps.saveAndFlush(producer);
+        for (JobStepNode node : jobService.listStepNodes(producer.getId())) {
+            node.complete(JobService.NodeOutcome.successful());
+            stepNodes.saveAndFlush(node);
+        }
+        JobStep consumer = jobService.listSteps(sourceId).stream()
+                .filter(step -> "21-add-worker-nodes".equals(step.getStepKey()))
+                .findFirst().orElseThrow();
+        consumer.markSuccess();
+        steps.saveAndFlush(consumer);
+        for (JobStepNode node : jobService.listStepNodes(consumer.getId())) {
+            node.complete(JobService.NodeOutcome.successful());
+            stepNodes.saveAndFlush(node);
+        }
+        Job source = jobs.findById(sourceId).orElseThrow();
+        source.markFailed();
+        jobs.saveAndFlush(source);
+        executeSubmittedJobs();
+
+        long resumedId = resumes.resume(cluster.getId(), sourceId);
+
+        verify(runner, never()).run(eq(resumedId), any(), anyList(), any(),
+                argThat(step -> producer.getStepKey().equals(step.key())), any(RuntimeSettings.class));
+
+        consumer.markFailed();
+        steps.saveAndFlush(consumer);
+        for (JobStepNode node : jobService.listStepNodes(consumer.getId())) {
+            node.markFailed("需重试加入节点");
+            stepNodes.saveAndFlush(node);
+        }
+        long retryId = resumes.resume(cluster.getId(), sourceId);
+
+        verify(runner, atLeastOnce()).run(eq(retryId), any(), anyList(), any(),
+                argThat(step -> producer.getStepKey().equals(step.key())), any(RuntimeSettings.class));
+    }
+
+    @Test
+    void latestRerunFailureOverridesOlderSuccessfulStep() throws Exception {
+        Cluster cluster = preparedCluster("rerun-baseline", false);
+        long sourceId = installs.start(cluster.getId());
+        JobStep completed = jobService.listSteps(sourceId).stream()
+                .filter(step -> !jobService.listStepNodes(step.getId()).isEmpty())
+                .findFirst().orElseThrow();
+        completed.markSuccess();
+        steps.saveAndFlush(completed);
+        for (JobStepNode node : jobService.listStepNodes(completed.getId())) {
+            node.complete(JobService.NodeOutcome.successful());
+            stepNodes.saveAndFlush(node);
+        }
+        Job source = jobs.findById(sourceId).orElseThrow();
+        source.markFailed();
+        jobs.saveAndFlush(source);
+        executeSubmittedJobs();
+        AtomicInteger failures = new AtomicInteger(1);
+        when(runner.run(anyLong(), any(), anyList(), any(), any(), any(RuntimeSettings.class)))
+                .thenAnswer(invocation -> {
+                    InstallStep step = invocation.getArgument(4);
+                    if (step.key().equals(completed.getStepKey()) && failures.getAndDecrement() > 0) {
+                        return new JobService.NodeOutcome(false, 1, "本次重跑失败", "");
+                    }
+                    return JobService.NodeOutcome.successful();
+                });
+
+        long rerunId = resumes.rerun(cluster.getId(), sourceId);
+        assertThat(jobs.findById(rerunId).orElseThrow().getStatus()).isEqualTo("failed");
+
+        long resumedId = resumes.resume(cluster.getId(), rerunId);
+
+        verify(runner, atLeastOnce()).run(eq(resumedId), any(), anyList(), any(),
+                argThat(step -> completed.getStepKey().equals(step.key())), any(RuntimeSettings.class));
+    }
+
+    @Test
     void rejectsHistoricalCrossClusterAndConcurrentResumeRequests() {
         Cluster historicalCluster = preparedCluster("historical", false);
         long historicalJobId = installs.start(historicalCluster.getId());
@@ -287,5 +495,32 @@ class InstallResumeServiceTest {
         worker.completeNodeTest("kylin", "V10", "amd64");
         nodes.saveAndFlush(worker);
         return cluster;
+    }
+
+    private void executeSubmittedJobs() throws Exception {
+        TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+        transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        doAnswer(invocation -> {
+            transaction.executeWithoutResult(status ->
+                    invocation.getArgument(0, Runnable.class).run());
+            return null;
+        }).when(executor).submit(any(Runnable.class));
+        when(executor.executeNodes(anyList(), anyInt(), anyBoolean())).thenAnswer(invocation -> {
+            List<JobExecutor.NodeWork> work = invocation.getArgument(0);
+            List<JobExecutor.NodeResult> results = new ArrayList<>();
+            for (JobExecutor.NodeWork item : work) {
+                try {
+                    item.action().run();
+                    results.add(new JobExecutor.NodeResult(item.nodeId(), "success", ""));
+                } catch (Exception exception) {
+                    results.add(new JobExecutor.NodeResult(item.nodeId(), "failed", exception.getMessage()));
+                }
+            }
+            String status = results.stream().allMatch(result -> "success".equals(result.status()))
+                    ? "success" : "failed";
+            return new JobExecutor.ExecutionSummary(status, List.copyOf(results));
+        });
+        when(runner.run(anyLong(), any(), anyList(), any(), any(), any(RuntimeSettings.class)))
+                .thenReturn(JobService.NodeOutcome.successful());
     }
 }
