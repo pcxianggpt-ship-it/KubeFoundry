@@ -146,7 +146,7 @@ describe('安装流程', () => {
   it('确认页展示目标信息，只有点击开始安装才创建任务并跳转', async () => {
     getCluster.mockResolvedValue({ id: 42, name: '生产集群', k8s_version: '1.30.14', kubernetes_work_dir: '/data/k8s_install' });
     listNodes.mockResolvedValue({ items: [
-      { id: 1, hostname: 'production-control-plane-registry-01', ip: '10.0.0.1', roles: ['control_plane', 'registry'], node_test_status: 'success' },
+      { id: 1, hostname: 'production-control-plane-registry-01', ip: '10.0.0.1', roles: ['control_plane', 'registry', 'nfs_server'], node_test_status: 'success' },
       { id: 2, hostname: 'worker-1', ip: '10.0.0.2', roles: ['worker'], node_test_status: 'success' }
     ] });
     getClusterSettings.mockResolvedValue({ paths: { install_media: '/opt/kf/media' }, advanced: { max_parallel_nodes: 2 } });
@@ -166,7 +166,9 @@ describe('安装流程', () => {
     expect(wrapper.text()).toContain('2 个节点');
     expect(wrapper.get('[data-testid="confirm-node-1"]').text()).toContain('production-control-plane-registry-01');
     expect(wrapper.get('[data-testid="confirm-node-1"]').text()).toContain('10.0.0.1');
-    expect(wrapper.get('[data-testid="confirm-node-1"]').text()).toContain('控制节点、镜像仓库');
+    expect(wrapper.get('[data-testid="confirm-node-1"]').findAll('.node-role-card').map(role => role.text())).toEqual(['控制节点', '镜像仓库', 'NFS 服务器']);
+    expect(wrapper.get('[data-testid="confirm-node-1"]').findAll('.node-role-card svg[aria-hidden="true"]')).toHaveLength(3);
+    expect(wrapper.get('[data-testid="confirm-node-2"] .node-role-card').text()).toBe('工作节点');
     expect(wrapper.get('[data-testid="confirm-node-1"]').text()).toContain('免密已验证');
     expect(wrapper.get('[data-testid="confirm-node-2"]').text()).toContain('10.0.0.2');
     expect(wrapper.text()).toContain('2 个单元、4 个步骤');

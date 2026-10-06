@@ -286,6 +286,14 @@ html:where([data-kf-theme="apple"]),
   transition: transform 160ms ease;
 }
 
+/* 图标按钮保持宽高一致，避免全局高度覆盖后变成椭圆。 */
+:where([data-kf-theme="apple"]) .el-button.is-circle {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+}
+
 :where([data-kf-theme="apple"]) .el-button--primary:not(.is-text):not(.is-link) {
   padding: 11px 22px;
   border-radius: var(--kf-radius-pill);

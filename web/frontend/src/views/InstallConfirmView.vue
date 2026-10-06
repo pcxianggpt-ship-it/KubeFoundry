@@ -26,7 +26,15 @@
           <li v-for="node in nodes" :key="node.id" :class="{ 'is-invalid': !isValidIpv4(node.ip) }" :data-testid="`confirm-node-${node.id}`">
             <strong :title="node.hostname">{{ node.hostname }}</strong>
             <span class="confirm-node-ip"><small>IPv4</small>{{ node.ip || '未配置' }}</span>
-            <span>{{ roleLabel(node.roles) }}</span>
+            <div class="node-role-cards">
+              <NodeRoleBadge
+                v-for="role in node.roles || []"
+                :key="role"
+                :role="role"
+                :label="role === 'control_plane' ? '控制节点' : ''"
+              />
+              <span v-if="!node.roles?.length">-</span>
+            </div>
             <el-tag :type="sshStatus(node.node_test_status).tone" size="small">{{ sshStatus(node.node_test_status).label }}</el-tag>
           </li>
         </ul></div>
@@ -50,6 +58,7 @@ import { computed, onMounted, ref } from 'vue';
 import { ArrowLeft, CircleCheckFilled, Refresh, VideoPlay, WarningFilled } from '@element-plus/icons-vue';
 import { RouterLink, useRoute, useRouter } from 'vue-router';
 import DeploymentUnitList from '../components/jobs/DeploymentUnitList.vue';
+import NodeRoleBadge from '../components/nodes/NodeRoleBadge.vue';
 import { groupDeploymentUnits } from '../components/jobs/deploymentUnits';
 import { getCluster, getClusterSettings, getInstallPlan, listJobs, listNodes, startInstall } from '../api/client';
 import { safeErrorMessage } from '../utils/redaction';
@@ -106,9 +115,6 @@ async function start() {
     await router.push({ name: 'cluster-job-execution', params: { clusterId, jobId: String(accepted.job_id || accepted.id) } });
   } catch (error) { errorMessage.value = safeErrorMessage(error, '安装任务启动失败，请检查预检查状态。'); }
   finally { starting.value = false; }
-}
-function roleLabel(roles) {
-  return (roles || []).map((role) => ({ control_plane: '控制节点', worker: '工作节点', registry: '镜像仓库' }[role] || role)).join('、');
 }
 function isValidIpv4(value) {
   if (typeof value !== 'string' || !value.trim()) return false;
