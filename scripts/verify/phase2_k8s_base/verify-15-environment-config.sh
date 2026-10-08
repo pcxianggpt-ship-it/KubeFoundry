@@ -15,6 +15,17 @@ for managed_file in \
     grep -Fqx '# Managed by KubeFoundry v0.3.2' "${managed_file}" || \
         missing "KubeFoundry 受管标记缺失: ${managed_file}"
 done
+[ -f /etc/resolv.conf ] || missing "/etc/resolv.conf 不存在或不是普通文件"
+if grep -E '^[[:space:]]*nameserver[[:space:]]+[^[:space:]#;]+' /etc/resolv.conf >/dev/null; then
+    :
+else
+    dns_status=$?
+    if [ "${dns_status}" -ne 1 ]; then
+        printf '[ERROR] 读取 /etc/resolv.conf 失败\n' >&2
+        exit 20
+    fi
+    missing "/etc/resolv.conf 尚未配置 nameserver"
+fi
 [ -z "$(swapon --show --noheadings 2>/dev/null)" ] || missing "swap 仍处于启用状态"
 for sysctl_key in net.ipv4.ip_forward net.bridge.bridge-nf-call-iptables net.bridge.bridge-nf-call-ip6tables; do
     if ! sysctl_value=$(sysctl -n "${sysctl_key}"); then

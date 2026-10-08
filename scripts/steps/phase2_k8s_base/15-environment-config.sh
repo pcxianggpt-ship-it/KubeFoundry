@@ -24,6 +24,39 @@ for managed_file in \
     }
 done
 
+# 保留已有 nameserver；缺少配置时补充 DNS，避免 CoreDNS 没有上游服务器。
+dns_configured=false
+if [ -e /etc/resolv.conf ]; then
+    if grep -E '^[[:space:]]*nameserver[[:space:]]+[^[:space:]#;]+' /etc/resolv.conf >/dev/null; then
+        dns_configured=true
+    else
+        dns_status=$?
+        if [ "${dns_status}" -ne 1 ]; then
+            log_error "读取 /etc/resolv.conf 失败，无法检查 nameserver 配置"
+            exit 1
+        fi
+    fi
+fi
+if [ "${dns_configured}" = true ]; then
+    log_info "/etc/resolv.conf 已配置 nameserver，保留原配置"
+else
+    resolv_last_char=''
+    if [ -s /etc/resolv.conf ]; then
+        if ! resolv_last_char=$(tail -c 1 /etc/resolv.conf); then
+            log_error "读取 /etc/resolv.conf 末尾失败"
+            exit 1
+        fi
+    fi
+    resolv_separator=''
+    if [ -n "${resolv_last_char}" ]; then resolv_separator=$'\n'; fi
+    if printf '%s%s\n' "${resolv_separator}" 'nameserver 8.8.8.8' >> /etc/resolv.conf; then
+        log_info "/etc/resolv.conf 已添加 nameserver 8.8.8.8"
+    else
+        log_error "写入 /etc/resolv.conf 失败，无法添加 nameserver 8.8.8.8"
+        exit 1
+    fi
+fi
+
 # 当前安装立即关闭 swap，并通过独立 unit 确保重启后仍关闭。
 swapoff -a
 cat > /etc/systemd/system/kubefoundry-disable-swap.service <<'EOF'
@@ -135,4 +168,4 @@ systemctl daemon-reload
 systemctl enable --now kubefoundry-disable-swap.service >/dev/null
 
 log_success "环境配置完成"
-log_info "已配置: swap 关闭、防火墙关闭、KubeFoundry 独立 modules/sysctl/limits 配置"
+log_info "已配置: DNS 兜底、swap 关闭、防火墙关闭、KubeFoundry 独立 modules/sysctl/limits 配置"

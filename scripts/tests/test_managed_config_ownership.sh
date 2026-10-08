@@ -17,7 +17,7 @@ for managed_path in \
     /etc/systemd/system/kubefoundry-disable-swap.service; do
     grep -Fq "${managed_path}" "${environment_script}"
 done
-if grep -Eq '/etc/(resolv\.conf|security/limits\.conf)|/etc/sysctl\.d/99-sysctl\.conf' \
+if grep -Eq '/etc/security/limits\.conf|/etc/sysctl\.d/99-sysctl\.conf' \
     "${environment_script}"; then
     printf '[FAIL] 环境脚本仍修改用户共享配置\n' >&2
     exit 1
