@@ -218,7 +218,8 @@ IOSchedulingClass=best-effort
 IOSchedulingPriority=7
 NoNewPrivileges=true
 PrivateTmp=true
-ProtectHome=true
+# /home 下的 etcd 数据目录需保持可见，写入由 ReadWritePaths 放行。
+ProtectHome=read-only
 ProtectSystem=strict
 ReadWritePaths=${backup_dir} ${etcd_data_host} /run
 EOF

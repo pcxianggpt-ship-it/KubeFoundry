@@ -7,7 +7,7 @@ trap 'rm -rf -- "${TMP}"' EXIT
 SYSTEM_ROOT="${TMP}/root"
 BIN="${TMP}/bin"
 mkdir -p "${BIN}" "${SYSTEM_ROOT}/etc/kubernetes"
-mkdir -p "${SYSTEM_ROOT}/etcd-data"
+mkdir -p "${SYSTEM_ROOT}/home/k8s_install/etcd_root"
 touch "${SYSTEM_ROOT}/etc/kubernetes/admin.conf"
 
 cat > "${BIN}/systemctl" <<'EOF'
@@ -46,7 +46,7 @@ export PROJECT_ROOT="${ROOT}"
 export KF_SYSTEM_ROOT="${SYSTEM_ROOT}"
 export KF_ETCD_SYSTEMCTL_LOG="${TMP}/systemctl.log"
 export KF_ETCD_KUBECTL_LOG="${TMP}/kubectl.log"
-export KF_ETCD_HOST_DATA_DIR="${SYSTEM_ROOT}/etcd-data"
+export KF_ETCD_HOST_DATA_DIR="${SYSTEM_ROOT}/home/k8s_install/etcd_root"
 log_info() { :; }
 log_success() { :; }
 log_warn() { :; }
@@ -65,6 +65,8 @@ for target in "${backup_script}" "${service_unit}" "${timer_unit}"; do
 done
 grep -Fq 'OnCalendar=*-*-* 02:10:00' "${timer_unit}"
 grep -Fq "ExecStart=/bin/bash ${backup_script}" "${service_unit}"
+grep -Fxq 'ProtectHome=read-only' "${service_unit}"
+grep -Fxq 'ProtectSystem=strict' "${service_unit}"
 grep -Fq "ReadWritePaths=${backup_dir} ${KF_ETCD_HOST_DATA_DIR} /run" "${service_unit}"
 ! grep -Eq 'crontab[[:space:]]+-e|etcdbak\.sh' \
     "${ROOT}/scripts/steps/phase3_ecosystem/44-setup-etcd-backup.sh"
