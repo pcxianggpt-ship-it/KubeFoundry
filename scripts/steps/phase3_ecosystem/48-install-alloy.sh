@@ -31,7 +31,8 @@ deployments=$(kubectl get deployment --namespace kubemate-system --no-headers 2>
 while IFS= read -r name; do
     [ -z "${name}" ] || phase3_wait_rollout deployment "${name}" kubemate-system
 done <<< "${deployments}"
-kubectl get pods --namespace kubemate-system --no-headers 2>/dev/null | grep -q alloy || {
+# 读取完整列表，避免 grep 提前退出导致 kubectl SIGPIPE，被 pipefail 误判为失败。
+kubectl get pods --namespace kubemate-system --no-headers 2>/dev/null | grep alloy >/dev/null || {
     log_error "Alloy 工作负载未就绪"
     exit 1
 }

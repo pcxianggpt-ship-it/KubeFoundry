@@ -27,6 +27,22 @@ EOF
 cat > "${BIN}/kubectl" <<'EOF'
 #!/bin/bash
 printf '%s\n' "$*" >> "${KF_STORAGE_KUBECTL_LOG}"
+if [ "${1:-}" = get ] && [ "${2:-}" = pods ] && [ -n "${KF_STORAGE_POD_MODE:-}" ]; then
+    case "${KF_STORAGE_POD_MODE}" in
+        large)
+            printf '%s-pod 1/1 Running 0 1m\n' "${KF_STORAGE_MOCK_GROUP}"
+            for ((index=0; index<4000; index++)); do
+                printf 'unrelated-workload-%04d 1/1 Running 0 1m\n' "${index}"
+            done
+            ;;
+        missing) printf 'unrelated-pod 1/1 Running 0 1m\n' ;;
+        query_failed)
+            printf '%s-pod 1/1 Running 0 1m\n' "${KF_STORAGE_MOCK_GROUP}"
+            exit 1
+            ;;
+    esac
+    exit 0
+fi
 if [ "${1:-}" = apply ] && [ "${2:-}" = -k ]; then
     cp "${3}/minio-resources-patch.yaml" "${KF_STORAGE_MINIO_PATCH}"
     cp "${3}/tenant.yaml" "${KF_STORAGE_MINIO_SOURCE}"
@@ -108,7 +124,7 @@ run_group() {
         loki) printf 'chart' > "${KF_COMPONENT_RESOURCE_DIR}/loki-5.45.0.tgz"; printf '{}' > "${KF_COMPONENT_RESOURCE_DIR}/values.yaml" ;;
         alloy) printf 'chart' > "${KF_COMPONENT_RESOURCE_DIR}/alloy-1.4.0.tgz"; printf '{}' > "${KF_COMPONENT_RESOURCE_DIR}/alloy.config"; printf '{}' > "${KF_COMPONENT_RESOURCE_DIR}/alloy-values.yaml" ;;
     esac
-    bash "${ROOT}/scripts/steps/phase3_ecosystem/${script}"
+    bash "${ROOT}/scripts/steps/phase3_ecosystem/${script}" || return $?
     if [ "${group}" = minio ]; then
         cmp "${KF_COMPONENT_RESOURCE_DIR}/tenant.yaml" "${KF_STORAGE_MINIO_SOURCE}"
         ! grep -q '^patches:' "${KF_COMPONENT_RESOURCE_DIR}/kustomization.yaml"
@@ -180,6 +196,23 @@ touch "${TMP}/admin.conf"
 KF_KUBECONFIG="${TMP}/admin.conf" bash "${ROOT}/scripts/verify/phase3_ecosystem/verify-49-install-minio.sh"
 run_group loki 35-install-loki.sh
 run_group alloy 48-install-alloy.sh
+
+# Pod 已启动且匹配项在长列表开头时，不得因下游提前关闭管道而误判。
+for group in loki alloy; do
+    if [ "${group}" = loki ]; then script=35-install-loki.sh; else script=48-install-alloy.sh; fi
+    export KF_STORAGE_POD_MODE=large
+    run_group "${group}" "${script}"
+    # 不存在对应 Pod 或查询失败（即使输出中有匹配项）仍应拒绝成功。
+    for mode in missing query_failed; do
+        export KF_STORAGE_POD_MODE="${mode}"
+        if run_group "${group}" "${script}" > "${TMP}/pod-check-output" 2>&1; then
+            printf '%s 在 %s 情况下错误报告成功\n' "${group}" "${mode}" >&2
+            exit 1
+        fi
+        grep -q '工作负载未就绪' "${TMP}/pod-check-output"
+    done
+done
+unset KF_STORAGE_POD_MODE
 grep -q -- '^upgrade --install openebs .*openebs-4.2.0.tgz --namespace kubemate-system .*--labels app.kubernetes.io/managed-by=kubefoundry,kubefoundry.io/component-group=openebs.*-f .*openebs-values.yaml -f /tmp/' "${KF_STORAGE_HELM_LOG}" || {
     printf 'OpenEBS Helm 调用不符合预期:\n' >&2
     cat "${KF_STORAGE_HELM_LOG}" >&2
