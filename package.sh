@@ -41,7 +41,8 @@ KubeFoundry v0.3.2 Java 离线包构建脚本
   dist/kubefoundry-web-v0.3.2-{x86_64|aarch64}.tar.gz
 
 说明:
-  使用 JDK 17 构建；交叉构建时必须通过 KF_TARGET_JDK_HOME 提供真实目标架构 JDK。
+  使用 JDK 17 构建；交叉构建时通过 KF_TARGET_JDK_HOME 提供真实目标架构 JDK。
+  ARM64 交叉构建也可使用已配置的 KF_ARM_JAVA_HOME；KF_TARGET_JDK_HOME 优先。
   已有测试通过的 JAR 和前端产物时，可设置 KF_USE_PREBUILT=1 完成离线归档。
 EOF
 }
@@ -161,7 +162,6 @@ copy_helm_media() {
 build_runtime() {
     local release_dir="$1"
     KF_TARGET_ARCH="${TARGET_ARCH}" KF_PACKAGE_TEST_MODE="${TEST_MODE}" \
-        KF_TARGET_JDK_HOME="${KF_TARGET_JDK_HOME:-${KF_JAVA_HOME:-${JAVA_HOME:-}}}" \
         bash "${PROJECT_ROOT}/scripts/build/build-jre.sh" "${release_dir}/runtime"
 }
 

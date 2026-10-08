@@ -2,7 +2,7 @@
 
 #===============================================================================
 # 脚本名称：build-jre.sh
-# 功能：在目标架构主机上生成 KubeFoundry Java 17 精简运行时
+# 功能：使用构建机 JDK 和目标架构 jmods 生成 KubeFoundry Java 17 精简运行时
 # 作者：KubeFoundry Team
 # 版本：1.0.0
 #===============================================================================
@@ -13,7 +13,7 @@ OUTPUT_DIR="${1:-}"
 TARGET_ARCH="${KF_TARGET_ARCH:-}"
 TEST_MODE="${KF_PACKAGE_TEST_MODE:-0}"
 JAVA_HOME_VALUE="${KF_JAVA_HOME:-${JAVA_HOME:-}}"
-TARGET_JDK_HOME="${KF_TARGET_JDK_HOME:-${JAVA_HOME_VALUE}}"
+TARGET_JDK_HOME="${KF_TARGET_JDK_HOME:-}"
 MODULES="java.base,java.compiler,java.desktop,java.instrument,java.logging,java.management,java.naming,java.net.http,java.prefs,java.rmi,java.scripting,java.security.jgss,java.security.sasl,java.sql,java.transaction.xa,java.xml,jdk.crypto.ec,jdk.unsupported"
 
 normalize_arch() {
@@ -40,6 +40,13 @@ if [ "${TEST_MODE}" = "1" ]; then
 fi
 
 HOST_ARCH="$(normalize_arch "$(uname -m)")" || fail "不支持的构建机架构: $(uname -m)"
+if [ -z "${TARGET_JDK_HOME}" ]; then
+    TARGET_JDK_HOME="${JAVA_HOME_VALUE}"
+    # 使用 WSL 已配置的 ARM JDK；宿主 JDK 继续负责运行 Java 和 jlink。
+    if [ "${HOST_ARCH}" != "${TARGET_ARCH}" ] && [ "${TARGET_ARCH}" = aarch64 ]; then
+        TARGET_JDK_HOME="${KF_ARM_JAVA_HOME:-${JAVA_HOME_VALUE}}"
+    fi
+fi
 [ -n "${JAVA_HOME_VALUE}" ] || fail "请通过 KF_JAVA_HOME 或 JAVA_HOME 指定 JDK 17"
 [ -x "${JAVA_HOME_VALUE}/bin/java" ] || fail "JDK Java 不存在: ${JAVA_HOME_VALUE}/bin/java"
 [ -x "${JAVA_HOME_VALUE}/bin/jlink" ] || fail "JDK 缺少 jlink: ${JAVA_HOME_VALUE}/bin/jlink"
@@ -53,7 +60,7 @@ if [ "${HOST_ARCH}" != "${TARGET_ARCH}" ]; then
     [ -f "${TARGET_JDK_HOME}/bin/java" ] || fail "目标 JDK 缺少 Java 启动器"
     case "${TARGET_ARCH}:$(file "${TARGET_JDK_HOME}/bin/java")" in
         x86_64:*x86-64*|aarch64:*aarch64*) ;;
-        *) fail "目标 JDK 二进制架构与 ${TARGET_ARCH} 不一致" ;;
+        *) fail "目标 JDK 二进制架构与 ${TARGET_ARCH} 不一致: ${TARGET_JDK_HOME}/bin/java，请设置 KF_TARGET_JDK_HOME（ARM64 也可设置 KF_ARM_JAVA_HOME）" ;;
     esac
 fi
 

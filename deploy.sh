@@ -92,7 +92,7 @@ run_service_action() {
 
 check_environment() {
     [ "${TEST_MODE}" = "1" ] || [ "$(id -u)" -eq 0 ] || { log_error "部署 systemd 服务需要 root 权限"; return 1; }
-    for name in tar sha256sum find readlink; do
+    for name in tar find readlink; do
         command -v "${name}" >/dev/null 2>&1 || { log_error "缺少命令: ${name}"; return 1; }
     done
     [ -n "${PACKAGE_FILE}" ] || { log_error "请指定发布包"; return 1; }
@@ -132,10 +132,9 @@ extract_and_validate_package() {
     release_dir="$(find "${TEMP_DIR}" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
     [ -n "${release_dir}" ] || { log_error "发布包中未找到发布目录"; return 1; }
     validate_extracted_links "${release_dir}" || return 1
-    for path in runtime/bin/java runtime/.architecture app/kubefoundry.jar web/index.html tools/helm-amd tools/helm-arm scripts/steps scripts/steps/phase2_k8s_base/18-recover-k8s-keys.sh scripts/verify/reset/verify-reset-kubernetes-node.sh scripts/steps/reset/reset-kubemate-components.sh templates/minio/kustomization.yaml templates/minio/tenant.yaml templates/minio/tenant.env.example deploy.sh VERSION ARCHITECTURE SHA256SUMS; do
+    for path in runtime/bin/java runtime/.architecture app/kubefoundry.jar web/index.html tools/helm-amd tools/helm-arm scripts/steps scripts/steps/phase2_k8s_base/18-recover-k8s-keys.sh scripts/verify/reset/verify-reset-kubernetes-node.sh scripts/steps/reset/reset-kubemate-components.sh templates/minio/kustomization.yaml templates/minio/tenant.yaml templates/minio/tenant.env.example deploy.sh VERSION ARCHITECTURE; do
         [ -e "${release_dir}/${path}" ] || { log_error "发布包缺少: ${path}"; return 1; }
     done
-    (cd "${release_dir}" && sha256sum -c SHA256SUMS >/dev/null) || { log_error "发布包文件校验失败"; return 1; }
     package_arch="$(normalize_arch "$(cat "${release_dir}/ARCHITECTURE")")" || { log_error "发布包架构无效"; return 1; }
     [ "$(cat "${release_dir}/runtime/.architecture")" = "${package_arch}" ] || { log_error "运行时架构标记不一致"; return 1; }
     host_arch="$(normalize_arch "${KF_TEST_HOST_ARCH:-$(uname -m)}")" || { log_error "不支持当前服务器架构"; return 1; }

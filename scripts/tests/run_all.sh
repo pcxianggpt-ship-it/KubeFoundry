@@ -16,6 +16,7 @@ tests=(
     test_environment_sysctl.sh
     test_etcd_backup.sh
     test_fixed_api_server_port.sh
+    test_jre_target_jdk.sh
     test_managed_config_ownership.sh
     test_package_frontend_isolation.sh
     test_phase2_coredns_affinity.sh

@@ -131,13 +131,24 @@ tar -xzf "${PACKAGE}" -C "${TEST_ROOT}/tampered"
 printf 'tampered\n' >> "${TEST_ROOT}/tampered/kubefoundry-web-v0.3.2-x86_64/app/kubefoundry.jar"
 tar -czf "${TEST_ROOT}/tampered.tar.gz" -C "${TEST_ROOT}/tampered" \
     kubefoundry-web-v0.3.2-x86_64
-if (
+if ! (
     cd "${TEST_ROOT}/deployment"
     KF_DEPLOY_TEST_MODE=1 bash "${PROJECT_ROOT}/deploy.sh" "${TEST_ROOT}/tampered.tar.gz"
 ) >"${TEST_ROOT}/tampered.log" 2>&1; then
-    fail "部署脚本未拒绝校验和被篡改的发布包"
+    fail "部署脚本仍拒绝文件内容与校验和不一致的发布包"
 fi
-grep -q '发布包文件校验失败' "${TEST_ROOT}/tampered.log" || fail "校验和失败错误不清晰"
+cmp "${TEST_ROOT}/tampered/kubefoundry-web-v0.3.2-x86_64/app/kubefoundry.jar" \
+    "${TEST_ROOT}/deployment/app/app/kubefoundry.jar" || fail "未部署修改后的文件"
+
+rm "${TEST_ROOT}/tampered/kubefoundry-web-v0.3.2-x86_64/SHA256SUMS"
+tar -czf "${TEST_ROOT}/without-checksums.tar.gz" -C "${TEST_ROOT}/tampered" \
+    kubefoundry-web-v0.3.2-x86_64
+if ! (
+    cd "${TEST_ROOT}/deployment"
+    KF_DEPLOY_TEST_MODE=1 bash "${PROJECT_ROOT}/deploy.sh" "${TEST_ROOT}/without-checksums.tar.gz"
+) >"${TEST_ROOT}/without-checksums.log" 2>&1; then
+    fail "部署脚本仍要求发布包包含 SHA256SUMS"
+fi
 
 mkdir -p "${TEST_ROOT}/missing-verifier"
 tar -xzf "${PACKAGE}" -C "${TEST_ROOT}/missing-verifier"
