@@ -19,11 +19,6 @@ spec:
         prometheus.io/port: '9100'
         prometheus.io/scrape: 'true'
     spec:
-      tolerations:
-      # this toleration is to have the daemonset runnable on master nodes
-      # remove it if your masters can't run pods
-      - key: node-role.kubernetes.io/control-plane
-        effect: NoSchedule
       volumes:
         - hostPath:
             type: ''
