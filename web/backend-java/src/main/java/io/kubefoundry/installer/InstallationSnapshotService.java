@@ -8,6 +8,7 @@ import io.kubefoundry.cluster.ClusterComponent;
 import io.kubefoundry.cluster.ClusterComponentRepository;
 import io.kubefoundry.cluster.Node;
 import io.kubefoundry.cluster.MinioComponentConfiguration;
+import io.kubefoundry.cluster.RedisPasswordService;
 import io.kubefoundry.job.Job;
 import io.kubefoundry.job.JobRepository;
 import java.util.LinkedHashMap;
@@ -136,7 +137,9 @@ public class InstallationSnapshotService {
 
     private java.util.Map<String, Object> parseConfig(ClusterComponent component) {
         try {
-            return mapper.readValue(component.getConfigJson(), new TypeReference<java.util.Map<String, Object>>() { });
+            Map<String, Object> config = mapper.readValue(component.getConfigJson(), new TypeReference<java.util.Map<String, Object>>() { });
+            return RedisPasswordService.GROUP_KEY.equals(component.getComponentKey())
+                    ? Map.of() : config;
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("组件配置无法写入安装快照: " + component.getComponentKey(), exception);
         }

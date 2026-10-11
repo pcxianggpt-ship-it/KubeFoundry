@@ -2,6 +2,7 @@ package io.kubefoundry.installer;
 
 import io.kubefoundry.cluster.Cluster;
 import io.kubefoundry.cluster.Node;
+import io.kubefoundry.cluster.RedisPasswordService;
 import io.kubefoundry.job.JobService;
 import io.kubefoundry.ssh.SshClientFactory;
 import io.kubefoundry.ssh.SshConnectionSpec;
@@ -34,6 +35,8 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class RemoteStepRunnerTest {
 
@@ -154,6 +157,40 @@ class RemoteStepRunnerTest {
         Path evidence = temporaryDirectory.resolve("data/jobs/42/evidence/pre-satisfied/cp-a");
         assertThat(evidence.resolve("verification-before.properties"))
                 .hasContent("phase=before\nexit_code=0\n");
+    }
+
+    @Test
+    void transfersRedisPasswordOutsideEvidenceAndCleansItOnSuccessFailureAndSkip() throws Exception {
+        ReflectionTestUtils.setField(cluster, "id", 1L);
+        RedisPasswordService passwords = mock(RedisPasswordService.class);
+        Path script = temporaryDirectory.resolve("redis-step.sh");
+        Path verify = temporaryDirectory.resolve("redis-verify.sh");
+        Files.writeString(script, "#!/bin/bash\nexit 0\n");
+        Files.writeString(verify, "#!/bin/bash\nexit 0\n");
+        InstallStep step = InstallStep.script("43-install-redis-sentinel", "Redis", "test", "primary_control_plane",
+                script, "serial", 1, true, List.of(), List.of(), List.of(), "").withVerification(verify);
+        for (long jobId : List.of(42L, 7L, 8L)) {
+            Path input = Files.createTempFile(temporaryDirectory, "redis-password-", ".secret");
+            Files.writeString(input, "test-only-redis-transport");
+            when(passwords.createPasswordFile(1L)).thenReturn(input);
+            JobService.NodeOutcome outcome = runner(passwords).run(jobId, cluster, List.of(node), node, step);
+            assertThat(outcome.success()).isEqualTo(jobId != 7L);
+            if (jobId == 8L) assertThat(outcome.status()).isEqualTo("skipped");
+            assertThat(input).doesNotExist();
+            Path remote = remoteRoot.resolve("tmp/kubefoundry/jobs/" + jobId
+                    + "/steps/43-install-redis-sentinel/cp-a");
+            assertThat(remote.resolve("redis-password")).doesNotExist();
+            assertThat(Files.readString(remote.resolve("runtime.env")))
+                    .contains("KF_REDIS_PASSWORD_FILE='./redis-password'").doesNotContain("test-only-redis-transport");
+            Path evidence = temporaryDirectory.resolve("data/jobs/" + jobId + "/evidence/43-install-redis-sentinel/cp-a");
+            try (var paths = Files.walk(evidence)) {
+                for (Path file : paths.filter(Files::isRegularFile).toList()) {
+                    assertThat(Files.readString(file)).doesNotContain("test-only-redis-transport");
+                }
+            }
+        }
+        assertThat(commands).anyMatch(command -> command.startsWith("chmod 0600 -- "));
+        assertThat(commands).noneMatch(command -> command.contains("test-only-redis-transport"));
     }
 
     @Test
@@ -550,6 +587,10 @@ class RemoteStepRunnerTest {
     }
 
     private RemoteStepRunner runner() {
+        return runner(null);
+    }
+
+    private RemoteStepRunner runner(RedisPasswordService passwords) {
         return new RemoteStepRunner(
                 new SshService(),
                 (targetCluster, target, work) -> {
@@ -561,7 +602,7 @@ class RemoteStepRunnerTest {
                     }
                 },
                 new RuntimeEnvRenderer(),
-                temporaryDirectory.resolve("data"));
+                temporaryDirectory.resolve("data"), RemoteStepRunner.ClusterHealthRetryPolicy.defaults(), null, passwords);
     }
 
     private InstallStep strictStep(String key) throws IOException {
@@ -615,6 +656,24 @@ class RemoteStepRunnerTest {
                             .resolve(getCommand().contains("/42/") ? "42" :
                                     getCommand().contains("/7/") ? "7" : "8"));
                     onExit(0);
+                } else if (getCommand().startsWith("rm -f -- '/tmp/kubefoundry/jobs/")
+                        && getCommand().endsWith("/redis-password'")) {
+                    String target = getCommand().substring("rm -f -- '".length(), getCommand().length() - 1);
+                    Path file = remoteRoot.resolve(target.substring(1)).normalize();
+                    if (!file.startsWith(remoteRoot)) throw new IOException("清理路径越界");
+                    Files.deleteIfExists(file);
+                    onExit(0);
+                } else if (getCommand().contains("/43-install-redis-sentinel/")
+                        && (getCommand().contains("bash ./verify.sh") || getCommand().contains("bash ./step.sh"))) {
+                    String id = getCommand().contains("/42/") ? "42" : getCommand().contains("/7/") ? "7" : "8";
+                    Path file = remoteRoot.resolve("tmp/kubefoundry/jobs/" + id
+                            + "/steps/43-install-redis-sentinel/cp-a/redis-password");
+                    if (!Files.readString(file).equals("test-only-redis-transport")) throw new IOException("密码未传递");
+                    if (getCommand().contains("bash ./verify.sh")) {
+                        int attempt = verificationCalls.computeIfAbsent("redis-" + id,
+                                ignored -> new AtomicInteger()).getAndIncrement();
+                        onExit(id.equals("8") || attempt > 0 ? 0 : 10);
+                    } else onExit(id.equals("7") ? 7 : 0);
                 } else if (getCommand().contains("/strict-install/")
                         && getCommand().contains("bash ./verify.sh")) {
                     int attempt = verificationCalls.computeIfAbsent(

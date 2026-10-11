@@ -20,6 +20,29 @@ import static org.mockito.Mockito.when;
 class InstallationSnapshotServiceTest {
 
     @Test
+    void snapshotsNeverIncludeRedisCredentialMaterial() throws Exception {
+        Cluster cluster = new Cluster("redis-snapshot");
+        ReflectionTestUtils.setField(cluster, "id", 7L);
+        cluster.updateInstallationConfiguration("/data/k8s", "REGISTRY");
+        Node node = new Node(cluster);
+        ReflectionTestUtils.setField(node, "id", 11L);
+        node.update("worker-a", "10.0.0.11", "", "worker", "root", 22);
+        node.replaceRoles(java.util.Set.of("worker"));
+        ClusterComponentRepository components = mock(ClusterComponentRepository.class);
+        when(components.findByClusterIdOrderByComponentKey(7L)).thenReturn(List.of(new ClusterComponent(
+                cluster, "redis_sentinel", true,
+                "{\"password_credential\":{\"ciphertext\":\"test-only-ciphertext\",\"iv\":\"test-only-iv\",\"version\":1}}")));
+        ObjectMapper mapper = new ObjectMapper();
+        InstallationSnapshotService service = new InstallationSnapshotService(
+                mock(InstallationSnapshotRepository.class), mock(JobRepository.class), components, mapper);
+
+        InstallationSnapshotPayload payload = service.previewPayload(cluster, List.of(node));
+
+        assertThat(payload.componentGroups().get(0).config()).isEmpty();
+        assertThat(mapper.writeValueAsString(payload)).doesNotContain("password_credential", "ciphertext", "test-only-iv");
+    }
+
+    @Test
     void resetPayloadPrefersNewestSuccessfulComponentMediaOverBaseInstallMedia() throws Exception {
         Cluster cluster = new Cluster("cluster");
         ReflectionTestUtils.setField(cluster, "id", 1L);

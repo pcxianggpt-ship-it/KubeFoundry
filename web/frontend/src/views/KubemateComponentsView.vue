@@ -10,7 +10,7 @@
         data-testid="save-components"
         type="primary"
         :icon="Check"
-        :disabled="locked || loading || saving || nfsInvalid || minioInvalid"
+        :disabled="locked || loading || saving || nfsInvalid || minioInvalid || redisInvalid"
         :loading="saving"
         @click="save"
       >保存并下一步</el-button>
@@ -95,6 +95,11 @@
             :errors="minioErrors"
             :disabled="groupReadOnly(group)"
           />
+          <RedisPasswordForm
+            v-if="group.key === 'redis_sentinel' && group.enabled"
+            :config="group.config"
+            :disabled="groupReadOnly(group)"
+          />
         </li>
       </ul>
     </template>
@@ -108,6 +113,8 @@ import { listComponents, listNodes, updateComponents } from '../api/client';
 import { safeErrorMessage } from '../utils/redaction';
 import MinioResourceForm from '../components/minio/MinioResourceForm.vue';
 import { minioConfigErrors, normalizeMinioConfig } from '../components/minio/minioConfig';
+import RedisPasswordForm from '../components/redis/RedisPasswordForm.vue';
+import { redisPasswordError } from '../components/redis/redisConfig';
 
 const props = defineProps({
   clusterId: { type: [String, Number], required: true },
@@ -140,6 +147,8 @@ const minioGroup = computed(() => groups.value.find((group) => group.key === 'st
 const minioErrors = computed(() => minioGroup.value?.enabled
   ? minioConfigErrors(minioGroup.value.config) : {});
 const minioInvalid = computed(() => Object.keys(minioErrors.value).length > 0);
+const redisInvalid = computed(() => groups.value.some(group => group.key === 'redis_sentinel'
+  && group.enabled && Boolean(redisPasswordError(group.config))));
 
 onMounted(load);
 watch(() => props.clusterId, load);
@@ -184,7 +193,7 @@ function initializeNfs(group, enabled) {
 }
 
 async function save() {
-  if (props.locked || saving.value || nfsInvalid.value || minioInvalid.value) return;
+  if (props.locked || saving.value || nfsInvalid.value || minioInvalid.value || redisInvalid.value) return;
   saving.value = true;
   errorMessage.value = '';
   try {
@@ -192,8 +201,7 @@ async function save() {
       groups: groups.value.map((group) => ({
         key: group.key,
         enabled: group.enabled,
-        config: group.key === 'nfs' && !group.enabled && invalidNfsConfig(group.config)
-          ? {} : group.config
+        config: configurationForSave(group)
       }))
     });
     groups.value = (saved?.groups || groups.value).map(normalizeGroup);
@@ -205,8 +213,18 @@ async function save() {
   }
 }
 
+function configurationForSave(group) {
+  if (group.key === 'nfs' && !group.enabled && invalidNfsConfig(group.config)) return {};
+  if (group.key === 'redis_sentinel' && !group.enabled && redisPasswordError(group.config)) {
+    return { has_password: Boolean(group.config.has_password) };
+  }
+  return group.config;
+}
+
 function normalizeGroup(group) {
-  const config = group.key === 'storage_observability'
+  const config = group.key === 'redis_sentinel'
+    ? { has_password: Boolean(group.config?.has_password), password: '' }
+    : group.key === 'storage_observability'
     ? normalizeMinioConfig(group.config) : { ...(group.config || {}) };
   const normalized = {
     ...group,

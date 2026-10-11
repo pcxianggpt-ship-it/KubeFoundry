@@ -40,6 +40,17 @@ sed "s|localpath|${storage_class}|g" "${values}" > "${rendered_values}"
 
 phase3_ensure_namespace "${namespace}"
 
+configured_password_data=
+set +x
+if [ -n "${KF_REDIS_PASSWORD_FILE:-}" ]; then
+    [ -f "${KF_REDIS_PASSWORD_FILE}" ] && [ ! -L "${KF_REDIS_PASSWORD_FILE}" ] \
+        && [ -r "${KF_REDIS_PASSWORD_FILE}" ] && [ -s "${KF_REDIS_PASSWORD_FILE}" ] || {
+        log_error "Redis 密码配置文件不可读或为空"
+        exit 1
+    }
+    configured_password_data=$(base64 < "${KF_REDIS_PASSWORD_FILE}" | tr -d '\n')
+fi
+
 if kubectl get secret "${secret}" --namespace "${namespace}" >/dev/null 2>&1; then
     managed_by=$(kubectl get secret "${secret}" --namespace "${namespace}" \
         -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}')
@@ -52,13 +63,21 @@ if kubectl get secret "${secret}" --namespace "${namespace}" >/dev/null 2>&1; th
             log_error "Redis 密码 Secret 已存在但不属于 KubeFoundry 或缺少 redis-password"
             exit 1
         }
+    if [ -n "${configured_password_data}" ] && [ "${password_data}" != "${configured_password_data}" ]; then
+        log_error "已有 Redis 密码与配置不一致，请先重置 Redis 组件；不支持在线改密"
+        exit 1
+    fi
 else
     umask 077
     secret_manifest="${work_dir}/redis-secret.yaml"
-    password=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
-    [ "${#password}" -eq 64 ] || { log_error "Redis 密码生成失败"; exit 1; }
-    password_data=$(printf '%s' "${password}" | base64 | tr -d '\n')
-    unset password
+    if [ -n "${configured_password_data}" ]; then
+        password_data=${configured_password_data}
+    else
+        password=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
+        [ "${#password}" -eq 64 ] || { log_error "Redis 密码生成失败"; exit 1; }
+        password_data=$(printf '%s' "${password}" | base64 | tr -d '\n')
+        unset password
+    fi
     cat > "${secret_manifest}" <<EOF
 apiVersion: v1
 kind: Secret
@@ -74,9 +93,15 @@ data:
 EOF
     unset password_data
     chmod 0600 "${secret_manifest}"
-    phase3_apply_managed "${secret_manifest}" >/dev/null
+    # kubectl 的失败输出可能包含 Secret 内容，不写入安装日志。
+    if ! kubectl apply --server-side --field-manager=kubefoundry --force-conflicts \
+            -f "${secret_manifest}" >"${work_dir}/secret-apply.log" 2>&1; then
+        log_error "Redis 密码 Secret 创建失败，请检查 Kubernetes API 和资源权限"
+        exit 1
+    fi
     rm -f -- "${secret_manifest}"
 fi
+unset configured_password_data password_data
 
 export KF_HELM_ATOMIC=1
 phase3_helm_upgrade "${release}" "${namespace}" "${chart}" -f "${rendered_values}"

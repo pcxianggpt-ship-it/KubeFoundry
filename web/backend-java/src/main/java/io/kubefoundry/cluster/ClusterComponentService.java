@@ -24,6 +24,7 @@ public class ClusterComponentService {
     private final InstallerAdmission admission;
     private final ObjectMapper mapper;
     private final NodeRepository nodes;
+    private final RedisPasswordService redisPasswords;
 
     public ClusterComponentService(
             ClusterRepository clusters,
@@ -31,13 +32,15 @@ public class ClusterComponentService {
             ClusterComponentStateRepository states,
             InstallerAdmission admission,
             ObjectMapper mapper,
-            NodeRepository nodes) {
+            NodeRepository nodes,
+            RedisPasswordService redisPasswords) {
         this.clusters = clusters;
         this.components = components;
         this.states = states;
         this.admission = admission;
         this.mapper = mapper;
         this.nodes = nodes;
+        this.redisPasswords = redisPasswords;
     }
 
     @Transactional(readOnly = true)
@@ -53,6 +56,9 @@ public class ClusterComponentService {
             Map<String, Object> config = parseConfig(component == null ? "{}" : component.getConfigJson());
             if (MinioComponentConfiguration.GROUP_KEY.equals(definition.key())) {
                 config = MinioComponentConfiguration.validate(config);
+            }
+            if (RedisPasswordService.GROUP_KEY.equals(definition.key())) {
+                config = RedisPasswordService.publicConfig(config);
             }
             return new GroupResponse(definition.key(), definition.name(),
                     component != null && component.isEnabled(), definition.available(), definition.components(),
@@ -71,7 +77,11 @@ public class ClusterComponentService {
         Map<String, GroupRequest> values = new LinkedHashMap<>();
         Set<String> requestedKeys = new HashSet<>();
         components.findByClusterIdOrderByComponentKey(clusterId).forEach(component -> {
-            GroupRequest group = new GroupRequest(component.getComponentKey(), component.isEnabled(), parseConfig(component.getConfigJson()));
+            Map<String, Object> config = parseConfig(component.getConfigJson());
+            if (RedisPasswordService.GROUP_KEY.equals(component.getComponentKey())) {
+                config = RedisPasswordService.publicConfig(config);
+            }
+            GroupRequest group = new GroupRequest(component.getComponentKey(), component.isEnabled(), config);
             group.setValidatedConfig(component.getConfigJson());
             values.put(component.getComponentKey(), group);
         });
@@ -137,6 +147,11 @@ public class ClusterComponentService {
 
     private String validateConfig(long clusterId, KubemateComponentCatalog.Group definition, Map<String, Object> config, boolean enabled) {
         Map<String, Object> values = config == null ? Map.of() : new LinkedHashMap<>(config);
+        if (RedisPasswordService.GROUP_KEY.equals(definition.key())) {
+            Map<String, Object> current = components.findByClusterIdAndComponentKey(clusterId, definition.key())
+                    .map(component -> parseConfig(component.getConfigJson())).orElse(Map.of());
+            return writeConfig(redisPasswords.configure(current, values));
+        }
         if (MinioComponentConfiguration.GROUP_KEY.equals(definition.key())) {
             return writeConfig(MinioComponentConfiguration.validate(values));
         }

@@ -42,6 +42,48 @@ class ClusterComponentApiTest {
     @Autowired
     NodeRepository nodes;
 
+    @Test
+    void storesRedisPasswordEncryptedAndNeverReturnsItOrOverwritesItWithBlankInput() throws Exception {
+        long clusterId = createCluster("components-redis-password");
+        String password = "test-only-redis-value";
+        String body = "{\"groups\":[{\"key\":\"redis_sentinel\",\"enabled\":true,"
+                + "\"config\":{\"password\":\"" + password + "\"}}]}";
+        String response = mvc.perform(put("/api/clusters/{id}/components", clusterId)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.groups[5].config.has_password").value(true))
+                .andExpect(jsonPath("$.groups[5].config.password").doesNotExist())
+                .andExpect(jsonPath("$.groups[5].config.password_credential").doesNotExist())
+                .andExpect(jsonPath("$.configurationVersion").value(1))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(response).doesNotContain(password);
+        String stored = jdbc.queryForObject("select config_json from cluster_components "
+                + "where cluster_id = ? and component_key = 'redis_sentinel'", String.class, clusterId);
+        assertThat(stored).contains("password_credential").doesNotContain(password);
+        // 重复输入、空输入和只保存其他组均不能改变凭据或配置版本。
+        mvc.perform(put("/api/clusters/{id}/components", clusterId)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.configurationVersion").value(1));
+        mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"groups\":[{\"key\":\"redis_sentinel\",\"enabled\":true,"
+                                + "\"config\":{\"password\":\"\",\"has_password\":true}}]}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.configurationVersion").value(1));
+        mvc.perform(put("/api/clusters/{id}/components", clusterId)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"groups\":[]}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.configurationVersion").value(1));
+        assertThat(jdbc.queryForObject("select config_json from cluster_components "
+                + "where cluster_id = ? and component_key = 'redis_sentinel'", String.class, clusterId))
+                .isEqualTo(stored);
+        mvc.perform(get("/api/clusters/{id}/components", clusterId))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.groups[5].config.has_password").value(true))
+                .andExpect(jsonPath("$.groups[5].config.password_credential").doesNotExist());
+        jdbc.update("update cluster_component_states set status='installed' "
+                + "where cluster_id=? and component_key='redis_sentinel'", clusterId);
+        mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
+                        .content(body.replace(password, "changed-test-only-value")))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("COMPONENT_GROUP_READ_ONLY"));
+    }
+
     @BeforeEach
     void clearDatabase() {
         jdbc.update("delete from jobs");

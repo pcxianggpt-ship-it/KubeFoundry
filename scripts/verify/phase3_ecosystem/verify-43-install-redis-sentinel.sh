@@ -65,21 +65,29 @@ pvc_status=$(kube "${command_timeout}" get pvc --namespace "${namespace}" \
 [ "$(printf '%s\n' "${pvc_status}" | cut -d '|' -f1 | sort -u)" = \
     "$(printf 'redis-data-redis-node-0\nredis-data-redis-node-1\nredis-data-redis-node-2')" ] \
     || missing "Redis PVC 名称不正确"
-while IFS='|' read -r pvc_name phase pvc_storage_class; do
-    [ -z "${phase}" ] && continue
-    [ "${phase}" = Bound ] && [ "${pvc_storage_class}" = "${storage_class}" ] \
-        || missing "Redis PVC 未全部 Bound 或 StorageClass 不正确"
-done <<< "${pvc_status}"
+printf '%s\n' "${pvc_status}" | awk -F '|' -v expected="${storage_class}" \
+    'NF != 3 || $2 != "Bound" || $3 != expected { failed = 1 } END { exit failed }' \
+    || missing "Redis PVC 未全部 Bound 或 StorageClass 不正确"
 
 auth_secret=$(kube "${command_timeout}" get statefulset "${statefulset}" --namespace "${namespace}" \
     -o jsonpath='{.spec.template.spec.volumes[?(@.name=="redis-password")].secret.secretName}' 2>/dev/null) \
     || error "Redis 密码卷查询失败"
 [ "${auth_secret}" = "${secret}" ] || missing "Redis 密码卷未引用 ${secret}"
+set +x
 password_base64=$(kube "${command_timeout}" get secret "${secret}" --namespace "${namespace}" \
     -o jsonpath='{.data.redis-password}' 2>/dev/null) || error "Redis 密码读取失败"
 [ -n "${password_base64}" ] || error "Redis 密码为空"
 printf '%s' "${password_base64}" | base64 --decode >/dev/null 2>&1 \
     || error "Redis 密码编码无效"
+if [ -n "${KF_REDIS_PASSWORD_FILE:-}" ]; then
+    [ -f "${KF_REDIS_PASSWORD_FILE}" ] && [ ! -L "${KF_REDIS_PASSWORD_FILE}" ] \
+        && [ -r "${KF_REDIS_PASSWORD_FILE}" ] && [ -s "${KF_REDIS_PASSWORD_FILE}" ] \
+        || error "Redis 密码配置文件不可读或为空"
+    configured_password_base64=$(base64 < "${KF_REDIS_PASSWORD_FILE}" | tr -d '\n')
+    [ "${password_base64}" = "${configured_password_base64}" ] \
+        || error "Redis 密码与当前配置不一致，不支持在线改密"
+    unset configured_password_base64
+fi
 
 redis_cli() {
     local pod="$1" container="$2"

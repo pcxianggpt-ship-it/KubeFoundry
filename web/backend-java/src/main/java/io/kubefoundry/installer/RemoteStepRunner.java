@@ -2,6 +2,7 @@ package io.kubefoundry.installer;
 
 import io.kubefoundry.cluster.Cluster;
 import io.kubefoundry.cluster.Node;
+import io.kubefoundry.cluster.RedisPasswordService;
 import io.kubefoundry.job.JobService;
 import io.kubefoundry.ssh.SshCommandResult;
 import io.kubefoundry.ssh.SshService;
@@ -41,6 +42,7 @@ public class RemoteStepRunner {
     private final Path dataDirectory;
     private final ClusterHealthRetryPolicy clusterHealthRetryPolicy;
     private final NfsTargetResolver nfsTargets;
+    private final RedisPasswordService redisPasswords;
 
     @Autowired
     public RemoteStepRunner(
@@ -48,9 +50,10 @@ public class RemoteStepRunner {
             RemoteSessionProvider sessions,
             RuntimeEnvRenderer runtimeRenderer,
             @Value("${kubefoundry.data-dir:data}") String dataDirectory,
-            NfsTargetResolver nfsTargets) {
+            NfsTargetResolver nfsTargets,
+            RedisPasswordService redisPasswords) {
         this(ssh, sessions, runtimeRenderer, Path.of(dataDirectory),
-                ClusterHealthRetryPolicy.defaults(), nfsTargets);
+                ClusterHealthRetryPolicy.defaults(), nfsTargets, redisPasswords);
     }
 
     public RemoteStepRunner(
@@ -77,6 +80,17 @@ public class RemoteStepRunner {
             Path dataDirectory,
             ClusterHealthRetryPolicy clusterHealthRetryPolicy,
             NfsTargetResolver nfsTargets) {
+        this(ssh, sessions, runtimeRenderer, dataDirectory, clusterHealthRetryPolicy, nfsTargets, null);
+    }
+
+    RemoteStepRunner(
+            SshService ssh,
+            RemoteSessionProvider sessions,
+            RuntimeEnvRenderer runtimeRenderer,
+            Path dataDirectory,
+            ClusterHealthRetryPolicy clusterHealthRetryPolicy,
+            NfsTargetResolver nfsTargets,
+            RedisPasswordService redisPasswords) {
         this.ssh = ssh;
         this.sessions = sessions;
         this.runtimeRenderer = runtimeRenderer;
@@ -84,6 +98,7 @@ public class RemoteStepRunner {
         this.clusterHealthRetryPolicy = clusterHealthRetryPolicy == null
                 ? ClusterHealthRetryPolicy.defaults() : clusterHealthRetryPolicy;
         this.nfsTargets = nfsTargets;
+        this.redisPasswords = redisPasswords;
     }
 
     public JobService.NodeOutcome run(
@@ -117,6 +132,7 @@ public class RemoteStepRunner {
                 .resolve("logs").resolve(step.key()).resolve(node.getHostname() + ".log");
         java.util.concurrent.atomic.AtomicReference<String> activeVerificationPhase =
                 new java.util.concurrent.atomic.AtomicReference<>();
+        Path sensitiveInput = null;
         try {
             if ("cluster_health".equals(step.builtin())) {
                 return runClusterHealth(jobId, cluster, normalizedNodes, node, step.key());
@@ -131,8 +147,12 @@ public class RemoteStepRunner {
             Path recoveryFile = workDirectory.resolve("recovery.sh");
             Path phase3Library = workDirectory.resolve("phase3.sh");
             Path managedConfigLibrary = workDirectory.resolve("managed_config.sh");
+            if ("43-install-redis-sentinel".equals(step.key()) && redisPasswords != null) {
+                sensitiveInput = redisPasswords.createPasswordFile(cluster.getId());
+            }
+            final Path redisPasswordFile = sensitiveInput;
             Files.writeString(runtimeFile, runtimeRenderer.render(cluster, normalizedNodes, node, settings,
-                    runtimeEnvironment(jobId, cluster, step, List.of())),
+                    runtimeEnvironment(jobId, cluster, step, List.of(), redisPasswordFile != null)),
                     StandardCharsets.UTF_8);
             writePhase3Library(phase3Library, step);
             writeManagedConfigLibrary(managedConfigLibrary, step);
@@ -148,8 +168,13 @@ public class RemoteStepRunner {
                     ssh.upload(session, runtimeFile, remoteDirectory + "runtime.env");
                     ssh.upload(session, verifyFile, remoteDirectory + "verify.sh");
                     restrictRemoteJobDirectory(session, jobId);
-                    return ssh.execute(session, buildVerificationCommand(remoteDirectory),
-                            VERIFICATION_TIMEOUT);
+                    try {
+                        uploadRedisPassword(session, redisPasswordFile, remoteDirectory);
+                        return ssh.execute(session, buildVerificationCommand(remoteDirectory),
+                                VERIFICATION_TIMEOUT);
+                    } finally {
+                        removeRedisPassword(session, redisPasswordFile, remoteDirectory);
+                    }
                 });
                 activeVerificationPhase.set(null);
                 writeVerificationEvidence(jobId, step, node, "before", before);
@@ -203,7 +228,7 @@ public class RemoteStepRunner {
                 return new JobService.NodeOutcome(false, 2, resources.error(), logPath.toString());
             }
             Files.writeString(runtimeFile, runtimeRenderer.render(cluster, normalizedNodes, node, settings,
-                    runtimeEnvironment(jobId, cluster, step, resources.files())),
+                    runtimeEnvironment(jobId, cluster, step, resources.files(), redisPasswordFile != null)),
                     StandardCharsets.UTF_8);
             writeStepScript(scriptFile, cluster, normalizedNodes, step);
             createEvidenceSnapshot(jobId, step, node, workDirectory, resources.files());
@@ -233,24 +258,29 @@ public class RemoteStepRunner {
                     }
                 }
                 restrictRemoteJobDirectory(session, jobId);
-                SshCommandResult executed = ssh.execute(
-                        session, buildExecutionCommand(
-                                remoteDirectory, step, cluster, normalizedNodes, node),
-                        STEP_TIMEOUT);
-                if (executed.exitCode() != 0 || !usesPostVerification(step)) {
-                    if (executed.exitCode() == 0) collectOutputs(session, jobId, step);
-                    return executed;
+                try {
+                    uploadRedisPassword(session, redisPasswordFile, remoteDirectory);
+                    SshCommandResult executed = ssh.execute(
+                            session, buildExecutionCommand(
+                                    remoteDirectory, step, cluster, normalizedNodes, node),
+                            STEP_TIMEOUT);
+                    if (executed.exitCode() != 0 || !usesPostVerification(step)) {
+                        if (executed.exitCode() == 0) collectOutputs(session, jobId, step);
+                        return executed;
+                    }
+                    postVerification.set(true);
+                    activeVerificationPhase.set("after");
+                    SshCommandResult verified = ssh.execute(
+                            session, buildVerificationCommand(remoteDirectory), VERIFICATION_TIMEOUT);
+                    activeVerificationPhase.set(null);
+                    afterResult.set(verified);
+                    if (verified.exitCode() == 0) collectOutputs(session, jobId, step);
+                    return new SshCommandResult(verified.exitCode(),
+                            textOrEmpty(executed.stdout()) + textOrEmpty(verified.stdout()),
+                            textOrEmpty(executed.stderr()) + textOrEmpty(verified.stderr()));
+                } finally {
+                    removeRedisPassword(session, redisPasswordFile, remoteDirectory);
                 }
-                postVerification.set(true);
-                activeVerificationPhase.set("after");
-                SshCommandResult verified = ssh.execute(
-                        session, buildVerificationCommand(remoteDirectory), VERIFICATION_TIMEOUT);
-                activeVerificationPhase.set(null);
-                afterResult.set(verified);
-                if (verified.exitCode() == 0) collectOutputs(session, jobId, step);
-                return new SshCommandResult(verified.exitCode(),
-                        textOrEmpty(executed.stdout()) + textOrEmpty(verified.stdout()),
-                        textOrEmpty(executed.stderr()) + textOrEmpty(verified.stderr()));
             });
             if (afterResult.get() != null) {
                 writeVerificationEvidence(jobId, step, node, "after", afterResult.get());
@@ -277,7 +307,28 @@ public class RemoteStepRunner {
             }
             return new JobService.NodeOutcome(false, 1, message, logPath.toString(), "failed",
                     verificationPhase);
+        } finally {
+            if (sensitiveInput != null) {
+                try { Files.deleteIfExists(sensitiveInput); }
+                catch (IOException exception) { sensitiveInput.toFile().deleteOnExit(); }
+            }
         }
+    }
+
+    private void uploadRedisPassword(SshSession session, Path file, String remoteDirectory) throws IOException {
+        if (file == null) return;
+        String target = remoteDirectory + "redis-password";
+        ssh.upload(session, file, target);
+        SshCommandResult result = ssh.execute(session,
+                "chmod 0600 -- " + RuntimeEnvRenderer.shellQuote(target), DIRECTORY_TIMEOUT);
+        if (result.exitCode() != 0) throw new IOException("Redis 临时凭据权限设置失败");
+    }
+
+    private void removeRedisPassword(SshSession session, Path file, String remoteDirectory) throws IOException {
+        if (file == null) return;
+        SshCommandResult result = ssh.execute(session,
+                "rm -f -- " + RuntimeEnvRenderer.shellQuote(remoteDirectory + "redis-password"), DIRECTORY_TIMEOUT);
+        if (result.exitCode() != 0) throw new IOException("Redis 临时凭据清理失败");
     }
 
     public JobService.NodeOutcome runCommand(
@@ -492,10 +543,11 @@ public class RemoteStepRunner {
     }
 
     private Map<String, String> runtimeEnvironment(
-            long jobId, Cluster cluster, InstallStep step, List<ResolvedResource> resources) {
+            long jobId, Cluster cluster, InstallStep step, List<ResolvedResource> resources, boolean redisPassword) {
         String group = step.componentGroupKey() == null ? "shared" : step.componentGroupKey();
         Map<String, String> values = new LinkedHashMap<>();
         values.put("KF_STEP_KEY", step.key());
+        if (redisPassword) values.put("KF_REDIS_PASSWORD_FILE", "./redis-password");
         if (step.componentGroupKey() != null) {
             values.put("KF_COMPONENT_GROUP_KEY", step.componentGroupKey());
         }

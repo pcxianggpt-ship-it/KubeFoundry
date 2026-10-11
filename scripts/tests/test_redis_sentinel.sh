@@ -49,13 +49,20 @@ case "${args}" in
       *"metadata.labels.app"*)
         [ "${KF_REDIS_SECRET_MODE:-managed}" = unmanaged ] && printf 'other' || printf 'kubefoundry' ;;
       *"metadata.labels.kubefoundry"*) printf 'redis_sentinel' ;;
-      *"data.redis-password"*) printf 'c2VjcmV0LXJlZGlzLXZhbHVl' ;;
+      *"data.redis-password"*)
+        if [ -f "${KF_REDIS_SECRET_DATA}" ]; then cat "${KF_REDIS_SECRET_DATA}";
+        else printf 'c2VjcmV0LXJlZGlzLXZhbHVl'; fi ;;
     esac
     ;;
   *"apply --server-side"*)
     for argument in "$@"; do
       if [ -f "${argument}" ] && grep -q '^kind: Secret$' "${argument}"; then
+        if [ "${KF_REDIS_SECRET_APPLY_FAIL:-0}" = 1 ]; then
+          cat "${argument}" >&2
+          exit 1
+        fi
         touch "${KF_REDIS_SECRET_STATE}"
+        sed -n 's/^  redis-password: //p' "${argument}" > "${KF_REDIS_SECRET_DATA}"
       fi
     done
     ;;
@@ -94,6 +101,7 @@ export KF_REDIS_CURL_LOG="${TMP}/curl.log"
 export KF_REDIS_RENDERED_VALUES_OK="${TMP}/rendered-values-ok"
 export KF_REDIS_NAMESPACE_STATE="${TMP}/namespace"
 export KF_REDIS_SECRET_STATE="${TMP}/secret"
+export KF_REDIS_SECRET_DATA="${TMP}/secret-data"
 export KF_REDIS_SECRET_MODE=absent
 export KF_VERIFY_COMMAND_TIMEOUT=2s
 export KF_VERIFY_ROLLOUT_TIMEOUT=2s
@@ -151,6 +159,51 @@ done
 ! grep -Eq 'secret-redis-value|c2VjcmV0LXJlZGlzLXZhbHVl' \
     "${KF_REDIS_HELM_LOG}" "${KF_REDIS_KUBECTL_LOG}" "${KF_REDIS_CURL_LOG}"
 
+# 自定义密码通过文件写入 Secret，同值重跑复用，异值不能覆盖现有 Secret。
+export KF_REDIS_PASSWORD_FILE="${TMP}/password-input"
+test_password='test-only-redis-$pecial; 中文'
+umask 077
+printf '%s' "${test_password}" > "${KF_REDIS_PASSWORD_FILE}"
+rm -f -- "${KF_REDIS_SECRET_STATE}" "${KF_REDIS_SECRET_DATA}"
+export KF_REDIS_SECRET_MODE=absent
+bash -x "${ROOT}/scripts/steps/phase3_ecosystem/43-install-redis-sentinel.sh" > "${TMP}/custom.log" 2>&1
+expected_data=$(printf '%s' "${test_password}" | base64 | tr -d '\n')
+[ "$(cat "${KF_REDIS_SECRET_DATA}")" = "${expected_data}" ]
+export KF_REDIS_SECRET_MODE=managed
+bash "${ROOT}/scripts/steps/phase3_ecosystem/43-install-redis-sentinel.sh" >> "${TMP}/custom.log" 2>&1
+bash "${ROOT}/scripts/verify/phase3_ecosystem/verify-43-install-redis-sentinel.sh" >> "${TMP}/custom.log" 2>&1
+printf '%s' 'different-test-only-value' > "${KF_REDIS_PASSWORD_FILE}"
+: > "${KF_REDIS_HELM_LOG}"
+if bash "${ROOT}/scripts/steps/phase3_ecosystem/43-install-redis-sentinel.sh" >> "${TMP}/custom.log" 2>&1; then
+  printf 'Redis 安装未拒绝密码冲突\n' >&2
+  exit 1
+fi
+! grep -q '^upgrade ' "${KF_REDIS_HELM_LOG}"
+[ "$(cat "${KF_REDIS_SECRET_DATA}")" = "${expected_data}" ]
+if bash "${ROOT}/scripts/verify/phase3_ecosystem/verify-43-install-redis-sentinel.sh" >> "${TMP}/custom.log" 2>&1; then
+  printf 'Redis 前置验证未拒绝密码冲突\n' >&2
+  exit 1
+fi
+rm -f -- "${KF_REDIS_PASSWORD_FILE}"
+if bash "${ROOT}/scripts/steps/phase3_ecosystem/43-install-redis-sentinel.sh" >> "${TMP}/custom.log" 2>&1; then
+  printf 'Redis 配置文件缺失时错误地回退为随机密码\n' >&2
+  exit 1
+fi
+printf '%s' "${test_password}" > "${KF_REDIS_PASSWORD_FILE}"
+rm -f -- "${KF_REDIS_SECRET_STATE}" "${KF_REDIS_SECRET_DATA}"
+export KF_REDIS_SECRET_MODE=absent KF_REDIS_SECRET_APPLY_FAIL=1
+if bash "${ROOT}/scripts/steps/phase3_ecosystem/43-install-redis-sentinel.sh" >> "${TMP}/custom.log" 2>&1; then
+  printf 'Redis Secret 应用失败时未拒绝安装\n' >&2
+  exit 1
+fi
+grep -q 'Redis 密码 Secret 创建失败' "${TMP}/custom.log"
+! grep -q '^upgrade ' "${KF_REDIS_HELM_LOG}"
+unset KF_REDIS_SECRET_APPLY_FAIL
+! grep -Fq -- "${test_password}" "${TMP}/custom.log" "${KF_REDIS_HELM_LOG}" "${KF_REDIS_KUBECTL_LOG}"
+! grep -Fq -- "${expected_data}" "${TMP}/custom.log" "${KF_REDIS_HELM_LOG}" "${KF_REDIS_KUBECTL_LOG}"
+unset KF_REDIS_PASSWORD_FILE
+
+touch "${KF_REDIS_SECRET_STATE}"
 export KF_REDIS_SECRET_MODE=unmanaged
 if bash "${ROOT}/scripts/steps/phase3_ecosystem/43-install-redis-sentinel.sh" >/dev/null 2>&1; then
     printf '未拒绝非 KubeFoundry 所有的 Redis Secret\n' >&2

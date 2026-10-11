@@ -32,6 +32,71 @@ describe('KubemateComponentsView', () => {
     updateComponents.mockResolvedValue({ groups });
   });
 
+  async function redisView(config = {}, status = 'not_installed', props = {}) {
+    listComponents.mockResolvedValue({ groups: groups.map(group => group.key === 'redis_sentinel'
+      ? { ...group, enabled: true, config, status } : group) });
+    const wrapper = mount(KubemateComponentsView, { props: { clusterId: 42, ...props }, global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    return wrapper;
+  }
+
+  it('以密码输入框配置 Redis，保存后清空明文且不回显密码', async () => {
+    updateComponents.mockResolvedValue({ groups: groups.map(group => group.key === 'redis_sentinel'
+      ? { ...group, enabled: true, config: { has_password: true } } : group) });
+    const wrapper = await redisView();
+    const input = wrapper.get('[data-testid="redis-password"]');
+    expect(input.attributes('type')).toBe('password');
+    expect(input.attributes('aria-label')).toBe('Redis / Sentinel 密码');
+    expect(wrapper.text()).toContain('自动生成随机密码');
+    await input.setValue('test-only-$pecial; 中文');
+    await wrapper.get('[data-testid="save-components"]').trigger('click');
+    await flushPromises();
+    expect(updateComponents.mock.calls[0][1].groups[5]).toEqual({ key: 'redis_sentinel', enabled: true,
+      config: { has_password: false, password: 'test-only-$pecial; 中文' } });
+    expect(wrapper.get('[data-testid="redis-password"]').element.value).toBe('');
+    expect(wrapper.text()).toContain('已配置密码，留空保持不变');
+    expect(wrapper.text()).not.toContain('test-only-$pecial');
+  });
+
+  it('保留已配置密码，输入无效密码时禁用保存，禁用 Redis 后允许保存', async () => {
+    const wrapper = await redisView({ has_password: true });
+    const input = wrapper.get('[data-testid="redis-password"]');
+    expect(input.element.value).toBe('');
+    await input.setValue('   ');
+    await flushPromises();
+    expect(wrapper.text()).toContain('密码不能仅包含空白');
+    expect(wrapper.get('[data-testid="save-components"]').attributes('disabled')).toBeDefined();
+    await wrapper.get('[data-testid="group-switch-redis_sentinel"] input').setValue(false);
+    expect(wrapper.get('[data-testid="save-components"]').attributes('disabled')).toBeUndefined();
+    await wrapper.get('[data-testid="save-components"]').trigger('click');
+    await flushPromises();
+    expect(updateComponents.mock.calls[0][1].groups[5].config).toEqual({ has_password: true });
+  });
+
+  it('已安装 Redis 或集群锁定时密码输入保持只读', async () => {
+    const installed = await redisView({ has_password: true }, 'installed');
+    expect(installed.get('[data-testid="redis-password"]').attributes('disabled')).toBeDefined();
+    const locked = await redisView({}, 'not_installed', { locked: true });
+    expect(locked.get('[data-testid="redis-password"]').attributes('disabled')).toBeDefined();
+  });
+
+  it('密码显隐使用有可访问名称的原生按钮，不读取响应中的密码内容', async () => {
+    const wrapper = await redisView({ has_password: true, password: 'unexpected-api-plaintext' });
+    const input = wrapper.get('[data-testid="redis-password"]');
+    expect(input.element.value).toBe('');
+    await input.setValue('test-only-visible');
+    const show = wrapper.get('button[aria-label="显示 Redis 密码"]');
+    expect(show.attributes('aria-pressed')).toBe('false');
+    expect(show.attributes('disabled')).toBeUndefined();
+    await show.trigger('click');
+    expect(input.attributes('type')).toBe('text');
+    const hide = wrapper.get('button[aria-label="隐藏 Redis 密码"]');
+    expect(hide.attributes('aria-pressed')).toBe('true');
+    await hide.trigger('click');
+    expect(input.attributes('type')).toBe('password');
+    expect(wrapper.text()).not.toContain('unexpected-api-plaintext');
+  });
+
   it('显示六组中文信息、实际状态和可用的 Redis 组', async () => {
     const wrapper = mount(KubemateComponentsView, {
       props: { clusterId: 42 },
