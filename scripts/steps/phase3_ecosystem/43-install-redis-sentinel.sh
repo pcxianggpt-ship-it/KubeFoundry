@@ -10,6 +10,19 @@
 if [ -f "./phase3.sh" ]; then source "./phase3.sh"; else source "${PROJECT_ROOT}/scripts/lib/phase3.sh"; fi
 phase3_init
 
+set +x
+[ -n "${KF_REDIS_PASSWORD_FILE:-}" ] && [ -f "${KF_REDIS_PASSWORD_FILE}" ] \
+    && [ ! -L "${KF_REDIS_PASSWORD_FILE}" ] && [ -r "${KF_REDIS_PASSWORD_FILE}" ] \
+    && [ -s "${KF_REDIS_PASSWORD_FILE}" ] || {
+    log_error "Redis 密码必填，密码配置文件未提供、不可读或为空"
+    exit 1
+}
+grep -q '[^[:space:]]' "${KF_REDIS_PASSWORD_FILE}" || {
+    log_error "Redis 密码不能仅包含空白"
+    exit 1
+}
+configured_password_data=$(base64 < "${KF_REDIS_PASSWORD_FILE}" | tr -d '\n')
+
 namespace=redis-sentinel
 release=redis
 secret=redis-auth
@@ -40,17 +53,6 @@ sed "s|localpath|${storage_class}|g" "${values}" > "${rendered_values}"
 
 phase3_ensure_namespace "${namespace}"
 
-configured_password_data=
-set +x
-if [ -n "${KF_REDIS_PASSWORD_FILE:-}" ]; then
-    [ -f "${KF_REDIS_PASSWORD_FILE}" ] && [ ! -L "${KF_REDIS_PASSWORD_FILE}" ] \
-        && [ -r "${KF_REDIS_PASSWORD_FILE}" ] && [ -s "${KF_REDIS_PASSWORD_FILE}" ] || {
-        log_error "Redis 密码配置文件不可读或为空"
-        exit 1
-    }
-    configured_password_data=$(base64 < "${KF_REDIS_PASSWORD_FILE}" | tr -d '\n')
-fi
-
 if kubectl get secret "${secret}" --namespace "${namespace}" >/dev/null 2>&1; then
     managed_by=$(kubectl get secret "${secret}" --namespace "${namespace}" \
         -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}')
@@ -63,21 +65,14 @@ if kubectl get secret "${secret}" --namespace "${namespace}" >/dev/null 2>&1; th
             log_error "Redis 密码 Secret 已存在但不属于 KubeFoundry 或缺少 redis-password"
             exit 1
         }
-    if [ -n "${configured_password_data}" ] && [ "${password_data}" != "${configured_password_data}" ]; then
+    if [ "${password_data}" != "${configured_password_data}" ]; then
         log_error "已有 Redis 密码与配置不一致，请先重置 Redis 组件；不支持在线改密"
         exit 1
     fi
 else
     umask 077
     secret_manifest="${work_dir}/redis-secret.yaml"
-    if [ -n "${configured_password_data}" ]; then
-        password_data=${configured_password_data}
-    else
-        password=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
-        [ "${#password}" -eq 64 ] || { log_error "Redis 密码生成失败"; exit 1; }
-        password_data=$(printf '%s' "${password}" | base64 | tr -d '\n')
-        unset password
-    fi
+    password_data=${configured_password_data}
     cat > "${secret_manifest}" <<EOF
 apiVersion: v1
 kind: Secret

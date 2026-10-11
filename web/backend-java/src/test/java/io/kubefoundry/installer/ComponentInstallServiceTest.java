@@ -157,6 +157,23 @@ class ComponentInstallServiceTest {
         return cluster;
     }
 
+    @Test
+    void rejectsRedisWithoutPasswordBeforeSupplementalInstallationCreatesAJob() {
+        Cluster cluster = preparedCluster("redis-password");
+        components.saveAndFlush(new ClusterComponent(cluster, "redis_sentinel", true, "{}"));
+        states.saveAndFlush(new ClusterComponentState(cluster, "redis_sentinel"));
+        assertThatThrownBy(() -> service.submit(cluster.getId(), cluster.getComponentConfigVersion(), List.of(
+                new JobService.StepDefinition("安装 Redis", 1, 1, true,
+                        List.of(new JobService.NodeOperation(nodeId(cluster), () -> { })), "redis_sentinel")), Map.of()))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("必须配置密码");
+        assertThat(jobs.count()).isZero();
+        cluster.markInstallationStarted();
+        cluster.markInstallationFinished(true);
+        clusters.saveAndFlush(cluster);
+        assertThatThrownBy(() -> service.start(cluster.getId())).hasMessageContaining("必须配置密码");
+        assertThat(jobs.count()).isZero();
+    }
+
     private long nodeId(Cluster cluster) {
         return nodes.findByClusterIdOrderById(cluster.getId()).get(0).getId();
     }

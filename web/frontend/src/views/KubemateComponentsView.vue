@@ -215,7 +215,8 @@ async function save() {
 
 function configurationForSave(group) {
   if (group.key === 'nfs' && !group.enabled && invalidNfsConfig(group.config)) return {};
-  if (group.key === 'redis_sentinel' && !group.enabled && redisPasswordError(group.config)) {
+  if (group.key === 'redis_sentinel' && (group.config.password === ''
+      || !group.enabled && redisPasswordError(group.config))) {
     return { has_password: Boolean(group.config.has_password) };
   }
   return group.config;

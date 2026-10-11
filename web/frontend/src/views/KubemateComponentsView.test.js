@@ -47,14 +47,17 @@ describe('KubemateComponentsView', () => {
     const input = wrapper.get('[data-testid="redis-password"]');
     expect(input.attributes('type')).toBe('password');
     expect(input.attributes('aria-label')).toBe('Redis / Sentinel 密码');
-    expect(wrapper.text()).toContain('自动生成随机密码');
+    expect(input.attributes('aria-required')).toBe('true');
+    expect(wrapper.text()).toContain('请输入 Redis / Sentinel 密码');
+    expect(wrapper.text()).not.toContain('随机密码');
+    expect(wrapper.get('[data-testid="save-components"]').attributes('disabled')).toBeDefined();
     await input.setValue('test-only-$pecial; 中文');
     await wrapper.get('[data-testid="save-components"]').trigger('click');
     await flushPromises();
     expect(updateComponents.mock.calls[0][1].groups[5]).toEqual({ key: 'redis_sentinel', enabled: true,
       config: { has_password: false, password: 'test-only-$pecial; 中文' } });
     expect(wrapper.get('[data-testid="redis-password"]').element.value).toBe('');
-    expect(wrapper.text()).toContain('已配置密码，留空保持不变');
+    expect(wrapper.text()).toContain('密码已配置，无需重复填写');
     expect(wrapper.text()).not.toContain('test-only-$pecial');
   });
 
@@ -71,6 +74,23 @@ describe('KubemateComponentsView', () => {
     await wrapper.get('[data-testid="save-components"]').trigger('click');
     await flushPromises();
     expect(updateComponents.mock.calls[0][1].groups[5].config).toEqual({ has_password: true });
+  });
+
+  it('保存已配置密码时不提交空字符串；未配置密码时不可保存启用的 Redis', async () => {
+    const configured = await redisView({ has_password: true });
+    await configured.get('[data-testid="save-components"]').trigger('click');
+    await flushPromises();
+    expect(updateComponents.mock.calls[0][1].groups[5].config).toEqual({ has_password: true });
+    vi.clearAllMocks();
+    const required = await redisView();
+    expect(required.get('[data-testid="save-components"]').attributes('disabled')).toBeDefined();
+    await required.get('[data-testid="save-components"]').trigger('click');
+    expect(updateComponents).not.toHaveBeenCalled();
+    await required.get('[data-testid="group-switch-redis_sentinel"] input').setValue(false);
+    await required.get('[data-testid="save-components"]').trigger('click');
+    await flushPromises();
+    expect(updateComponents.mock.calls[0][1].groups[5]).toEqual({ key: 'redis_sentinel', enabled: false,
+      config: { has_password: false } });
   });
 
   it('已安装 Redis 或集群锁定时密码输入保持只读', async () => {

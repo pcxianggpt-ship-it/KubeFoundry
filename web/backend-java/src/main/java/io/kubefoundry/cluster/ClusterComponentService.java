@@ -150,7 +150,7 @@ public class ClusterComponentService {
         if (RedisPasswordService.GROUP_KEY.equals(definition.key())) {
             Map<String, Object> current = components.findByClusterIdAndComponentKey(clusterId, definition.key())
                     .map(component -> parseConfig(component.getConfigJson())).orElse(Map.of());
-            return writeConfig(redisPasswords.configure(current, values));
+            return writeConfig(redisPasswords.configure(current, values, enabled));
         }
         if (MinioComponentConfiguration.GROUP_KEY.equals(definition.key())) {
             return writeConfig(MinioComponentConfiguration.validate(values));

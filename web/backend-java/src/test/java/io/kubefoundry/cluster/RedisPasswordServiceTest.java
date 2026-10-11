@@ -27,16 +27,17 @@ class RedisPasswordServiceTest {
     }
 
     @Test
-    void encryptsPasswordAndPreservesCredentialsForBlankMissingOrUnchangedInput() throws Exception {
+    void encryptsPasswordAndPreservesCredentialsOnlyForMissingOrUnchangedInput() throws Exception {
         RedisPasswordService service = service();
         String password = "test-only-$pecial;' 中文";
-        Map<String, Object> stored = service.configure(Map.of(), Map.of("password", password));
+        Map<String, Object> stored = service.configure(Map.of(), Map.of("password", password), true);
         assertThat(mapper.writeValueAsString(stored)).doesNotContain(password);
         assertThat(RedisPasswordService.publicConfig(stored)).containsExactly(Map.entry("has_password", true));
-        assertThat(service.configure(stored, Map.of("has_password", false))).isSameAs(stored);
-        assertThat(service.configure(stored, Map.of("password", ""))).isSameAs(stored);
-        assertThat(service.configure(stored, Map.of("password", password))).isSameAs(stored);
-        assertThat(service.configure(stored, Map.of("password", "different-test-only-value"))).isNotEqualTo(stored);
+        assertThat(service.configure(stored, Map.of("has_password", false), true)).isSameAs(stored);
+        assertThatThrownBy(() -> service.configure(stored, Map.of("password", ""), true))
+                .isInstanceOf(ClusterComponentService.ComponentConfigurationException.class);
+        assertThat(service.configure(stored, Map.of("password", password), true)).isSameAs(stored);
+        assertThat(service.configure(stored, Map.of("password", "different-test-only-value"), true)).isNotEqualTo(stored);
         assertThat(RedisPasswordService.publicConfig(Map.of())).containsEntry("has_password", false);
     }
 
@@ -44,23 +45,25 @@ class RedisPasswordServiceTest {
     void rejectsInvalidPasswordAndInjectedCredentialFieldsWithoutEchoingInput() {
         RedisPasswordService service = service();
         for (Map<String, Object> input : java.util.List.<Map<String, Object>>of(
-                Map.of("password", "test-only\nvalue"), Map.of("password", " "),
+                Map.of("password", ""), Map.of("password", "test-only\nvalue"), Map.of("password", " "),
                 Map.of("password", "x".repeat(257)), Map.of("password", 123),
                 Map.of("password_credential", "forged"), Map.of("has_password", "true"))) {
-            assertThatThrownBy(() -> service.configure(Map.of(), input))
+            assertThatThrownBy(() -> service.configure(Map.of(), input, true))
                     .isInstanceOf(ClusterComponentService.ComponentConfigurationException.class)
                     .hasMessageNotContaining("test-only").hasMessageNotContaining("forged");
         }
     }
 
     @Test
-    void decryptsOnlyToAnOwnerOnlyTemporaryFileAndKeepsLegacyRandomPasswordBehavior() throws Exception {
+    void decryptsOnlyToAnOwnerOnlyTemporaryFileAndRejectsMissingPassword() throws Exception {
         RedisPasswordService service = service();
         Cluster cluster = new Cluster("redis-test");
         when(components.findByClusterIdAndComponentKey(1L, "redis_sentinel"))
                 .thenReturn(Optional.of(new ClusterComponent(cluster, "redis_sentinel", true, "{}")));
-        assertThat(service.createPasswordFile(1L)).isNull();
-        Map<String, Object> stored = service.configure(Map.of(), Map.of("password", "test-only-file-value"));
+        assertThatThrownBy(() -> service.createPasswordFile(1L))
+                .isInstanceOf(ClusterComponentService.ComponentConfigurationException.class)
+                .hasMessageContaining("必须配置密码");
+        Map<String, Object> stored = service.configure(Map.of(), Map.of("password", "test-only-file-value"), true);
         when(components.findByClusterIdAndComponentKey(1L, "redis_sentinel"))
                 .thenReturn(Optional.of(new ClusterComponent(cluster, "redis_sentinel", true,
                         mapper.writeValueAsString(stored))));
@@ -74,5 +77,24 @@ class RedisPasswordServiceTest {
         } finally {
             Files.deleteIfExists(file);
         }
+    }
+
+    @Test
+    void requiresPasswordOnlyForEnabledRedisAndDoesNotTrustTheClientConfigurationFlag() {
+        RedisPasswordService service = service();
+        assertThat(service.configure(Map.of(), Map.of(), false)).isEmpty();
+        for (Map<String, Object> input : java.util.List.<Map<String, Object>>of(Map.of(), Map.of("has_password", true))) {
+            assertThatThrownBy(() -> service.configure(Map.of(), input, true))
+                    .isInstanceOf(ClusterComponentService.ComponentConfigurationException.class)
+                    .hasMessageContaining("必须配置密码");
+        }
+        Cluster cluster = new Cluster("missing-password");
+        when(components.findByClusterIdAndComponentKey(1L, "redis_sentinel"))
+                .thenReturn(Optional.of(new ClusterComponent(cluster, "redis_sentinel", true, "{}")));
+        assertThatThrownBy(() -> service.requireConfiguredPassword(1L))
+                .hasMessageContaining("必须配置密码");
+        when(components.findByClusterIdAndComponentKey(1L, "redis_sentinel"))
+                .thenReturn(Optional.of(new ClusterComponent(cluster, "redis_sentinel", false, "{}")));
+        service.requireConfiguredPassword(1L);
     }
 }

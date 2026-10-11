@@ -20,6 +20,13 @@ secret=redis-auth
 selector='app.kubernetes.io/instance=redis,app.kubernetes.io/name=redis'
 command_timeout=${KF_VERIFY_COMMAND_TIMEOUT:-30s}
 rollout_timeout=${KF_VERIFY_ROLLOUT_TIMEOUT:-300s}
+set +x
+[ -n "${KF_REDIS_PASSWORD_FILE:-}" ] && [ -f "${KF_REDIS_PASSWORD_FILE}" ] \
+    && [ ! -L "${KF_REDIS_PASSWORD_FILE}" ] && [ -r "${KF_REDIS_PASSWORD_FILE}" ] \
+    && [ -s "${KF_REDIS_PASSWORD_FILE}" ] || error "Redis 密码必填，密码配置文件未提供、不可读或为空"
+grep -q '[^[:space:]]' "${KF_REDIS_PASSWORD_FILE}" || error "Redis 密码不能仅包含空白"
+configured_password_base64=$(base64 < "${KF_REDIS_PASSWORD_FILE}" | tr -d '\n') \
+    || error "Redis 密码配置读取失败"
 [ -n "${KF_KUBECONFIG:-}" ] && [ -r "${KF_KUBECONFIG}" ] || error "Kubernetes 管理配置不可读"
 command -v kubectl >/dev/null 2>&1 || error "验证工具不可用: kubectl"
 command -v helm >/dev/null 2>&1 || error "验证工具不可用: helm"
@@ -73,21 +80,14 @@ auth_secret=$(kube "${command_timeout}" get statefulset "${statefulset}" --names
     -o jsonpath='{.spec.template.spec.volumes[?(@.name=="redis-password")].secret.secretName}' 2>/dev/null) \
     || error "Redis 密码卷查询失败"
 [ "${auth_secret}" = "${secret}" ] || missing "Redis 密码卷未引用 ${secret}"
-set +x
 password_base64=$(kube "${command_timeout}" get secret "${secret}" --namespace "${namespace}" \
     -o jsonpath='{.data.redis-password}' 2>/dev/null) || error "Redis 密码读取失败"
 [ -n "${password_base64}" ] || error "Redis 密码为空"
 printf '%s' "${password_base64}" | base64 --decode >/dev/null 2>&1 \
     || error "Redis 密码编码无效"
-if [ -n "${KF_REDIS_PASSWORD_FILE:-}" ]; then
-    [ -f "${KF_REDIS_PASSWORD_FILE}" ] && [ ! -L "${KF_REDIS_PASSWORD_FILE}" ] \
-        && [ -r "${KF_REDIS_PASSWORD_FILE}" ] && [ -s "${KF_REDIS_PASSWORD_FILE}" ] \
-        || error "Redis 密码配置文件不可读或为空"
-    configured_password_base64=$(base64 < "${KF_REDIS_PASSWORD_FILE}" | tr -d '\n')
-    [ "${password_base64}" = "${configured_password_base64}" ] \
-        || error "Redis 密码与当前配置不一致，不支持在线改密"
-    unset configured_password_base64
-fi
+[ "${password_base64}" = "${configured_password_base64}" ] \
+    || error "Redis 密码与当前配置不一致，不支持在线改密"
+unset configured_password_base64
 
 redis_cli() {
     local pod="$1" container="$2"

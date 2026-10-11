@@ -9,6 +9,7 @@ import io.kubefoundry.cluster.ClusterRepository;
 import io.kubefoundry.cluster.KubemateComponentCatalog;
 import io.kubefoundry.cluster.Node;
 import io.kubefoundry.cluster.NodeRepository;
+import io.kubefoundry.cluster.RedisPasswordService;
 import io.kubefoundry.job.JobService;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -32,6 +33,7 @@ public class ComponentInstallService {
     private final RemoteStepRunner runner;
     private final ClusterSettingsService settings;
     private final ComponentMediaService media;
+    private final RedisPasswordService redisPasswords;
 
     public ComponentInstallService(
             ClusterRepository clusters,
@@ -45,7 +47,8 @@ public class ComponentInstallService {
             InstallPlanFactory plans,
             RemoteStepRunner runner,
             ClusterSettingsService settings,
-            ComponentMediaService media) {
+            ComponentMediaService media,
+            RedisPasswordService redisPasswords) {
         this.clusters = clusters;
         this.components = components;
         this.states = states;
@@ -58,6 +61,7 @@ public class ComponentInstallService {
         this.runner = runner;
         this.settings = settings;
         this.media = media;
+        this.redisPasswords = redisPasswords;
     }
 
     public long start(long clusterId) {
@@ -70,6 +74,7 @@ public class ComponentInstallService {
         InstallationSnapshotPayload snapshot = snapshots.previewPayload(cluster, configuredNodes);
         MinioInstallationAdmission.requireEnoughWorkers(snapshot);
         Set<String> candidates = installableGroups(snapshot, clusterId);
+        if (candidates.contains(RedisPasswordService.GROUP_KEY)) redisPasswords.requireConfiguredPassword(clusterId);
         InstallPlan plan = media.verifyAndChecksum(assembler.forExistingCluster(snapshot, candidates));
         if (plan.steps().isEmpty()) throw new IllegalStateException("没有可补装的 Kubemate 组件组");
         List<JobService.StepDefinition> definitions = new ArrayList<>();
@@ -128,6 +133,7 @@ public class ComponentInstallService {
             if (!component.isEnabled()) {
                 throw new IllegalStateException("组件组未启用: " + groupKey);
             }
+            if (RedisPasswordService.GROUP_KEY.equals(groupKey)) redisPasswords.requireConfiguredPassword(cluster.getId());
             ClusterComponentState state = states.findByClusterIdAndComponentKey(cluster.getId(), groupKey)
                     .orElseThrow(() -> new IllegalStateException("组件组状态不存在: " + groupKey));
             if (!ClusterComponentState.NOT_INSTALLED.equals(state.getStatus())

@@ -1244,11 +1244,21 @@ KF_ACCEPT_REDIS_FAILOVER=YES KUBECONFIG=/etc/kubernetes/admin.conf \
     bash /root/scripts/acceptance/redis-sentinel-failover.sh
 ```
 
-演练后重新执行步骤 4、5。需要严格检查 1 主 2 从、quorum=2、PVC 和 Secret 时执行：
+演练后重新执行步骤 4、5。需要严格检查 1 主 2 从、quorum=2、PVC 和 Secret 时，输入安装时设置的密码，并通过仅当前用户可读写的临时文件传给验证脚本；密码不能为空：
 
 ```bash
-KF_KUBECONFIG=/etc/kubernetes/admin.conf KF_REDIS_STORAGE_CLASS=nfs-storage \
+read -rsp "请输入安装时设置的 Redis 密码: " REDIS_PASSWORD
+echo
+redis_password_file=$(mktemp)
+chmod 600 "$redis_password_file"
+printf '%s' "$REDIS_PASSWORD" > "$redis_password_file"
+unset REDIS_PASSWORD
+
+KF_REDIS_PASSWORD_FILE="$redis_password_file" \
+    KF_KUBECONFIG=/etc/kubernetes/admin.conf KF_REDIS_STORAGE_CLASS=nfs-storage \
     bash /root/scripts/verify/phase3_ecosystem/verify-43-install-redis-sentinel.sh
+rm -f -- "$redis_password_file"
+unset redis_password_file
 ```
 
 ---

@@ -43,7 +43,7 @@ class ClusterComponentApiTest {
     NodeRepository nodes;
 
     @Test
-    void storesRedisPasswordEncryptedAndNeverReturnsItOrOverwritesItWithBlankInput() throws Exception {
+    void storesRedisPasswordEncryptedAndRejectsBlankInputWithoutOverwritingIt() throws Exception {
         long clusterId = createCluster("components-redis-password");
         String password = "test-only-redis-value";
         String body = "{\"groups\":[{\"key\":\"redis_sentinel\",\"enabled\":true,"
@@ -60,14 +60,14 @@ class ClusterComponentApiTest {
         String stored = jdbc.queryForObject("select config_json from cluster_components "
                 + "where cluster_id = ? and component_key = 'redis_sentinel'", String.class, clusterId);
         assertThat(stored).contains("password_credential").doesNotContain(password);
-        // 重复输入、空输入和只保存其他组均不能改变凭据或配置版本。
+        // 重复输入和未传新密码保留原密文；显式空密码必须拒绝。
         mvc.perform(put("/api/clusters/{id}/components", clusterId)
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.configurationVersion").value(1));
         mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"groups\":[{\"key\":\"redis_sentinel\",\"enabled\":true,"
                                 + "\"config\":{\"password\":\"\",\"has_password\":true}}]}"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.configurationVersion").value(1));
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMPONENT_CONFIG_INVALID"));
         mvc.perform(put("/api/clusters/{id}/components", clusterId)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"groups\":[]}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.configurationVersion").value(1));
@@ -122,7 +122,8 @@ class ClusterComponentApiTest {
     void acceptsRedisAndRejectsUnknownDuplicateAndInvalidNfsGroups() throws Exception {
         long clusterId = createCluster("components-validation");
         mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"groups\":[{\"key\":\"redis_sentinel\",\"enabled\":true,\"config\":{}}]}"))
+                        .content("{\"groups\":[{\"key\":\"redis_sentinel\",\"enabled\":true,"
+                                + "\"config\":{\"password\":\"test-only-required-value\"}}]}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.groups[5].enabled").value(true));
         mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
@@ -134,6 +135,19 @@ class ClusterComponentApiTest {
         mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"groups\":[{\"key\":\"nfs\",\"enabled\":true,\"config\":{\"server_address\":\"not-ip\"}}]}"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMPONENT_CONFIG_INVALID"));
+    }
+
+    @Test
+    void rejectsEnabledRedisWithoutPasswordIncludingForgedStatusAndAllowsDisabledRedis() throws Exception {
+        long clusterId = createCluster("components-redis-required");
+        for (String config : List.of("{}", "{\"has_password\":true}", "{\"password\":\"\"}", "{\"password\":\"   \"}")) {
+            mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"groups\":[{\"key\":\"redis_sentinel\",\"enabled\":true,\"config\":" + config + "}]}"))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMPONENT_CONFIG_INVALID"));
+        }
+        mvc.perform(put("/api/clusters/{id}/components", clusterId).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"groups\":[{\"key\":\"redis_sentinel\",\"enabled\":false,\"config\":{}}]}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.groups[5].enabled").value(false));
     }
 
     @Test

@@ -30,20 +30,21 @@ public class RedisPasswordService {
         this.mapper = mapper;
     }
 
-    public Map<String, Object> configure(Map<String, Object> current, Map<String, Object> requested) {
+    public Map<String, Object> configure(Map<String, Object> current, Map<String, Object> requested, boolean enabled) {
         if (!requested.keySet().stream().allMatch(Set.of("password", "has_password")::contains)
                 || requested.containsKey("has_password") && !(requested.get("has_password") instanceof Boolean)) {
             throw invalid("Redis 配置包含未知字段或无效的密码状态");
         }
-        if (!requested.containsKey("password")) return current;
+        if (!requested.containsKey("password")) {
+            requirePassword(current, enabled);
+            return current;
+        }
         if (!(requested.get("password") instanceof String password)) {
             throw invalid("Redis 密码必须是字符串");
         }
-        // 留空不删除已保存凭据，也不改变旧集群的随机密码策略。
-        if (password.isEmpty()) return current;
         if (password.isBlank() || password.length() > 256
                 || password.chars().anyMatch(Character::isISOControl)) {
-            throw invalid("Redis 密码不能仅包含空白、包含控制字符或超过 256 个字符");
+            throw invalid("Redis 密码不能为空、仅包含空白、包含控制字符或超过 256 个字符");
         }
         char[] plaintext = password.toCharArray();
         char[] previous = null;
@@ -69,17 +70,29 @@ public class RedisPasswordService {
         return stored.containsKey(CREDENTIAL);
     }
 
+    public void requireConfiguredPassword(long clusterId) {
+        components.findByClusterIdAndComponentKey(clusterId, GROUP_KEY).filter(ClusterComponent::isEnabled)
+                .ifPresent(component -> requirePassword(parseConfig(component.getConfigJson()), true));
+    }
+
+    private static void requirePassword(Map<String, Object> stored, boolean enabled) {
+        if (enabled && !hasPassword(stored)) throw invalid("启用 Redis 哨兵模式必须配置密码");
+    }
+
+    private Map<String, Object> parseConfig(String json) {
+        try {
+            return mapper.readValue(json, Map.class);
+        } catch (JsonProcessingException exception) {
+            throw invalid("Redis 密码配置无法读取");
+        }
+    }
+
     /** 独立临时文件不进入任务 work/evidence；调用方负责在所有退出路径删除。 */
     public Path createPasswordFile(long clusterId) throws IOException {
         ClusterComponent component = components.findByClusterIdAndComponentKey(clusterId, GROUP_KEY).orElse(null);
         if (component == null || !component.isEnabled()) return null;
-        Map<String, Object> config;
-        try {
-            config = mapper.readValue(component.getConfigJson(), Map.class);
-        } catch (JsonProcessingException exception) {
-            throw new IOException("Redis 密码配置无法读取");
-        }
-        if (!hasPassword(config)) return null;
+        Map<String, Object> config = parseConfig(component.getConfigJson());
+        requirePassword(config, true);
         char[] plaintext = cipher.getObject().decrypt(credential(config));
         Path file = null;
         try {

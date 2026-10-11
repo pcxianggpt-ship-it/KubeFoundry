@@ -250,6 +250,19 @@ class PrecheckServiceTest {
                         0, healthyOutput(""), "", "logs/precheck.log"));
     }
 
+    @Test
+    void enabledRedisWithoutPasswordFailsBeforePrecheckOrInstallationCreatesAJob() {
+        cluster.updateKubemateEnabled(true);
+        clusters.saveAndFlush(cluster);
+        components.saveAndFlush(new ClusterComponent(cluster, "redis_sentinel", true, "{}"));
+        long jobCount = jobs.count();
+        assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> service.start(cluster.getId())))
+                .isInstanceOf(InstallationReadinessException.class).hasMessageContaining("必须配置密码");
+        assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> installs.start(cluster.getId())))
+                .isInstanceOf(InstallationReadinessException.class).hasMessageContaining("必须配置密码");
+        assertThat(jobs.count()).isEqualTo(jobCount);
+    }
+
     private static String healthyOutput(String overrides) {
         return """
                 __KF__USER=0

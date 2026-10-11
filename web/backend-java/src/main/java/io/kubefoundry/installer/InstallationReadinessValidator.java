@@ -2,6 +2,7 @@ package io.kubefoundry.installer;
 
 import io.kubefoundry.cluster.Cluster;
 import io.kubefoundry.cluster.Node;
+import io.kubefoundry.cluster.RedisPasswordService;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
@@ -13,22 +14,26 @@ class InstallationReadinessValidator {
     private final InstallationSnapshotService snapshots;
     private final ComponentMediaService media;
     private final NfsTargetResolver nfsTargets;
+    private final RedisPasswordService redisPasswords;
 
     InstallationReadinessValidator(
             InstallPlanFactory plans,
             InstallPlanAssembler assembler,
             InstallationSnapshotService snapshots,
             ComponentMediaService media,
-            NfsTargetResolver nfsTargets) {
+            NfsTargetResolver nfsTargets,
+            RedisPasswordService redisPasswords) {
         this.plans = plans;
         this.assembler = assembler;
         this.snapshots = snapshots;
         this.media = media;
         this.nfsTargets = nfsTargets;
+        this.redisPasswords = redisPasswords;
     }
 
     InstallPlan validate(Cluster cluster, List<Node> configuredNodes) {
         try {
+            redisPasswords.requireConfiguredPassword(cluster.getId());
             List<Node> nodes = InstallationNodes.normalize(configuredNodes);
             ClusterTopologyValidator.requireValid(nodes, cluster.getImageRegistryType());
             InstallationGate.requireSuccessfulNodeTests(cluster, nodes);

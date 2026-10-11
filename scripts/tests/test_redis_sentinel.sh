@@ -107,6 +107,9 @@ export KF_VERIFY_COMMAND_TIMEOUT=2s
 export KF_VERIFY_ROLLOUT_TIMEOUT=2s
 export KF_KUBECONFIG="${TMP}/admin.conf"
 touch "${KF_KUBECONFIG}" "${KF_REDIS_CURL_LOG}"
+export KF_REDIS_PASSWORD_FILE="${TMP}/password-input"
+umask 077
+printf '%s' 'test-only-required-password' > "${KF_REDIS_PASSWORD_FILE}"
 log_info() { :; }
 log_success() { :; }
 log_warn() { :; }
@@ -186,9 +189,24 @@ if bash "${ROOT}/scripts/verify/phase3_ecosystem/verify-43-install-redis-sentine
 fi
 rm -f -- "${KF_REDIS_PASSWORD_FILE}"
 if bash "${ROOT}/scripts/steps/phase3_ecosystem/43-install-redis-sentinel.sh" >> "${TMP}/custom.log" 2>&1; then
-  printf 'Redis 配置文件缺失时错误地回退为随机密码\n' >&2
+  printf 'Redis 配置文件缺失时未拒绝安装\n' >&2
   exit 1
 fi
+# 即使 Secret 已存在，缺失、空文件和全空白密码也不能安装或被验证为成功。
+for mode in missing empty whitespace; do
+  case "${mode}" in
+    missing) unset KF_REDIS_PASSWORD_FILE ;;
+    empty) export KF_REDIS_PASSWORD_FILE="${TMP}/password-input"; : > "${KF_REDIS_PASSWORD_FILE}" ;;
+    whitespace) printf '   ' > "${KF_REDIS_PASSWORD_FILE}" ;;
+  esac
+  for script in steps/phase3_ecosystem/43-install-redis-sentinel.sh verify/phase3_ecosystem/verify-43-install-redis-sentinel.sh; do
+    if bash "${ROOT}/scripts/${script}" >> "${TMP}/custom.log" 2>&1; then
+      printf 'Redis 未拒绝缺失或空密码: %s %s\n' "${mode}" "${script}" >&2
+      exit 1
+    fi
+  done
+done
+! grep -q '^upgrade ' "${KF_REDIS_HELM_LOG}"
 printf '%s' "${test_password}" > "${KF_REDIS_PASSWORD_FILE}"
 rm -f -- "${KF_REDIS_SECRET_STATE}" "${KF_REDIS_SECRET_DATA}"
 export KF_REDIS_SECRET_MODE=absent KF_REDIS_SECRET_APPLY_FAIL=1
@@ -201,14 +219,13 @@ grep -q 'Redis 密码 Secret 创建失败' "${TMP}/custom.log"
 unset KF_REDIS_SECRET_APPLY_FAIL
 ! grep -Fq -- "${test_password}" "${TMP}/custom.log" "${KF_REDIS_HELM_LOG}" "${KF_REDIS_KUBECTL_LOG}"
 ! grep -Fq -- "${expected_data}" "${TMP}/custom.log" "${KF_REDIS_HELM_LOG}" "${KF_REDIS_KUBECTL_LOG}"
-unset KF_REDIS_PASSWORD_FILE
-
 touch "${KF_REDIS_SECRET_STATE}"
 export KF_REDIS_SECRET_MODE=unmanaged
 if bash "${ROOT}/scripts/steps/phase3_ecosystem/43-install-redis-sentinel.sh" >/dev/null 2>&1; then
     printf '未拒绝非 KubeFoundry 所有的 Redis Secret\n' >&2
     exit 1
 fi
+! grep -Eq '/dev/urandom|密码生成' "${ROOT}/scripts/steps/phase3_ecosystem/43-install-redis-sentinel.sh"
 
 ! grep -qi 'kubefoundry' "${ROOT}/scripts/verify/phase3_ecosystem/verify-43-install-redis-sentinel.sh"
 grep -q '^  existingSecret: redis-auth$' "${MEDIA}/values-sentinel.yaml"
